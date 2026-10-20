@@ -41,7 +41,7 @@ production コード・ビルド・依存・方針・利用者向けドキュメ
 
 ## 3. 検証の選び方
 
-個別の target を使う（Issue #2 で置く）。
+個別の target を使う。
 
 ```bash
 make fmt-check     # 整形
@@ -166,7 +166,7 @@ Closes #N
 
 ### クラウドのコンテナ（Claude Code on the web）
 
-コンテナは Ubuntu 24.04 の Linux で、rustup・Xvfb・cairo のヘッダが入っている。足りないものは `make doctor` が名指しする（Issue #2 で置く）。
+コンテナは Ubuntu 24.04 の Linux で、rustup・Xvfb・cairo のヘッダが入っている。足りないものは `make doctor` が名指しする。
 環境の setup script（環境の設定で編集する）に次を置くと、毎回のセッションで揃う。版は `rust-toolchain.toml` が正で、ここに書く数字はそれを写しただけ。
 
 ```bash
@@ -176,7 +176,7 @@ cargo install cargo-llvm-cov --locked
 apt-get install -y --no-install-recommends libcairo2-dev pkg-config xvfb imagemagick x11-apps x11-utils xdotool xcompmgr mingw-w64
 ```
 
-`.claude/settings.json` の SessionStart フックが `make doctor` を走らせ、欠けている道具を最初に知らせる（Issue #2）。
+`.claude/settings.json` の SessionStart フックが `make doctor` を走らせ、欠けている道具を最初に知らせる。
 表示の確認は `make screenshot`（Xvfb の上で窓を出し PNG を `out/` に撮る）で行い、PNG を読む（QLT-013）。
 操作は `xdotool` で駆動して確かめる。人が触る手応えと Windows の見えは施主の実機で確かめる。
 ネットワーク共有の上での同時編集は施主の環境（Windows の共有）で確かめる。コンテナでは一時ディレクトリでの併合までしか見られない。

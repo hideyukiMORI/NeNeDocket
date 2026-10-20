@@ -2,7 +2,7 @@
 
 A small, fast issue tracker for Windows and X11. Rust, no UI toolkit, no server.
 
-> **Status (2026-10-21):** documents only. The specification, the rules and the first four ADRs are in place; there is no code yet.
+> **Status (2026-10-21):** rules and gates are in place and measured (`make prove`, 26 proofs). There is no product code yet; the workspace holds only the checker (`xtask`).
 
 ## What it will be
 
@@ -21,7 +21,7 @@ It is the fifth application of that policy and the third in Rust (after xi-tools
 
 - `docs/ARCHITECTURE_CONSTITUTION.md` — the rules (ARC-NNN) and how far Rust reaches for each of them
 - `docs/CODING_RULES.md` — the approved subset of Rust (RS-NNN); suppressions are two-tiered (`forbid` cannot be overridden, `deny` needs `#[expect(..., reason = "<rule>: ...")]`)
-- `docs/QUALITY_GATES.md` — what is enforced right now (active / planned / impossible), the only source of truth. **Nothing is active yet.**
+- `docs/QUALITY_GATES.md` — what is enforced right now (active / planned / impossible), the only source of truth
 - `docs/quality/gate-proofs.md` — real tool output for every gate that claims to be active
 - `docs/adr/` — decisions, including why there is no toolkit and why the data model is append-only journals per account
 
@@ -31,7 +31,7 @@ Verification is chosen per change (`make lint`, `make test`, `make conformance`,
 make check REASON='why a narrower check cannot cover this change'
 ```
 
-The `Makefile`, the toolchain pin and the checkers arrive with Issue #2.
+It needs the toolchain pinned in `rust-toolchain.toml` (rustup installs it) and `cargo-deny`. `make doctor` lists what is missing.
 
 ## License
 

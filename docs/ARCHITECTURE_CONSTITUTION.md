@@ -22,10 +22,8 @@
 どの規則がいまどの状態かの正本は [QUALITY_GATES.md](QUALITY_GATES.md) の強制マトリクスであり、
 文書整合検査（CNF-009）が「本書に定義があるのにマトリクスに行が無い」「active に証明行が無い」を拒否する。
 
-🔴 **Issue #1 の時点で機械は 1 つも無い。** `Cargo.toml` も `xtask` も `Makefile` も CI も無い。
-したがって本書の規則は、言語が塞ぐものを含めて**すべて planned** である。nene-ruler で active だった規則も、
-このリポジトリの道具で発火を実測する（`make prove`・[gate-proofs](quality/gate-proofs.md)）までは active と書かない。
-active にする作業は Issue #2（機械側の導入）で行う。
+🔴 Issue #2 で機械を置き、このリポジトリの道具で発火を実測した規則だけを active にした（`make prove`・[gate-proofs](quality/gate-proofs.md)・[ADR 0005](adr/0005-rust-foundation-and-measured-limits.md)）。
+製品クレートはまだ無いので、中核の実ファイルが要るもの（ARC-003）は planned のまま。
 
 ### 強制の責務を分ける
 
@@ -41,9 +39,9 @@ active にする作業は Issue #2（機械側の導入）で行う。
 ### Rust がどこまで届いたか
 
 先行事例（NeNe Loupe / NeNe Folio / NeNe Nib＝C++23 と C23、xi-tools と nene-ruler＝Rust）の比較。
-**本リポジトリの列は未実測。** nene-ruler が rustc 1.98.0 で測った結果を引用する。このリポジトリでの再現は Issue #2 の `make prove` で行い、記録は [gate-proofs](quality/gate-proofs.md) に置く。
+**本リポジトリの列は Issue #2 の実測結果（rustc 1.98.0）。** 再現手順は `make prove`、記録は [gate-proofs](quality/gate-proofs.md) と [ADR 0005](adr/0005-rust-foundation-and-measured-limits.md)。nene-ruler と同じ出力が出た。
 
-| 規則 | C++ / C（clang-cl・MSVC の実測） | **Rust（nene-ruler の実測・本リポジトリでは再測定前）** |
+| 規則 | C++ / C（clang-cl・MSVC の実測） | **Rust（本リポジトリの実測）** |
 | --- | --- | --- |
 | 不正状態を表現不能に・網羅性 | 不十分。警告の明示指定で分岐漏れを拒否。`pragma` で迂回できる | **ある**（E0004。`_` は `wildcard_enum_match_arm` が forbid） |
 | 公開状態は不変 | 不十分。公開 aggregate は lint も漏れる | **ある**（`let` が既定で不変。可変性が型に出る） |
@@ -79,7 +77,7 @@ Undo はジャーナルを書き換えず、逆の操作を追記する（ADR 00
 🔑 Rust では各クレートの `[dependencies]` が**そのまま import 可能なものの全リスト**であり、
 循環は cargo が拒否する。向きの表との照合は CNF-013 が行う。
 
-- 機械強制: **planned**（cargo の循環拒否 ＋ CNF-013 の許可表。Issue #2 で `make prove` と実ファイルの発火を記録してから active にする）
+- 機械強制: **active**（cargo の循環拒否 ＋ CNF-013 の許可表。実測は P-23 と [gate-proofs](quality/gate-proofs.md) 第 8 節）
 
 ### ARC-003 — 中核はプラットフォームから独立している
 
@@ -89,7 +87,7 @@ Undo はジャーナルを書き換えず、逆の操作を追記する（ADR 00
 🔑 中核クレートは `#![no_std]` ＋ `extern crate alloc` で書く。`std::fs` / `std::env` / `std::time` が
 lint 違反ではなく**名前解決エラー**になる。宣言そのものが消えていないことは CNF-007 が見る。
 
-- 機械強制: **planned**（`#![no_std]` の宣言＝CNF-007、外部 crate の禁止＝CNF-013。Issue #2）
+- 機械強制: **planned**（`#![no_std]` の宣言＝CNF-007、外部 crate の禁止＝CNF-013。検査器と正例・反例は在るが、中核クレートが無いので実ファイルでの発火は未。最初の縦切りで記録してから active にする）
 
 ### ARC-004 — 状態には唯一の所有者がいる
 
@@ -141,7 +139,7 @@ lint 違反ではなく**名前解決エラー**になる。宣言そのもの�
 NeNe Docket では決定性が**正しさそのもの**である。同じジャーナルの集合を併合すれば、どの機械でも同じ状態が出なければならない（FR-008）。
 併合は core の純関数で、時刻も乱数も読まない。操作に付く時刻は、操作を作るときにポートから**値として**受け取る。
 
-- 機械強制: **planned**（CNF-012 の字句検査。`std::time` / `std::env` / `std::fs` / `std::thread` / `rand` 等の名前を 3 区画の外で拒む。合成ルートは `std::env::args` だけを読める）
+- 機械強制: **active**（CNF-012 の字句検査。`std::time` / `std::env` / `std::fs` / `std::thread` / `rand` 等の名前を 3 区画の外で拒む。合成ルートは `std::env::args` だけを読める）
 - 不能: マクロ・別名・間接呼び出しを通した到達は字句では見えない。中核は `#![no_std]` で構造的に塞ぐ（ARC-003）が、UI は `std` を使うので字句検査だけが残る
 - 補足: テストにも同じ禁止を適用する。**テストが実時刻を読むことも決定性の破壊である。**
 
@@ -195,7 +193,7 @@ UI 層は、application が作った値を描き、利用者の操作を意図�
 - ライセンスは**許可制**である。`deny.toml` の `allow` に**実際に使っているものだけ**を書く。
   `make deny` は `--deny license-not-encountered` を付けて走るので、使っていないライセンスを先回りで許可すると落ちる
 
-- 機械強制: **planned**（`wildcard_dependencies`・`--locked`・cargo-deny・CNF-013。Issue #2）
+- 機械強制: **active**（`wildcard_dependencies`・`--locked`・cargo-deny のライセンス／脆弱性／重複版／取得元・CNF-013 の依存 0。実測は P-22 / P-24 / P-25 と [gate-proofs](quality/gate-proofs.md) 第 8 節）
 
 ---
 

@@ -4,11 +4,11 @@
 > 判断の根拠は [ADR 0001](adr/0001-strictness-is-mechanically-enforced.md)。
 > 本書は Rust（edition 2024）を本リポジトリで承認された部分集合に狭めるためのものであり、
 > ここが沈黙している領域は公式の Rust スタイル（Rust API Guidelines / rustfmt の既定）に従う。
-> 出典は nene-ruler `docs/CODING_RULES.md`（Rust での 2 回目の適用）。P-NN の実測はそこからの引用で、本リポジトリでは Issue #2 で測り直す。
+> 出典は nene-ruler `docs/CODING_RULES.md`（Rust での 2 回目の適用）。P-NN の実測は本リポジトリの `make prove`（Issue #2・[ADR 0005](adr/0005-rust-foundation-and-measured-limits.md)）。
 
 読み方（**active / planned / 不能 / 不採用**）と強制の層は
 [ARCHITECTURE_CONSTITUTION.md](ARCHITECTURE_CONSTITUTION.md) 第 0 節と同じ。
-🔴 Issue #1 の時点で機械は無い。本書の規則は**すべて planned** であり、各規則の「実体」の欄は Issue #2 で置く予定の仕組みを書いている。
+🔴 Issue #2 で機械を置き、このリポジトリの道具で発火を実測した規則だけを active にした。実測は [quality/gate-proofs.md](quality/gate-proofs.md)。
 
 ---
 
@@ -21,7 +21,7 @@
 
 🔑 `ItemId(1)` はモジュールの外では E0603。**唯一のファクトリを言語が保証する。**
 
-- 機械強制: **planned**（コンパイラ E0603。Issue #2 で `make prove` に P-15 を置く）
+- 機械強制: **active**（コンパイラ E0603。実測 P-15）
 - 補足: newtype にすべき値かどうかの判断はレビュー事項
 
 ### RS-002 — 閉じた選択肢は `enum` で表す。`_` を書かない
@@ -30,7 +30,7 @@
 `match` の網羅性はコンパイラが見る（E0004）。したがって**規約が守るべきなのは「網羅性検査を無効化しないこと」**である。
 `_` を書いた瞬間に検査は死ぬ。自クレートの `enum` に `#[non_exhaustive]` を付けない。
 
-- 機械強制: **planned**（E0004 ＋ `clippy::wildcard_enum_match_arm` / `wildcard_in_or_patterns` を **forbid**）
+- 機械強制: **active**（E0004 ＋ `clippy::wildcard_enum_match_arm` / `wildcard_in_or_patterns` を **forbid**。実測 P-04 / P-05）
 
 ### RS-003 — 不変条件を持つ型に「作り置きの値」を用意しない
 
@@ -41,14 +41,14 @@
 - `..Default::default()` による構造体の穴埋めを書かない
 - 不変条件を持つ型は**自分のモジュールに単独で置く**（子モジュールは祖先の非公開項目に到達できる）
 
-- 機械強制: **planned**（E0381・E0063・`Default` の禁止＝CNF-001。単独モジュール＝CNF-005 は判定方法が未定）
+- 機械強制: **active**（E0381・E0063（実測 P-16 / P-17）・`Default` の禁止＝CNF-001。単独モジュール＝CNF-005 は planned・判定方法が未定）
 
 ### RS-004 — 不在は `Option` だけが表す
 
 `Option::None` は「省略可能な値が無い」だけを意味する（期限が無い・担当が無い）。無効・未読込・失敗・未知を表さない。それらは専用の `enum` を作る。
 `Option<Result<T, E>>` と `Result<Option<T>, E>` を場当たりに混ぜない。
 
-- 機械強制: **planned**（言語に `null` が無い。`unwrap_used` / `expect_used` を **forbid**。`Option` の意味の流用そのものはレビュー事項）
+- 機械強制: **active**（言語に `null` が無い。`unwrap_used` / `expect_used` を **forbid**。実測 P-13。`Option` の意味の流用そのものはレビュー事項）
 
 ### RS-005 — 期待される失敗は `Result`。panic しない
 
@@ -59,19 +59,19 @@
 - **テストコードは対象外**（`clippy.toml` の `allow-*-in-tests`）。免除は `clippy.toml` で行い、テスト側に `#[expect]` を書かせない
 - `std::process::exit` は `main` の中では clippy が見逃す。終了コードは `main` から `ExitCode` で返す
 
-- 機械強制: **planned**（上記 forbid 群 ＋ `panic_in_result_fn` / `unwrap_in_result`）
+- 機械強制: **active**（上記 forbid 群 ＋ `panic_in_result_fn` / `unwrap_in_result`。実測 P-13 / P-14）
 
 ### RS-006 — 汎用データバッグを禁じる
 
 `dyn Any`・`BTreeMap<String, String>` を型の代用にしない。課題の項目を「文字列キーの辞書」で持たない。意味のある値を `(A, B)` のタプルで持ち回らない。名前付きの型を作る。
 
-- 機械強制: **planned**（`dyn Any` の禁止＝CNF-002。文字列キーのバッグ・意味を持つタプルの検出はレビュー事項）
+- 機械強制: **active**（`dyn Any` の禁止＝CNF-002。文字列キーのバッグ・意味を持つタプルの検出はレビュー事項）
 
 ### RS-007 — 数値変換に `as` を使わない
 
 `as` は黙って切り詰める。`From` / `TryFrom` のどちらか一つを使う。画素数と cairo / Direct2D の浮動小数の間も同じ。
 
-- 機械強制: **planned**（`clippy::as_conversions` を **forbid**）
+- 機械強制: **active**（`clippy::as_conversions` を **forbid**。実測 P-06）
 
 ---
 
@@ -84,14 +84,14 @@
 - 構造体のフィールドは全公開か全非公開。混在させない
 - 再エクスポート（`pub use`）を書かない。**同じ物に二つ目の名前を作る行為**である
 
-- 機械強制: **planned**（`unreachable_pub`・`missing_docs`・`partial_pub_fields`・`field_scoped_visibility_modifiers`・`clippy::pub_use`）
+- 機械強制: **active**（`unreachable_pub`・`missing_docs`・`partial_pub_fields`・`field_scoped_visibility_modifiers`・`clippy::pub_use`。実測 P-09）
 
 ### RS-009 — 可変グローバルを持たない
 
 `static mut` は `unsafe` を要するので、`unsafe_code = "forbid"` により**書けない**。
 `OnceLock` / `LazyLock` / `lazy_static` による遅延グローバルは書けてしまう。使わない。
 
-- 機械強制: **planned**（`unsafe_code` の forbid ＋ CNF-002）
+- 機械強制: **active**（`unsafe_code` の forbid ＋ CNF-002）
 
 ### RS-010 — 言語マジックを禁じる
 
@@ -100,7 +100,7 @@
 - 手続きマクロを自作しない。`build.rs` を書かない。アイコンの資源を埋める必要が出たら、nene-ruler ADR 0023 と同じ形で例外を 1 つだけ ADR で足す
 - 宣言的マクロ（`macro_rules!`）は、同じ形の重複が 3 箇所以上あり、かつ関数と generics で書けないときに限る
 
-- 機械強制: **planned**（`unsafe_code` を **forbid**。Windows の 2 クレートは `deny`＋`undocumented_unsafe_blocks`＋CNF-014。proc-macro の禁止＝CNF-002。`build.rs` の禁止＝CNF-008。`macro_rules!` の判断はレビュー事項）
+- 機械強制: **active**（`unsafe_code` を **forbid**（実測 P-18）。Windows の 2 クレートは `deny`＋`undocumented_unsafe_blocks`＋CNF-014。proc-macro の禁止＝CNF-002。`build.rs` の禁止＝CNF-008。`macro_rules!` の判断はレビュー事項）
 
 ### RS-011 — 複雑度に上限を置く
 
@@ -114,16 +114,16 @@
 
 閾値を満たすためだけに意味のある処理を割るのは目的に反する。超える必要があるときは**測定可能な理由**を添えて ADR にする。
 
-🔴 `cognitive_complexity` は `nursery` 群にあり、`clippy.toml` に閾値を書くだけでは死んだ設定になる。`Cargo.toml` で名指しで有効化する。
+🔴 `cognitive_complexity` は `nursery` 群にあり、`clippy.toml` に閾値を書くだけでは死んだ設定になる。`Cargo.toml` で名指しで有効化してある。
 
-- 機械強制: **planned**
+- 機械強制: **active**（実測 P-11 / P-12）
 
 ### RS-012 — ファイルとモジュールの置き方を一つに固定する
 
 - `mod.rs` を作らない。`foo.rs` ＋ `foo/` の形だけを使う
 - 1 ファイルに主要な宣言（`struct` / `enum` / `trait` / `union`）は 1 つ。`utils.rs` のような寄せ集めを作らない
 
-- 機械強制: **planned**（`clippy::mod_module_files` ＋ CNF-003）
+- 機械強制: **active**（`clippy::mod_module_files`（実測 P-10）＋ CNF-003）
 
 ### RS-013 — 名前が役割を語る
 
@@ -133,7 +133,7 @@
 
 `Processor` や `Renderer` のように**文脈次第で妥当な語は機械では拒否しない**。判断が要る語はレビューの仕事である。
 
-- 機械強制: **planned**（束縛名は `clippy.toml` の `disallowed-names`、型名の語尾とモジュール名は CNF-004）
+- 機械強制: **active**（束縛名は `clippy.toml` の `disallowed-names`（実測 P-26）、型名の語尾とモジュール名は CNF-004）
 
 ---
 
@@ -145,33 +145,33 @@
 `print_stdout` / `print_stderr` は `deny` なので、許可された場所は `#[expect]` で自己申告する。
 **「どこが出力してよい場所か」がコードを grep すれば全部出る。**
 
-- 機械強制: **planned**（`clippy::print_stdout` / `print_stderr` / `dbg_macro`）
+- 機械強制: **active**（`clippy::print_stdout` / `print_stderr` / `dbg_macro`。実測 P-19）
 
 ### RS-015 — プロセス環境に触るのは adapters と store と合成ルートだけ
 
 環境変数・ファイル・現在時刻・乱数・スレッドを読んでよいのは `crates/adapters-x11`・`crates/adapters-windows`・`crates/store` だけ。
 コマンドライン引数を読んでよいのは合成ルートだけ。中核と UI は値として受け取る。
 
-- 機械強制: **planned**（CNF-012 の字句検査。中核は `#![no_std]` で名前解決エラーが加わる（ARC-003））
+- 機械強制: **active**（CNF-012 の字句検査。中核は `#![no_std]` で名前解決エラーが加わる（ARC-003））
 
 ### RS-016 — 反復順は決定的
 
 `HashMap` / `HashSet` を使わない。**反復順が実行ごとに変わり、出力が再現しなくなる。** `BTreeMap` / `BTreeSet` を使う。
 併合の結果・表の行の順・ジャーナルの書き出し順・検査器の報告順が実行ごとに変わると、差分が取れず、FR-008 が崩れる。
 
-- 機械強制: **planned**（`clippy.toml` の `disallowed-types` ＋ `clippy::iter_over_hash_type`）
+- 機械強制: **active**（`clippy.toml` の `disallowed-types` ＋ `clippy::iter_over_hash_type`。実測 P-07）
 
 ### RS-017 — 整数のオーバーフローを黙って巻き戻さない
 
 リリースビルドでも `overflow-checks = true` にする。論理時計や画素の足し算が黙って巻き戻る経路を消す。
 
-- 機械強制: **planned**（`Cargo.toml` の `[profile.release]`）
+- 機械強制: **active**（`Cargo.toml` の `[profile.release]`。実測 P-21）
 
 ### RS-018 — 数値リテラルは型を明示する
 
 型注釈の無い数値リテラルは `i32` に落ちる。`400_u32` / `1.5_f64` と書く。
 
-- 機械強制: **planned**（`clippy::default_numeric_fallback`）
+- 機械強制: **active**（`clippy::default_numeric_fallback`。実測 P-08）
 
 ### RS-019 — 抑制は二段構え
 
@@ -189,7 +189,7 @@
 🔑 これは C++ の先行事例が waiver 台帳（人手）で達成していたものを、コンパイラが代わりに執行している状態である。
 だから本リポジトリは waiver 台帳を持たない（[ADR 0001](adr/0001-strictness-is-mechanically-enforced.md)）。
 
-- 機械強制: **planned**（forbid の抑制不能・腐った抑制・`#[allow]` の禁止 ＋ CNF-006）
+- 機械強制: **active**（実測 P-01 / P-02 / P-03 ＋ CNF-006）
 
 ---
 

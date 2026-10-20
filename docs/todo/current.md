@@ -9,9 +9,9 @@
 | 言語と土台 | Rust / x11rb ＋ cairo-rs / Win32 ＋ Direct2D（[ADR 0002](../adr/0002-no-toolkit-x11rb-cairo-win32-direct2d.md)）。施主決定 2026-10-21 |
 | データの形 | アカウントごとの追記専用ジャーナルの併合（[ADR 0004](../adr/0004-append-only-journal-per-account.md)）。施主決定 2026-10-21 |
 | 規範文書・ADR 0001〜0004 | ✅ Issue #1（文書だけ） |
-| 機械（Cargo / lint の表 / clippy.toml / deny.toml / xtask / Makefile / CI / フック） | ❌ 未着手。Issue #2 |
-| ゲート発火の証明 `make prove` | ❌ 何も測っていない（[gate-proofs](../quality/gate-proofs.md)） |
-| クレート | ❌ 1 つも無い |
+| 機械（Cargo / lint の表 / clippy.toml / deny.toml / xtask / Makefile / CI / フック） | ✅ Issue #2・[ADR 0005](../adr/0005-rust-foundation-and-measured-limits.md)。nene-ruler から移植 |
+| ゲート発火の証明 `make prove`（26 件）と `cargo test -p xtask`（80 件） | ✅ Issue #2・[gate-proofs](../quality/gate-proofs.md) 第 4〜8 節。測れた規則は active |
+| 製品クレート | ❌ 1 つも無い。workspace は `xtask` だけ |
 | IME の方式（FR-015） | ❌ ADR 未。最初の縦切りの前に決める |
 | 署名と鍵の方式（FR-010） | ❌ ADR 未。権限の Issue で決める |
 | CI の必須 check（`make ci`）と commit-msg フック | 未配線 |
@@ -19,10 +19,11 @@
 
 ## 次に行うこと
 
-1. **Issue #2 — 機械の移植。** nene-ruler の `Cargo.toml`（`[workspace.lints]`）・`clippy.toml`・`deny.toml`・`rust-toolchain.toml`・`xtask`・`Makefile`・`.github/workflows/check.yml`・`.githooks`・`.claude` を写し、クレート名（`nene-docket-`）と CNF-012 / CNF-013 の表（`store` を除外・許可表）を NeNe Docket の [PROJECT_LAYOUT](../PROJECT_LAYOUT.md) に合わせる。製品コード 0 の workspace（core / application / xtask だけ）で `make prove` と `cargo test -p xtask` を回し、[gate-proofs](../quality/gate-proofs.md) に実出力を置いて、発火したものから active に書き換える。実測の記録は ADR（nene-ruler ADR 0003 相当）
+1. **Issue #1 / #2 の PR を merge する。** 枝は harness の `claude/cloud-session-qus6l5` で GIT-002 の形ではないので、CI の `make ci` は GIT-002 で落ちる（gate-proofs 第 8.1 節）。施主が squash の件名を GIT-003 の形で付けて merge する。CI の実行証拠を得たら GIT-001〜004 と QLT-005 を active にする（証明行を gate-proofs に足す）
 2. **IME の ADR**（XIM と TSF / IMM32 の実測）。最初の縦切りで文字入力が要るので、その前
-3. **最初の縦切り**（Issue #3 相当）: core の `Item` / `Op` / `merge`、store のジャーナル版 1、application の所有者、ui-x11 の表 1 枚。Xvfb で撮る。同じ操作の集合を別の順で読むテスト
+3. **最初の縦切り**: core の `Item` / `Op` / `merge`、store のジャーナル版 1、application の所有者、ui-x11 の表 1 枚。Xvfb で撮る。同じ操作の集合を別の順で読むテスト。中核の実ファイルで CNF-007 / CNF-012 / CNF-013 を発火させて ARC-003 を active に。`make coverage` を置いて QLT-009 を active に
 4. 署名の ADR と権限（FR-010）。スナップショットの ADR（FR-017 を実測してから）
+5. 環境の setup script に `cargo-llvm-cov`・`xdotool`・`mingw-w64` を足す（DEVELOPMENT_WORKFLOW 第 9 節）
 
 ## 残る穴
 
@@ -31,4 +32,5 @@
 - 権限を有効にしなければ、なりすましは防げない（ファイルを直接編集すれば）
 - SMB の上で本当に壊れないかは、施主の共有で確かめるまで「動く」と書かない（QLT-013）
 - アクセシビリティは無い（ADR 0002）
-- 文書はすべて nene-ruler からの写しと翻案であり、このリポジトリの道具で何も測っていない
+- 製品クレートの実ファイルでは CNF-007 / CNF-012 / CNF-013 / CNF-014 をまだ発火させていない（ADR 0005）
+- `make lint-windows` は `xtask` しか見ない。Windows のコードが生まれるまで

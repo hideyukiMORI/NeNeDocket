@@ -60,7 +60,7 @@ CI の必須 `check` は Git 規約・検証記録の存在・差分の空白を
 
 ## フックの導入
 
-フックはリポジトリが所有する（`.githooks/`・Issue #2 で置く）。clone 直後に 1 回、次を実行する。
+フックはリポジトリが所有する（`.githooks/`）。clone 直後に 1 回、次を実行する。
 
 ```bash
 git config --local core.hooksPath .githooks

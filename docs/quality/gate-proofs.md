@@ -1,46 +1,169 @@
 # ゲート発火の証明 — NeNe Docket
 
-> 記録: 2026-10-21 / Issue #1。以下は実行した結果のみ。
-> 関連: QLT-007 / QLT-011 / QLT-013 / ADR 0001
+> 記録: 2026-10-21 / Issue #1（文書だけ・第 3 節）、2026-10-21 / Issue #2（機械の移植・第 2〜8 節）。以下は実行した結果のみ。
+> 関連: QLT-007 / QLT-011 / QLT-013 / ADR 0001 / ADR 0005
 
 ## 1. 環境と範囲
 
-Issue #1 は文書だけである。**このリポジトリの道具で測ったゲートは 1 つも無い。** `Cargo.toml`・`xtask`・`Makefile` が無いので `make prove` は走らない。
+クラウドの Linux コンテナ（Ubuntu 24.04・x86_64）。rustc 1.98.0 / clippy 0.1.98 / rustfmt 1.9.0 / cargo-deny 0.20.2。
+これらは実測時の版であり、今後使う版の正本は `rust-toolchain.toml`（道具は `make doctor`）。
+Issue #2 の時点で製品コードは 0。workspace のメンバーは `xtask` だけ。表示を伴う確認は無い。
 
 ## 2. active の規則と、その証明
 
 CNF-009 は active の規則ごとに `| ID |` で始まる行がここにあることを要求する。
-**active の規則は無いので、行は無い。** Issue #2 で `make prove` を置き、発火した規則から行を足す。
 
 | 規則 | 最小の違反 | 検証経路 | 実測 |
 | --- | --- | --- | --- |
+| RS-001 | 非公開 newtype をモジュール外で直接構築 | `make prove` P-15 | E0603 |
+| RS-002 | `match` に `_`・variant の漏れ | P-04 / P-05 | `wildcard_enum_match_arm` / E0004 |
+| RS-003 | 未初期化・部分構築・`Default` | P-16 / P-17 ＋ CNF-001 | E0381 / E0063 / xtask |
+| RS-004 | `unwrap` | P-13 | `unwrap_used`（forbid） |
+| RS-005 | `unwrap`・slice の添字 | P-13 / P-14 | `unwrap_used` / `indexing_slicing` |
+| RS-006 | `dyn Any` | CNF-002 の反例テスト | xtask |
+| RS-007 | `as` で数値変換 | P-06 | `as_conversions` |
+| RS-008 | 未文書の公開関数 | P-09 | `missing_docs` |
+| RS-009 | `OnceLock` | P-18 ＋ CNF-002 | `unsafe_code` / xtask |
+| RS-010 | `unsafe` ブロック・`build.rs` | P-18 ＋ CNF-002 / CNF-008 | `unsafe_code` / xtask |
+| RS-011 | 認知的複雑度 13・62 行の関数 | P-11 / P-12 | `cognitive_complexity` / `too_many_lines` |
+| RS-012 | `mod.rs`・2 つ目の主要宣言 | P-10 ＋ CNF-003 | `mod_module_files` / xtask |
+| RS-013 | 束縛名 `data`・型名 `RulerManager` | P-26 ＋ CNF-004 | `disallowed-names` / xtask |
+| RS-014 | `println!` | P-19 | `print_stdout` |
+| RS-015 | core の `std::time`・ui の `std::env` | CNF-012 の反例テスト | xtask |
+| RS-016 | `HashMap` | P-07 | `disallowed-types` |
+| RS-017 | release で `255_u8 + 1_u8` | P-21 | `attempt to add with overflow`・終了 101 |
+| RS-018 | 型注釈の無いリテラル | P-08 | `default_numeric_fallback` |
+| RS-019 | forbid を `#[expect]`・腐った `#[expect]`・`#[allow]` | P-01 / P-02 / P-03 ＋ CNF-006 | E0453 / unfulfilled / `allow_attributes` |
+| ARC-002 | クレートの循環・xtask に依存を足す | P-23 ＋ CNF-013（実ファイル・第 8 節） | `cyclic package dependency` / xtask |
+| ARC-007 | adapters と store の外で `std::time` | CNF-012 の反例テスト | xtask |
+| ARC-013 | 許可外のライセンス・先回りの許可・lock 無し・xtask の依存 | P-24 / P-25 / P-22 ＋ CNF-013（実ファイル・第 8 節） | cargo-deny / `--locked` / xtask |
+| QLT-002 | lint・整形・言語の違反 | P-01〜P-20 | すべて非 0。復帰は 0 |
+| QLT-003 | `#[allow]`・`= "allow"`・`continue-on-error`・`rustfmt.toml` | P-03 ＋ CNF-011（実ファイル・第 8 節） | `allow_attributes`（forbid） / xtask |
+| QLT-004 | 一行に詰めた `main`・`rustfmt.toml` | P-20 ＋ CNF-011 | `Diff in`・終了 1 / xtask |
+| QLT-011 | `Cargo.lock` を消して `--locked`・lock が古い状態で `--locked` | P-22 ＋ 実ファイル（第 8 節） | 終了 101 |
+| CNF-001 | `Default` の derive・impl・穴埋め | xtask の正例・反例 | 反例は CNF-001、正例は 0 |
+| CNF-002 | `OnceLock`・proc-macro・`XlibSurface` / `XCBSurface` | 同上 | 反例は CNF-002 |
+| CNF-003 | 2 つ目の主要宣言 | 同上 | 反例は CNF-003。ローカル型は通る |
+| CNF-004 | 禁止語尾・禁止モジュール名 | 同上 | 反例は CNF-004。`TickProcessor` は通る |
+| CNF-006 | 無い規則 ID・ID の無い reason・複数行 | 同上 | 反例は CNF-006 |
+| CNF-007 | `-core` / `-application` に `#![no_std]` が無い | 同上 | 反例は CNF-007。bin は対象外。実ファイルは中核クレートが生まれてから |
+| CNF-008 | `build.rs`（`crates/app/build.rs` を含む）・マニフェストの `build = ` | 同上 | 反例は CNF-008。`rebuild.rs` は通る。例外は無い |
+| CNF-009 | 状態の不一致・行の欠落・証明の欠落・未定義 ID・雛形値・切れたリンク | 同上 ＋ 実ファイル（第 8 節） | 反例は CNF-009。マトリクスの 1 行を active にすると 2 件を報告した |
+| CNF-010 | Issue 番号の無い `FIXME` | 同上 ＋ 実ファイル（第 8 節） | 反例は CNF-010 |
+| CNF-011 | `rustfmt.toml`・`= "allow"`・`continue-on-error` | 同上 ＋ 実ファイル（第 8 節） | 反例は CNF-011 |
+| CNF-012 | core の `std::time`・app の `std::env::var`・`crates/app/build.rs` の `std::fs` | 同上 | 反例は CNF-012。adapters・store・`std::env::args` は通る |
+| CNF-013 | ui → adapters・core の外部 crate・xtask の依存 | 同上 ＋ 実ファイル（第 8 節） | 反例は CNF-013 |
+| CNF-014 | Windows のクレートの lint の表の 1 項目を緩める・消す | xtask の正例・反例 | 反例は CNF-014 を 2 件（rust と clippy の表）。正例と他のクレートは通る |
 
-## 3. Issue #1 で確かめたこと
+## 3. Issue #1 で確かめたこと（文書だけ）
 
-文書だけなので、確かめたのは文書の整合だけ。CNF-009 が機械で見る予定のものを手元の grep で見た。
+機械が無かったので、CNF-009 が見る予定のものを手元の grep で見た: 規則 ID の参照先の実在・相対リンク・マトリクスに active が無いこと・未置換の雛形値。
+Issue #2 で同じことを xtask の CNF-009 が見て、違反なしだった（第 8 節）。
 
-| 対象 | 方法 | 結果 |
+## 4. `make prove` の実出力（26 件・Issue #2）
+
+`cargo run -p xtask -- prove` が `target/proofs/` に最小 workspace を作り、本物の道具に違反を食わせた。
+各件は「落ちること」の後に元へ戻して「通ること」も確かめている（復帰の終了コードは 0）。nene-ruler の 26 件と同じ出力が出た。
+
+| # | 規則 | 命令 | 終了 | 実出力 |
+| --- | --- | --- | --- | --- |
+| P-01 | RS-019 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error[E0453]: expect(clippy::unwrap_used) incompatible with previous forbid` |
+| P-02 | RS-019 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error: this lint expectation is unfulfilled` |
+| P-03 | QLT-003 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error: #[allow] attribute found` |
+| P-04 | RS-002 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error: wildcard matches only a single variant and will also match any future added variants` |
+| P-05 | RS-002 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error[E0004]: non-exhaustive patterns: 'Mode::Mm' not covered` |
+| P-06 | RS-007 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error: using a potentially dangerous silent 'as' conversion` |
+| P-07 | RS-016 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error: use of a disallowed type 'std::collections::HashMap'` |
+| P-08 | RS-018 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error: default numeric fallback might occur` |
+| P-09 | RS-008 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error: missing documentation for a function` |
+| P-10 | RS-012 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error: 'mod.rs' files are not allowed, found 'probe/src/probe10/mod.rs'` |
+| P-11 | RS-011 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error: the function has a cognitive complexity of (13/10)` |
+| P-12 | RS-011 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error: this function has too many lines (62/60)` |
+| P-13 | RS-005 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error: used 'unwrap()' on 'Some' value` |
+| P-14 | RS-005 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error: indexing may panic` |
+| P-15 | RS-001 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error[E0603]: tuple struct constructor 'Id' is private` |
+| P-16 | RS-003 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error[E0381]: used binding 'z' isn't initialized` |
+| P-17 | RS-003 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error[E0063]: missing field 'b' in initializer of 'Config'` |
+| P-18 | RS-010 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error: usage of an 'unsafe' block` |
+| P-19 | RS-014 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error: use of 'println!'` |
+| P-26 | RS-013 | `cargo clippy --all-targets --quiet -- -D warnings` | 101 | `error: use of a disallowed/placeholder name 'data'` |
+| P-20 | QLT-004 | `cargo fmt --all --check` | 1 | `Diff in target/proofs/workspace/probe/src/main.rs:1:` |
+| P-21 | RS-017 | `cargo run --release -p probe` | 101 | `attempt to add with overflow` |
+| P-22 | QLT-011 | `cargo check --locked（Cargo.lock を消した状態）` | 101 | `error: cannot create the lock file target/proofs/workspace/Cargo.lock because --locked was passed to prevent this` |
+| P-23 | ARC-002 | `cargo check（a ⇄ b の循環）` | 101 | `error: cyclic package dependency: package 'a v0.0.0 (target/proofs/cycle/a)' depends on itself. Cycle:` |
+| P-24 | ARC-013 | `cargo deny --locked check licenses --deny license-not-encountered（allow = []）` | 4 | `│            rejected: license is not explicitly allowed` |
+| P-25 | ARC-013 | `cargo deny --locked check licenses --deny license-not-encountered（allow = ["MIT", "Apache-2.0"]）` | 4 | `error[license-not-encountered]: license was not encountered` |
+
+## 5. `xtask` の正例・反例（`cargo test -p xtask`・80 件）
+
+| 検査 | 件数 | テスト名 |
 | --- | --- | --- |
-| 規則 ID の参照先が実在する | 全 `.md` の `ARC-NNN` / `RS-NNN` / `QLT-NNN` / `CNF-NNN` / `GIT-NNN` を集め、`### ID —` の見出しと突き合わせ | Issue #1 の PR に記録 |
-| 相対リンクが切れていない | 全 `.md` の Markdown リンクのうち `:` を含まないものを、その文書からの相対で解決 | 同上 |
-| 強制マトリクスに active が無い | `docs/QUALITY_GATES.md` 第 3 節を grep | 同上 |
-| 未置換の雛形値が無い | 二重の波括弧で囲んだ値を grep | 同上 |
+| CNF-001 | 6 | cnf001_catches_derive_default, cnf001_catches_impl_default, cnf001_catches_struct_update_syntax, cnf001_ignores_clean_source, cnf001_ignores_markdown, cnf001_ignores_test_module |
+| CNF-002 | 4 | cnf002_catches_lazy_global, cnf002_catches_proc_macro_manifest, cnf002_catches_x_surfaces, cnf002_ignores_clean_source |
+| CNF-003 | 3 | cnf003_allows_single_declaration, cnf003_catches_second_declaration, cnf003_ignores_nested_declaration |
+| CNF-004 | 3 | cnf004_allows_context_dependent_name, cnf004_catches_forbidden_module_name, cnf004_catches_forbidden_suffix |
+| CNF-006 | 4 | cnf006_accepts_expect_citing_known_rule, cnf006_catches_reason_without_rule_id, cnf006_catches_unknown_rule_id, cnf006_reads_multiline_expect |
+| CNF-007 | 5 | cnf007_allows_core_crate_with_no_std, cnf007_catches_core_crate_without_no_std, cnf007_catches_no_std_after_real_code, cnf007_ignores_a_binary_crate, cnf007_requires_no_std_of_application_too |
+| CNF-008 | 4 | cnf008_catches_a_build_script, cnf008_catches_a_manifest_pointing_at_one, cnf008_catches_every_build_script, cnf008_ignores_a_similar_file_name |
+| CNF-009 | 11 | catches_active_without_proof, catches_broken_relative_link, catches_duplicate_definition, catches_missing_matrix_row, catches_missing_state, catches_state_mismatch, catches_template_placeholder, catches_undefined_rule_reference, consistent_documents_pass, first_state_line_wins_over_later_ones, ignores_external_and_anchor_links |
+| CNF-010 | 3 | cnf010_accepts_marker_with_issue, cnf010_catches_marker_without_issue, cnf010_ignores_markdown |
+| CNF-011 | 4 | cnf011_catches_continue_on_error, cnf011_catches_forbidden_filename, cnf011_catches_lint_set_to_allow, cnf011_ignores_clean_configuration |
+| CNF-012 | 8 | cnf012_allows_adapters, cnf012_allows_arguments_in_composition_root, cnf012_allows_the_windows_adapters_and_the_store, cnf012_catches_env_in_ui, cnf012_catches_files_and_commands_in_every_product_crate, cnf012_catches_other_env_in_composition_root, cnf012_catches_time_in_core, cnf012_ignores_xtask |
+| CNF-013 | 7 | cnf013_allows_application_depending_on_core_only, cnf013_allows_the_documented_direction, cnf013_catches_a_dependency_in_xtask, cnf013_catches_external_crate_in_core, cnf013_catches_ui_depending_on_adapters, cnf013_keeps_the_store_free_of_external_crates, cnf013_reads_target_specific_dependencies |
+| CNF-014 | 3 | cnf014_accepts_a_faithful_copy_with_unsafe_denied, cnf014_catches_a_loosened_or_missing_lint, cnf014_ignores_other_crates |
+| GIT-002 / GIT-003 / GIT-004 | 9 | accepts_the_documented_form, branch_names, breaking_commit_needs_footer_but_title_does_not, pull_request_passes_with_all_fields, pull_request_rejects_draft_missing_close_and_bad_title, rejects_english_description, rejects_missing_issue, rejects_unknown_type_and_bad_scope, rejects_zero_issue_and_long_subject |
+| 規則 ID の字句・prove の補助 | 6 | accepts_each_prefix, extracts_ids_from_prose, rejects_wrong_shapes, license_allow_replaces_only_the_license_list, probe_members_replaces_a_multi_line_list, probe_members_replaces_a_single_line_list |
 
-## 4. nene-ruler からの引用（本リポジトリの実測ではない）
+nene-ruler からの差分: CNF-008 のアイコンの例外を外した（`cnf008_catches_every_build_script`）、CNF-012 の除外を `store` に替えた（`cnf012_allows_the_windows_adapters_and_the_store`・`cnf012_catches_files_and_commands_in_every_product_crate`）、CNF-013 の許可表を NeNe Docket のクレート名にした（`cnf013_keeps_the_store_free_of_external_crates`）。
 
-本リポジトリの規範文書が引く P-01〜P-26 の実出力は、nene-ruler が rustc 1.98.0 で測ったものである
-（[nene-ruler の gate-proofs](https://github.com/hideyukiMORI/nene-ruler/blob/main/docs/quality/gate-proofs.md)）。
-同じ道具を同じ版で置けば同じ出力が出る見込みだが、**見込みは証明ではない。** Issue #2 でここに実出力を置くまで、どの規則も active と書かない。
+## 6. この手順で見つかったこと
 
-## 5. まだ証明していないこと
+- 移植した `check.rs` のテストを書き換えた直後、`make fmt-check` が落ちた（手で書いた `assert_eq!` の折り返し）。`make fmt` で直した。整形は検査であって修復ではない（QLT-004）ので、CI には直す経路が無い
+- 第 8 節の CNF-013 の実ファイル検査で `--offline` の `cargo run` を使ったところ、cargo が `Cargo.lock` に `serde` を書き込み、戻した後の `make conformance` が `--locked` で落ちた（`cannot update the lock file`）。`cargo generate-lockfile` で戻した。**lock が古い状態でのゲート通過を `--locked` が拒む**ことの、意図しない実ファイルでの発火である（QLT-011）
+- nene-ruler で見つかった欠陥（`indexing_slicing` が固定長配列の定数添字で発火しない）は、slice に直した P-14 を写したので再現しなかった
 
-- すべて。lint の二段構え・`xtask` の CNF・cargo-deny・rustfmt・rustdoc・`--locked`・クレートの循環拒否
+## 7. まだ証明していないこと
+
+- 中核クレートの実ファイルでの CNF-007 / CNF-012 / CNF-013 の発火（ARC-003）。クレートが無い
+- `make lint-windows` は `xtask` だけを Windows のターゲットで検査して 0 件。Windows の 2 クレートの `#[expect(unsafe_code)]` と CNF-014 の実ファイルは、クレートが生まれてから
+- `make coverage`（QLT-009）。中核が無い。`cargo-llvm-cov` も未導入
 - CI の `make ci` と commit-msg フックの実行証拠（最初の PR で得る）
 - ruleset（`main` の保護・squash-only）。未設定
-- 併合の決定性（同じ操作の集合を別の順で読んでも同じ状態になること）。core が生まれてから
-- Xvfb での表示・Windows の実機・SMB の上での同時編集
+- 併合の決定性・Xvfb での表示・Windows の実機・SMB の上での同時編集
 
-## 6. 再現（Issue #2 以降）
+## 8. Issue #2 — 機械の移植（2026-10-21）
+
+同じコンテナ。製品コード 0・workspace は `xtask` だけ。
+
+### 8.1 ゲート
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` | 差分なし（`make fmt` の後） |
+| `make lint` | 0 件 |
+| `make lint-windows` | 0 件（`xtask` だけ） |
+| `make test` | xtask 80 件、すべて成功 |
+| `make conformance` | 違反なし（38 ファイル） |
+| `make deny` | advisories / bans / licenses / sources すべて ok。`cargo deny list` は `MIT (1): xtask@0.1.0` |
+| `make doc-check` | 警告なし |
+| `make build` | release の `xtask` が組めた |
+| `make prove` | 26 件成功（第 4 節） |
+| `make validate-git` | **GIT-002 で落ちる**: `invalid branch name claude/cloud-session-qus6l5`。クラウドセッションの harness が割り当てた枝名で、GIT-002 の形ではない。コミットの件名（GIT-003）は通った。CI では PR の head で見るので、同じ理由で落ちる（COMMIT_CONVENTIONS の GIT-002 に扱いを書いた） |
+| `make doctor` | rustc 1.98.0 / cargo-deny 0.20.2 / cairo 1.18.0 / Xvfb / ImageMagick。無いのは cargo-llvm-cov・xdotool・mingw-w64 |
+
+### 8.2 実ファイルでの規約検査の発火
+
+| 規則 | やったこと | `make conformance` の実出力 |
+| --- | --- | --- |
+| CNF-009 | `docs/QUALITY_GATES.md` の強制マトリクスで ARC-004 の行だけを `active` にした | `CNF-009: docs/QUALITY_GATES.md — ARC-004 の本文の状態とマトリクスの行が一致しない` と `CNF-009: docs/quality/gate-proofs.md — ARC-004 は active だが証明行が無い` の 2 件 |
+| CNF-011 | `rustfmt.toml` を置いた | `CNF-011: rustfmt.toml — baseline・抑制一覧・整形の別設定は置かない（QLT-003 / QLT-004）` |
+| CNF-010 | `Makefile` の末尾に Issue 番号の無いタスクの印を足した | `CNF-010: Makefile:115 — タスクの印には同じ行に Issue 番号（#N）が要る（QLT-008）` |
+| CNF-013（ARC-002 / ARC-013） | `xtask/Cargo.toml` に `serde = "1"` を足した（`--locked` が先に落ちるので `cargo run --offline -p xtask -- conformance` で実行） | `CNF-013: xtask/Cargo.toml:18 — serde への依存は xtask/ に許されていない（ARC-002 / ARC-013）` |
+| QLT-011（意図せず） | 上の `--offline` で `Cargo.lock` が更新された状態で `make conformance` | `error: cannot update the lock file … because --locked was passed to prevent this`・終了 101 |
+
+元に戻した後の `make conformance`: `規約違反なし（検査 38 ファイル）`。
+
+## 9. 再現
 
 ```bash
 make prove

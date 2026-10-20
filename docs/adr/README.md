@@ -20,10 +20,10 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0002](0002-no-toolkit-x11rb-cairo-win32-direct2d.md) | X11 は x11rb ＋ cairo、Windows は Win32 ＋ Direct2D。UI ツールキットを使わず、部品は自前で描く | 受理 |
 | [0003](0003-diff-scoped-verification-and-result-reuse.md) | 差分に必要な検証と成功結果の再利用 | 受理 |
 | [0004](0004-append-only-journal-per-account.md) | 台帳はアカウントごとの追記専用ジャーナルの併合。サーバもロックも無い | 受理 |
+| [0005](0005-rust-foundation-and-measured-limits.md) | Rust の検査基盤と実測できた限界を固定する | 受理 |
 
 ## これから書くもの（Issue が立ったら）
 
-- Rust の検査基盤と実測できた限界（nene-ruler ADR 0003 の再測定。Issue #2）
 - 文字入力（IME）の方式（FR-015）
 - 署名と鍵の方式・依存（FR-010）
 - スナップショット（ジャーナルが長くなったとき・FR-017）

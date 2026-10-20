@@ -5,9 +5,9 @@
 > 規範の本文は [ARCHITECTURE_CONSTITUTION.md](ARCHITECTURE_CONSTITUTION.md) と
 > [CODING_RULES.md](CODING_RULES.md)、機械側の実体はこの文書に対応する。出典は nene-ruler `docs/QUALITY_GATES.md`。
 
-🔴 **Issue #1 の時点で、機械で守られているものは 1 つも無い。** `Cargo.toml`・`xtask`・`Makefile`・CI・フックはまだ無い。
-したがって第 3 節の強制マトリクスは **active を 1 行も持たない**。本文に書く「実体」は Issue #2 で置く予定の仕組みであり、
-置いて発火を実測し [quality/gate-proofs.md](quality/gate-proofs.md) に行を足してから、1 つずつ active に書き換える。
+🔴 Issue #2 で nene-ruler の機械（lint の表・`clippy.toml`・`deny.toml`・`xtask`・`Makefile`・CI・フック）を移植し、
+`make prove`（26 件）と `cargo test -p xtask`（80 件）と実ファイルでの発火でこのリポジトリの道具で測った規則だけを active にした（[quality/gate-proofs.md](quality/gate-proofs.md)・[ADR 0005](adr/0005-rust-foundation-and-measured-limits.md)）。
+製品クレートはまだ無いので、中核クレートの実ファイルが要る規則（ARC-003）と CI の実行証拠が要る規則（GIT / QLT-005）は planned のまま。
 
 完了条件は、差分の挙動と直接の依存・呼び出し元に必要な最小限の検証が成功し、その根拠・対象・結果・再利用条件が記録されていること。
 既存の個別 target（`make lint` / `make test` / …）と対象指定を使う。全件（`make check REASON=…`）は既定ではない
@@ -32,7 +32,7 @@
 
 `rustfmt` の差分・clippy の指摘・rustdoc の警告はすべて失敗にする。重大度の引き下げは禁止。
 
-- 機械強制: **planned**（clippy `-D warnings`・`cargo fmt --check`・`RUSTDOCFLAGS=-D warnings`。Issue #2）
+- 機械強制: **active**（clippy `-D warnings`・`cargo fmt --check`・`RUSTDOCFLAGS=-D warnings`。実測は `make prove` の P-01〜P-20）
 
 ### QLT-003 — baseline を作らない
 
@@ -40,13 +40,13 @@
 lint を `allow` に落とす設定・`continue-on-error`・`--cap-lints`・`rustfmt.toml`・`baseline` と名の付くファイルは CNF-011 が拒む。
 **例外機構は `#[expect]` だけで、それは理由と規則 ID を要求し、腐れば落ちる（RS-019）。**
 
-- 機械強制: **planned**（`allow_attributes` の forbid ＋ CNF-011）
+- 機械強制: **active**（`allow_attributes` の forbid（P-03）＋ CNF-011）
 
 ### QLT-004 — 整形は検査であって修復ではない
 
 整形は rustfmt の既定から決定的に決まる。CI がソースを書き換えて成功させることはしない。`rustfmt.toml` を置かない。
 
-- 機械強制: **planned**（`cargo fmt --all --check`。`rustfmt.toml` の禁止＝CNF-011）
+- 機械強制: **active**（`cargo fmt --all --check`。実測 P-20。`rustfmt.toml` の禁止＝CNF-011）
 
 ### QLT-005 — ローカルと CI は同一
 
@@ -84,7 +84,7 @@ nene-ruler では `indexing_slicing` が固定長配列の定数添字を「安�
 中核（core / application）の region カバレッジ下限を 90% とする。閾値は上げてよいが下げてはならない。下げるには ADR が要る。
 **置いていない層は「置いていない」と書く。** 分岐は stable の rustc では測れないので、単位は region（nene-ruler ADR 0010 の継承）。
 
-- 機械強制: **planned**（`make coverage` の `--fail-under-regions 90`。中核が生まれてから置く）
+- 機械強制: **planned**（`make coverage` の `--fail-under-regions 90`。target は在るが中核クレートが無いので測れない。中核が生まれてから active にする）
 
 ### QLT-010 — ゲートの弱体化はアーキテクチャ変更
 
@@ -98,7 +98,7 @@ MUST 規則を弱める変更には ADR が要る。**無関係な作業を通�
 道具の版は `rust-toolchain.toml` にだけ書く（`Makefile` にも CI にも書かない）。依存は `Cargo.lock` で固定し、ゲートは `--locked` で走る。
 lock が更新される状態でのゲート通過を拒む。
 
-- 機械強制: **planned**（`--locked`。cargo-deny の取得元の制限＝ARC-013）
+- 機械強制: **active**（`--locked`。実測 P-22。cargo-deny の取得元の制限＝ARC-013）
 
 ### QLT-012 — 検証の頻度は変更に従う
 
@@ -122,7 +122,7 @@ Xvfb の上での表示確認は自動でも「仮想の X サーバでの確認
 ## 2. 規約検査の規則（CNF-0xx）— `xtask`
 
 lint が見ないもの、つまり**このリポジトリ固有の規約**を検査する。依存ゼロで書き、`make conformance` から常に呼ぶ。
-各規則には正例・反例の単体テストを付け、`make test` に結線する（QLT-007）。nene-ruler の `xtask` を出発点にし、クレート名と除外の表だけを変える。
+各規則には正例・反例の単体テストを付け、`make test` に結線する（QLT-007）。nene-ruler の `xtask` を写し、クレート名・CNF-008 の例外（無し）・CNF-012 の除外・CNF-013 の許可表だけを変えた（Issue #2）。
 
 🔴 **`.rs` は桁 0 の `#[cfg(test)]` が現れた行より後を見ない**（テストは意図的な違反を書く場所）。
 🔴 **検出語は `concat!` で分割して書く**（検査器が自分自身を違反として報告しないため）。
@@ -132,21 +132,21 @@ lint が見ないもの、つまり**このリポジトリ固有の規約**を�
 `#[derive(Default)]`・`impl Default for`・`..Default::default()` を拒む。生成経路は唯一のファクトリに限る。
 
 - 対応する規則: RS-003
-- 機械強制: **planned**（`xtask`・Issue #2）
+- 機械強制: **active**（`xtask`）
 
 ### CNF-002 — 禁止構文
 
 `dyn Any`・`OnceLock`・`LazyLock`・`lazy_static`・`proc-macro = true`・`XlibSurface`・`XCBSurface` を拒む。
 
 - 対応する規則: RS-006 / RS-009 / RS-010 / ADR 0002
-- 機械強制: **planned**（`xtask`）
+- 機械強制: **active**（`xtask`）
 
 ### CNF-003 — 1 ファイル 1 主要宣言
 
 桁 0 の `struct` / `enum` / `trait` / `union` を数える。2 つ目を拒む。関数内のローカル型は数えない。
 
 - 対応する規則: RS-012
-- 機械強制: **planned**（`xtask`）
+- 機械強制: **active**（`xtask`）
 
 ### CNF-004 — 役割を語らない名前
 
@@ -154,7 +154,7 @@ lint が見ないもの、つまり**このリポジトリ固有の規約**を�
 判断が要る語（`Processor` 等）は拒まない。
 
 - 対応する規則: RS-013
-- 機械強制: **planned**（`xtask`）
+- 機械強制: **active**（`xtask`）
 
 ### CNF-005 — 不変条件を持つ型は単独のモジュールに置く
 
@@ -166,42 +166,42 @@ lint が見ないもの、つまり**このリポジトリ固有の規約**を�
 `reason = "<規則 ID>: <理由>"` の形で、ID が規範文書の `### ID` 見出しに実在すること。複数行の `#[expect]` も 1 件として読む。
 
 - 対応する規則: RS-019
-- 機械強制: **planned**（`xtask`）
+- 機械強制: **active**（`xtask`）
 
 ### CNF-007 — 中核クレートは `#![no_std]` を宣言する
 
 名前が `-core` / `-application` で終わるクレートの `src/lib.rs` の先頭の属性行群に `#![no_std]` があること。
 
 - 対応する規則: ARC-003 / RS-015
-- 機械強制: **planned**（`xtask`）
+- 機械強制: **active**（`xtask`）
 
 ### CNF-008 — `build.rs` を置かない
 
 `build.rs` そのものと、マニフェストの `build = ` を拒む。例外は無い。アイコンを埋める必要が出たら ADR で 1 つだけ足し、検査で固定する。
 
 - 対応する規則: RS-010
-- 機械強制: **planned**（`xtask`）
+- 機械強制: **active**（`xtask`）
 
 ### CNF-009 — 文書整合
 
 規則 ID の重複定義・機械強制の状態の欠落・本文とマトリクスの不一致・active の証明行の欠落・未定義 ID の参照・切れた相対リンク・未置換の雛形値を拒む。
 
 - 対応する規則: QLT-007 / ADR 0001
-- 機械強制: **planned**（`xtask`。Issue #1 では相対リンクと ID の定義を手元の grep で確かめた）
+- 機械強制: **active**（`xtask`。Issue #2 で実ファイルの発火を記録した。gate-proofs 第 8 節）
 
 ### CNF-010 — `TODO` / `FIXME` に Issue 番号
 
 `.rs` / `.toml` / `.yml` / `Makefile` のタスクの印は同じ行に `#N` を持つ。
 
 - 対応する規則: QLT-008
-- 機械強制: **planned**（`xtask`）
+- 機械強制: **active**（`xtask`）
 
 ### CNF-011 — baseline とゲート無力化の禁止
 
 `baseline` / `suppressions` / `rustfmt.toml` の名を持つファイル、`= "allow"`・`continue-on-error: true`・`--cap-lints`・`-A warnings` を拒む。
 
 - 対応する規則: QLT-003 / QLT-004
-- 機械強制: **planned**（`xtask`）
+- 機械強制: **active**（`xtask`）
 
 ### CNF-012 — 決定性の入力 API
 
@@ -209,21 +209,21 @@ lint が見ないもの、つまり**このリポジトリ固有の規約**を�
 `crates/adapters-x11/`・`crates/adapters-windows/`・`crates/store/` は除外。`crates/app/` は `std::env::args` だけを許す。テストにも適用する。
 
 - 対応する規則: ARC-007 / RS-015
-- 機械強制: **planned**（`xtask`。マクロ・別名・間接呼び出しは字句では見えない）
+- 機械強制: **active**（`xtask`。マクロ・別名・間接呼び出しは字句では見えない）
 
 ### CNF-013 — クレート間の依存は許可された向きだけ
 
 `crates/*/Cargo.toml` と `xtask/Cargo.toml` の `[dependencies]` と `[target.….dependencies]` を [PROJECT_LAYOUT.md](PROJECT_LAYOUT.md) 第 2 節の許可表と照合する。内部クレートは向き、中核・`store`・`xtask` は外部クレート 0。
 
 - 対応する規則: ARC-002 / ARC-013
-- 機械強制: **planned**（`xtask`）
+- 機械強制: **active**（`xtask`）
 
 ### CNF-014 — `unsafe` を許す 2 クレートの lint の表は workspace と同じ
 
 `crates/adapters-windows/Cargo.toml` と `crates/ui-win32/Cargo.toml` の `[lints.rust]` / `[lints.clippy]` が、workspace の `[workspace.lints.rust]` / `[workspace.lints.clippy]` と同じであることを見る。違ってよいのは `unsafe_code = "deny"` だけ（Cargo は継承した表の 1 項目だけを変えられないので、2 クレートは表を写す・ADR 0002）。
 
 - 対応する規則: RS-010 / QLT-003 / QLT-010
-- 機械強制: **planned**（`xtask`）
+- 機械強制: **active**（`xtask`）
 
 ---
 
@@ -231,77 +231,76 @@ lint が見ないもの、つまり**このリポジトリ固有の規約**を�
 
 規範の各規則が、いまどの層で守られているか。**この表が実装と食い違ったら merge を止める。**
 CNF-009 が「本文に定義があるのにここに行が無い」「状態が本文と違う」「active に証明行が無い」を拒否する。
-🔴 Issue #1 の時点で active は 1 行も無い。「実体」の欄は Issue #2 で置く予定を書いている。
 
 | 規則 | 状態 | 機械強制の実体 |
 | --- | --- | --- |
 | ARC-001 | planned | レビュー事項（CNF-004 と `pub_use` が温床を減らす） |
-| ARC-002 | planned | cargo の循環拒否 ＋ CNF-013（予定） |
-| ARC-003 | planned | CNF-007（`#![no_std]`）＋ CNF-013（予定） |
+| ARC-002 | active | cargo の循環拒否（P-23）＋ CNF-013（実ファイル: gate-proofs 第 8 節） |
+| ARC-003 | planned | CNF-007（`#![no_std]`）＋ CNF-013 は在る。中核クレートの実ファイルで発火させてから |
 | ARC-004 | planned | |
 | ARC-005 | planned | |
-| ARC-006 | planned | CNF-002 と RS-014 が一部を守る（予定） |
-| ARC-007 | planned | CNF-012（予定） |
+| ARC-006 | planned | CNF-002 と RS-014 が一部を守る |
+| ARC-007 | active | CNF-012 |
 | ARC-008 | planned | レビュー事項 |
 | ARC-009 | planned | |
-| ARC-010 | planned | RS-005 が panic を塞ぐ（予定） |
+| ARC-010 | planned | RS-005 が panic を塞ぐ |
 | ARC-011 | planned | |
 | ARC-012 | 不能 | QLT-010 の手続き |
-| ARC-013 | planned | `wildcard_dependencies`・`--locked`・cargo-deny・CNF-013（予定） |
-| RS-001 | planned | E0603（予定） |
-| RS-002 | planned | E0004 ＋ `wildcard_enum_match_arm`（予定） |
-| RS-003 | planned | E0381・E0063・CNF-001（予定） |
-| RS-004 | planned | `unwrap_used` / `expect_used` の forbid（予定） |
-| RS-005 | planned | forbid 群 ＋ `panic_in_result_fn` / `unwrap_in_result`（予定） |
-| RS-006 | planned | CNF-002（予定） |
-| RS-007 | planned | `as_conversions`（予定） |
-| RS-008 | planned | `missing_docs` 等（予定） |
-| RS-009 | planned | `unsafe_code` の forbid ＋ CNF-002（予定） |
-| RS-010 | planned | `unsafe_code`・CNF-002・CNF-008。Windows の 2 クレートは `deny` と `#[expect]`・`undocumented_unsafe_blocks`・CNF-014（予定） |
-| RS-011 | planned | `cognitive_complexity`・`too_many_lines`（予定） |
-| RS-012 | planned | `mod_module_files` ＋ CNF-003（予定） |
-| RS-013 | planned | `disallowed-names` ＋ CNF-004（予定） |
-| RS-014 | planned | `print_stdout` / `print_stderr`（予定） |
-| RS-015 | planned | CNF-012（予定） |
-| RS-016 | planned | `disallowed-types` ＋ `iter_over_hash_type`（予定） |
-| RS-017 | planned | `overflow-checks`（予定） |
-| RS-018 | planned | `default_numeric_fallback`（予定） |
-| RS-019 | planned | forbid の抑制不能・腐った抑制・`#[allow]` の禁止・CNF-006（予定） |
+| ARC-013 | active | `wildcard_dependencies`・`--locked`（P-22）・cargo-deny（P-24 / P-25）・CNF-013（実ファイル: gate-proofs 第 8 節） |
+| RS-001 | active | E0603（P-15） |
+| RS-002 | active | E0004（P-05）＋ `wildcard_enum_match_arm`（P-04） |
+| RS-003 | active | E0381（P-16）・E0063（P-17）・CNF-001 |
+| RS-004 | active | `unwrap_used` / `expect_used` の forbid（P-13） |
+| RS-005 | active | forbid 群（P-13 / P-14）＋ `panic_in_result_fn` / `unwrap_in_result` |
+| RS-006 | active | CNF-002 |
+| RS-007 | active | `as_conversions`（P-06） |
+| RS-008 | active | `missing_docs` 等（P-09） |
+| RS-009 | active | `unsafe_code` の forbid ＋ CNF-002 |
+| RS-010 | active | `unsafe_code`（P-18）・CNF-002・CNF-008。Windows の 2 クレートは `deny` と `#[expect]`・`undocumented_unsafe_blocks`・CNF-014（ADR 0002） |
+| RS-011 | active | `cognitive_complexity`（P-11）・`too_many_lines`（P-12） |
+| RS-012 | active | `mod_module_files`（P-10）＋ CNF-003 |
+| RS-013 | active | `disallowed-names`（P-26）＋ CNF-004 |
+| RS-014 | active | `print_stdout` / `print_stderr`（P-19） |
+| RS-015 | active | CNF-012 |
+| RS-016 | active | `disallowed-types`（P-07）＋ `iter_over_hash_type` |
+| RS-017 | active | `overflow-checks`（P-21） |
+| RS-018 | active | `default_numeric_fallback`（P-08） |
+| RS-019 | active | forbid の抑制不能（P-01）・腐った抑制（P-02）・`#[allow]` の禁止（P-03）・CNF-006 |
 | GIT-001 | planned | PR テンプレート＋`make ci`（`Closes #N`） |
 | GIT-002 | planned | ruleset＋`make ci`（head ブランチ名） |
 | GIT-003 | planned | `.githooks/commit-msg`＋`make ci`（全コミットと PR タイトル） |
 | GIT-004 | planned | PR テンプレート＋`make ci`（欄）＋ruleset（squash-only） |
 | QLT-001 | planned | `make check` の `REASON` 要求 |
-| QLT-002 | planned | clippy `-D warnings`・rustfmt・rustdoc（予定） |
-| QLT-003 | planned | `allow_attributes` の forbid ＋ CNF-011（予定） |
-| QLT-004 | planned | `cargo fmt --check` ＋ CNF-011（予定） |
+| QLT-002 | active | clippy `-D warnings`・rustfmt・rustdoc（P-01〜P-20） |
+| QLT-003 | active | `allow_attributes` の forbid（P-03）＋ CNF-011 |
+| QLT-004 | active | `cargo fmt --check`（P-20）＋ CNF-011 |
 | QLT-005 | planned | |
 | QLT-006 | planned | |
 | QLT-007 | planned | `make prove` と `xtask` のテスト。証明の網羅は人手 |
 | QLT-008 | planned | レビュー事項 |
-| QLT-009 | planned | `make coverage`（region 90%・中核が生まれてから） |
+| QLT-009 | planned | `make coverage`（region 90%）。中核クレートが生まれてから |
 | QLT-010 | 不能 | PR の手続き |
-| QLT-011 | planned | `rust-toolchain.toml` ＋ `--locked`（予定） |
+| QLT-011 | active | `rust-toolchain.toml` ＋ `--locked`（P-22） |
 | QLT-012 | planned | |
 | QLT-013 | planned | |
-| CNF-001 | planned | xtask（予定） |
-| CNF-002 | planned | xtask（予定） |
-| CNF-003 | planned | xtask（予定） |
-| CNF-004 | planned | xtask（予定） |
+| CNF-001 | active | xtask / `cargo test -p xtask` |
+| CNF-002 | active | xtask / `cargo test -p xtask` |
+| CNF-003 | active | xtask / `cargo test -p xtask` |
+| CNF-004 | active | xtask / `cargo test -p xtask` |
 | CNF-005 | planned | |
-| CNF-006 | planned | xtask（予定） |
-| CNF-007 | planned | xtask（予定） |
-| CNF-008 | planned | xtask（予定） |
-| CNF-009 | planned | xtask（予定） |
-| CNF-010 | planned | xtask（予定） |
-| CNF-011 | planned | xtask（予定） |
-| CNF-012 | planned | xtask（予定） |
-| CNF-013 | planned | xtask（予定） |
-| CNF-014 | planned | xtask（予定） |
+| CNF-006 | active | xtask / `cargo test -p xtask` |
+| CNF-007 | active | xtask / `cargo test -p xtask` |
+| CNF-008 | active | xtask / `cargo test -p xtask` |
+| CNF-009 | active | xtask / `cargo test -p xtask`（実ファイル: gate-proofs 第 8 節） |
+| CNF-010 | active | xtask / `cargo test -p xtask`（実ファイル: gate-proofs 第 8 節） |
+| CNF-011 | active | xtask / `cargo test -p xtask`（実ファイル: gate-proofs 第 8 節） |
+| CNF-012 | active | xtask / `cargo test -p xtask` |
+| CNF-013 | active | xtask / `cargo test -p xtask`（実ファイル: gate-proofs 第 8 節） |
+| CNF-014 | active | xtask / `cargo test -p xtask` |
 
 ---
 
-## 4. `make` の target に入れる層（Issue #2 で置く）
+## 4. `make` の target に入っている層
 
 | target | 目的 | 実体 |
 | --- | --- | --- |
@@ -333,4 +332,4 @@ CNF-009 が「本文に定義があるのにここに行が無い」「状態が
 `main` への直接 push・force push・ブランチ削除は禁止する。
 
 🔴 **リポジトリ設定（ruleset）を適用したら、その事実を [quality/gate-proofs.md](quality/gate-proofs.md) に記録する。**
-**設定していないものを「必須になっている」と書かない。** Issue #1 の時点で ruleset も CI も未設定である。
+**設定していないものを「必須になっている」と書かない。** Issue #2 の時点で ruleset は未設定。CI（`check.yml` → `make ci`）は配線済みだが、最初の PR で実行証拠を得るまで GIT-00x と QLT-005 は planned。

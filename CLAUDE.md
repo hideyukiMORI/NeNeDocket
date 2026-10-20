@@ -29,8 +29,7 @@ Claude Code / AI エージェントがこのリポジトリで作業するため
 2. **ゲートを弱めて通さない。** 検査が落ちたらコードを直す。閾値・`forbid` の降格・免除・`deny.toml` を触るのは ADR 相当の判断（QLT-010）
 3. **`planned` を `active` と書かない。** 未実装の強制を実装済みに見せるのは、この規約体系で唯一「壊す」行為（[ADR 0001](docs/adr/0001-strictness-is-mechanically-enforced.md)）
 
-🔴 **Issue #1 の時点で機械は 1 つも無く、すべての規則が planned である。** `make` も `xtask` も CI もまだ無い。
-Issue #2 で nene-ruler の機械を移植し、このリポジトリで発火を測ってから 1 つずつ active にする。
+🔴 製品クレートはまだ無い。中核の実ファイルが要る規則（ARC-003）と CI の実行証拠が要る規則（GIT / QLT-005）は planned のまま。
 
 ---
 
@@ -90,7 +89,7 @@ X のイベント（`x11rb::protocol::Event`）だけは開いた集合なので
 
 ---
 
-## 3. 検証コマンド（Issue #2 で置く）
+## 3. 検証コマンド
 
 差分の挙動・直接の依存先と呼び出し元から、起こり得る退行を検出する最小限の検証を選ぶ。
 何が壊れる可能性を確認するか説明できない検証は実行しない。`make` の個別 target と `cargo test -p <crate> <name>` を使う。
@@ -150,8 +149,8 @@ Issue / 規則 ID:
 
 現在のタスクは [docs/todo/current.md](docs/todo/current.md)。GitHub Issue が正で、そこは要約。
 
-2026-10-21: Issue #1 で規範文書と ADR 0001〜0004 の初版を置いた。**文書だけ。** 製品コードも機械（Cargo / xtask / Makefile / CI）も無く、すべての規則が planned。
-次は Issue #2（機械の移植と `make prove`）、その次に IME と署名の ADR、そして最初の縦切り。
+2026-10-21: Issue #1 で規範文書と ADR 0001〜0004 の初版を置いた。Issue #2 で nene-ruler の機械（lint の表・clippy.toml・deny.toml・xtask・Makefile・CI・フック）を移植し、`make prove` 26 件・`cargo test -p xtask` 80 件・実ファイルの発火を記録して、測れた規則を active にした（ADR 0005）。
+製品クレートはまだ無い。次は IME の ADR、そして最初の縦切り（core / application / store / ui-x11）。
 
 ---
 
@@ -159,7 +158,7 @@ Issue / 規則 ID:
 
 クラウドのコンテナ（Claude Code on the web）が主戦場。Linux で、実ディスプレイは無い。
 表示は Xvfb の上で窓を出し `import` で PNG を撮って Read で見る。人が触る手応え・Windows の見え・ネットワーク共有の上での同時編集は施主の実機で確かめる。
-道具の有無は `make doctor`（Issue #2）。環境の setup script に置く行は [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md) 第 9 節。
+道具の有無は `make doctor`。環境の setup script に置く行は [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md) 第 9 節。
 
 ---
 

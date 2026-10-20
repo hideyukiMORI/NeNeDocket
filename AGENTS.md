@@ -13,8 +13,9 @@ the normative documents live in [docs/](docs/).
 
 ## Status
 
-Issue #1 (2026-10-21) put the documents in place. **There is no code and no machinery yet** (no `Cargo.toml`, `xtask`, `Makefile`, CI).
-Every rule in `docs/QUALITY_GATES.md` is `planned`. Issue #2 ports nene-ruler's machinery and measures it here before any rule becomes `active`.
+Issue #1 (2026-10-21) put the documents in place. Issue #2 ported nene-ruler's machinery (`[workspace.lints]`, `clippy.toml`, `deny.toml`, `xtask`, `Makefile`, CI, hooks)
+and measured it here: `make prove` (26 real-tool proofs) and `cargo test -p xtask` (80). The rules that fired are `active` in `docs/QUALITY_GATES.md`; the rest stay `planned`.
+**There is no product code yet.** The workspace holds only `xtask`.
 
 ## Required reading before changing production code
 
@@ -42,7 +43,7 @@ Then the active issue and the relevant accepted ADRs.
 - Do not claim a command passed unless it was actually executed.
 - Prefer the smallest change that fully follows the canonical path.
 
-## Verification (once Issue #2 lands)
+## Verification
 
 Pick the narrowest checks the diff needs (`make lint`, `make test`, `make conformance`, `make deny`, `make doc-check`).
 Any change to `merge` must run the test that reads the same ops in a different order and expects the same state.
