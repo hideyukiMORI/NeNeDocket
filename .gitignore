@@ -1,0 +1,16 @@
+# ビルド成果物と実測の出力。アンカーして誤爆を防ぐ
+/target/
+/out/
+/dist/
+**/*.rs.bk
+# エディタ・OS
+.DS_Store
+*.swp
+.idea/
+.vscode/
+*Zone.Identifier
+# 秘密物は絶対に入れない（保険）
+.env
+.env.*
+*.pem
+*.key
