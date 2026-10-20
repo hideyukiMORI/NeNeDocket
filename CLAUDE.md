@@ -29,7 +29,7 @@ Claude Code / AI エージェントがこのリポジトリで作業するため
 2. **ゲートを弱めて通さない。** 検査が落ちたらコードを直す。閾値・`forbid` の降格・免除・`deny.toml` を触るのは ADR 相当の判断（QLT-010）
 3. **`planned` を `active` と書かない。** 未実装の強制を実装済みに見せるのは、この規約体系で唯一「壊す」行為（[ADR 0001](docs/adr/0001-strictness-is-mechanically-enforced.md)）
 
-🔴 製品クレートはまだ無い。中核の実ファイルが要る規則（ARC-003）と CI の実行証拠が要る規則（GIT / QLT-005）は planned のまま。
+🔴 CI の実行証拠が要る規則（GIT / QLT-005）は planned のまま。UI・store・application のクレートはまだ無い。
 
 ---
 
@@ -77,7 +77,7 @@ X のイベント（`x11rb::protocol::Event`）だけは開いた集合なので
 
 ### 部品の配置と当たり判定は core。UI は描くだけ
 
-表・セレクトボックス・入力欄の矩形と「押したら何か」は core が物理画素で計算する。UI に業務の判断（並び・選択肢・状態遷移）を置かない（ARC-011）。
+即時モード（ADR 0006）。UI は毎フレーム `Interaction::begin(入力)` → 部品ごとに `probe(ID, 矩形)` → `end()` と回し、`button` / `text_field` / `select_box` などが返す `DrawCommand` の列を描く。文字の幅は core が知らないので、カーソルは文字の添字で渡り、UI がフォントで位置に直す。UI に業務の判断（並び・選択肢・状態遷移）を置かない（ARC-011）。
 
 ### 1 ファイル 1 主要宣言・`mod.rs` を作らない
 
@@ -85,7 +85,7 @@ X のイベント（`x11rb::protocol::Event`）だけは開いた集合なので
 
 ### 検査器は自分自身も検査対象
 
-`xtask` に検出語を書くときは `concat!` で割る。`#[cfg(test)]` より後は見ない。
+`xtask` に検出語を書くときは `concat!` で割る。`#[cfg(test)]` の次が `mod` の所より後は見ない（`#[cfg(test)] extern crate std;` では止まらない）。
 
 ---
 
@@ -150,7 +150,7 @@ Issue / 規則 ID:
 現在のタスクは [docs/todo/current.md](docs/todo/current.md)。GitHub Issue が正で、そこは要約。
 
 2026-10-21: Issue #1 で規範文書と ADR 0001〜0004 の初版を置いた。Issue #2 で nene-ruler の機械（lint の表・clippy.toml・deny.toml・xtask・Makefile・CI・フック）を移植し、`make prove` 26 件・`cargo test -p xtask` 80 件・実ファイルの発火を記録して、測れた規則を active にした（ADR 0005）。
-製品クレートはまだ無い。次は IME の ADR、そして最初の縦切り（core / application / store / ui-x11）。
+Issue #4 で部品の核（即時モード・ADR 0006）を `crates/core` に置き、ARC-003 と QLT-009 を active にした。次は X11 の窓（ui-x11 と adapters-x11）で表 1 枚を出し、IME を実測して ADR にする。
 
 ---
 

@@ -15,9 +15,30 @@ use crate::source_file::SourceFile;
 use crate::violation::Violation;
 
 /// 本番コードの行だけを、1 始まりの行番号付きで返す。
+///
+/// 🔴 終わりは「桁 0 の `#[cfg(test)]` の次の行が `mod` で始まる所」。`#[cfg(test)] extern crate std;` のような
+/// 1 項目だけの印で止まると、`lib.rs` の残り全部が検査から外れる（NeNe Docket Issue #4 で実ファイルで見つけた穴）。
 fn production_lines(file: &SourceFile) -> impl Iterator<Item = (usize, &str)> {
+    let end = test_module_start(file).unwrap_or(usize::MAX);
     file.numbered_lines()
-        .take_while(|&(_, line)| line.trim_end() != "#[cfg(test)]")
+        .take_while(move |&(number, _)| number < end)
+}
+
+/// テストのモジュールの `#[cfg(test)]` の行番号。無ければ `None`。
+fn test_module_start(file: &SourceFile) -> Option<usize> {
+    let mut lines = file.numbered_lines().peekable();
+    while let Some((number, line)) = lines.next() {
+        if line.trim_end() != "#[cfg(test)]" {
+            continue;
+        }
+        let next_is_module = lines.peek().is_some_and(|&(_, next)| {
+            next.starts_with("mod ") || next.starts_with("pub(crate) mod ")
+        });
+        if next_is_module {
+            return Some(number);
+        }
+    }
+    None
 }
 
 /// CNF-001 — `Default` はファクトリを迂回する門なので、実装も derive も書かせない（RS-003）。
@@ -612,9 +633,18 @@ mod tests {
     fn cnf001_ignores_test_module() {
         let file = fixture(
             "a.rs",
-            "struct A;\n#[cfg(test)]\n#[derive(Default)]\nstruct B;\n",
+            "struct A;\n#[cfg(test)]\nmod tests {\n    #[derive(Default)]\n    struct B;\n}\n",
         );
         assert!(no_default_construction(&file).is_empty());
+    }
+
+    #[test]
+    fn cnf001_sees_past_a_single_item_cfg_test_but_not_the_test_module() {
+        let file = fixture(
+            "crates/core/src/lib.rs",
+            "#![no_std]\n#[cfg(test)]\nextern crate std;\n#[derive(Default)]\nstruct A;\n#[cfg(test)]\nmod tests {\n    #[derive(Default)]\n    struct B;\n}\n",
+        );
+        assert_eq!(no_default_construction(&file).len(), 1);
     }
 
     #[test]

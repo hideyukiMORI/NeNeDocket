@@ -65,7 +65,8 @@ validate-git:
 ## 導入: cargo install cargo-llvm-cov --locked
 coverage:
 	@command -v cargo-llvm-cov >/dev/null || { echo "coverage: cargo-llvm-cov が無い。cargo install cargo-llvm-cov --locked"; exit 2; }
-	$(CARGO) llvm-cov -p nene-docket-core -p nene-docket-application --locked --summary-only --fail-under-regions 90
+## application ができたら -p nene-docket-application を足す。
+	$(CARGO) llvm-cov -p nene-docket-core --locked --summary-only --fail-under-regions 90
 
 ## deny — 依存の許可制（ARC-013）。方針の正本は deny.toml。
 ## 🔴 --deny license-not-encountered を外さないこと。

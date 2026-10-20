@@ -23,7 +23,7 @@
 文書整合検査（CNF-009）が「本書に定義があるのにマトリクスに行が無い」「active に証明行が無い」を拒否する。
 
 🔴 Issue #2 で機械を置き、このリポジトリの道具で発火を実測した規則だけを active にした（`make prove`・[gate-proofs](quality/gate-proofs.md)・[ADR 0005](adr/0005-rust-foundation-and-measured-limits.md)）。
-製品クレートはまだ無いので、中核の実ファイルが要るもの（ARC-003）は planned のまま。
+Issue #4 で `crates/core` が生まれ、中核の実ファイルで CNF-007 / CNF-012 / CNF-013 を発火させた（gate-proofs 第 9 節）。
 
 ### 強制の責務を分ける
 
@@ -87,7 +87,7 @@ Undo はジャーナルを書き換えず、逆の操作を追記する（ADR 00
 🔑 中核クレートは `#![no_std]` ＋ `extern crate alloc` で書く。`std::fs` / `std::env` / `std::time` が
 lint 違反ではなく**名前解決エラー**になる。宣言そのものが消えていないことは CNF-007 が見る。
 
-- 機械強制: **planned**（`#![no_std]` の宣言＝CNF-007、外部 crate の禁止＝CNF-013。検査器と正例・反例は在るが、中核クレートが無いので実ファイルでの発火は未。最初の縦切りで記録してから active にする）
+- 機械強制: **active**（`#![no_std]` の宣言＝CNF-007、外部 crate の禁止＝CNF-013。Issue #4 で `crates/core/src/lib.rs` の `#![no_std]` を外して CNF-007 を、`std::time` を書いて E0433 と CNF-012 を、`regex` を足して CNF-013 を実ファイルで発火させた。[gate-proofs](quality/gate-proofs.md) 第 9 節）
 
 ### ARC-004 — 状態には唯一の所有者がいる
 

@@ -1,7 +1,8 @@
-# 🔴 空の将来用クレートは作らない（PROJECT_LAYOUT 第 1 節）。Issue #2 の時点のメンバーは xtask だけ。
+# 🔴 空の将来用クレートは作らない（PROJECT_LAYOUT 第 1 節）。クレートは具体的な責務とソースができたときに足す。
 [workspace]
 resolver = "3"
 members = [
+    "crates/core",
     "xtask",
 ]
 

@@ -2,7 +2,7 @@
 
 > Status: normative（規範）/ 2026-10-21 初版
 > ここに載っている語は、コード・ドキュメント・Issue で**同じ意味**で使う。同義語を発明しない。
-> 型／場所の欄はまだ実装が無いので、Issue #2 以降で置く予定の名前である。
+> 型／場所の欄は、core に在るものは実名、まだ無いものは置く予定の名前である。
 
 | 語 | 意味 | 型／場所 |
 | --- | --- | --- |
@@ -34,13 +34,14 @@
 | ポートの束 | 合成ルートが中核へ渡すポートの組 | `Ports`（application） |
 | 合成ルート | 依存を結ぶ唯一の場所。端末と終了コードを持つ | `crates/app`（`main`） |
 | 表示フレーム | 最新の状態から生成する、描くための値の組 | `DocketFrame`（application） |
-| 部品（widget） | 自前で描く UI の要素。表・ヘッダ・セレクトボックス・入力欄・ボタン・スクロールバー | `Widget`（core・閉じた `enum`） |
-| 配置（layout） | 部品の矩形を物理画素で決めたもの。当たり判定もここから | `Layout`（core） |
-| 当たり判定 | クリックを受ける物理画素の矩形と、そこを押したときの意味 | `HitRegion` / `HitTarget`（core） |
+| 部品（widget） | 自前で描く UI の要素。矩形と状態と判定から描画命令を返す純関数 | `button` / `checkbox` / `text_field` / `select_box` / `scroll_bar`（core）・ADR 0006 |
+| 配置（layout） | 段を上から積み列に割る。表は見えている行だけを計算する | `Layout` / `TableLayout`（core） |
+| 判定（interaction） | フレームをまたぐ状態の持ち主。押している部品とフォーカス。部品ごとに矩形と ID を問い合わせ、ホバー・押下・クリック・フォーカスを返す | `Interaction` / `Response`（core）・ADR 0006 |
 | 意図（intent） | 利用者の操作を application に渡す閉じた型 | `DocketIntent`（application） |
-| 編集状態 | 開いている入力欄の文字列・カーソル・選択・確定前の文字列・直前の拒否 | `EditSession`（application） |
-| 確定前の文字列（preedit） | IME が組み立て中の文字列。確定で操作になる | `EditSession::preedit` |
-| 反映（render） | 決まった値を画素へ写す操作。UI 状態を変えてよい唯一の場所 | `render*`（ui-x11 / ui-win32） |
+| 編集状態 | 入力欄の文字列・カーソル・選択・確定前の文字列。位置は文字の添字 | `TextEdit`（core）。直前の拒否は `EditSession`（application） |
+| 確定前の文字列（preedit） | IME が組み立て中の文字列。確定で操作になる | `Preedit`（core）・`TextEdit::with_preedit` |
+| 描画命令 | core が出し UI が描く列。塗り・縁・文字（カーソルは文字の添字）・切り抜き。色は意味（`Paint`）で渡す | `DrawCommand` / `Paint`（core） |
+| 反映（render） | 描画命令を画素へ写す操作。UI 状態を変えてよい唯一の場所 | `render*`（ui-x11 / ui-win32） |
 | 隔離区画 | 可変性を許した唯一の場所 | ARC-005 の表 |
 | 規約検査（conformance） | NeNe Docket 固有の自作ゲート | `xtask`（CNF-NNN） |
 | 抑制 | `#[expect(lint, reason = "<規則 ID>: …")]`。理由付きで、発火しなくなれば落ちる | RS-019 |

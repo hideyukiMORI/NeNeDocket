@@ -21,6 +21,7 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0003](0003-diff-scoped-verification-and-result-reuse.md) | 差分に必要な検証と成功結果の再利用 | 受理 |
 | [0004](0004-append-only-journal-per-account.md) | 台帳はアカウントごとの追記専用ジャーナルの併合。サーバもロックも無い | 受理 |
 | [0005](0005-rust-foundation-and-measured-limits.md) | Rust の検査基盤と実測できた限界を固定する | 受理 |
+| [0006](0006-widget-kernel-in-core.md) | 部品の核は即時モードで core に置く。既製の部品ライブラリは入れない | 受理 |
 
 ## これから書くもの（Issue が立ったら）
 

@@ -2,7 +2,7 @@
 
 A small, fast issue tracker for Windows and X11. Rust, no UI toolkit, no server.
 
-> **Status (2026-10-21):** rules and gates are in place and measured (`make prove`, 26 proofs). There is no product code yet; the workspace holds only the checker (`xtask`).
+> **Status (2026-10-21):** rules and gates are in place and measured (`make prove`, 26 proofs). `crates/core` holds the widget kernel (layout, hit testing, focus, text editing, draw commands; `#![no_std]`, zero dependencies, 99.7% region coverage). No window yet.
 
 ## What it will be
 

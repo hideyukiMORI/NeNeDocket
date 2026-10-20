@@ -1,7 +1,7 @@
 # ゲート発火の証明 — NeNe Docket
 
-> 記録: 2026-10-21 / Issue #1（文書だけ・第 3 節）、2026-10-21 / Issue #2（機械の移植・第 2〜8 節）。以下は実行した結果のみ。
-> 関連: QLT-007 / QLT-011 / QLT-013 / ADR 0001 / ADR 0005
+> 記録: 2026-10-21 / Issue #1（文書だけ・第 3 節）、2026-10-21 / Issue #2（機械の移植・第 2〜8 節）、2026-10-21 / Issue #4（部品の核・第 9 節）。以下は実行した結果のみ。
+> 関連: QLT-007 / QLT-011 / QLT-013 / ADR 0001 / ADR 0005 / ADR 0006
 
 ## 1. 環境と範囲
 
@@ -35,24 +35,26 @@ CNF-009 は active の規則ごとに `| ID |` で始まる行がここにある
 | RS-018 | 型注釈の無いリテラル | P-08 | `default_numeric_fallback` |
 | RS-019 | forbid を `#[expect]`・腐った `#[expect]`・`#[allow]` | P-01 / P-02 / P-03 ＋ CNF-006 | E0453 / unfulfilled / `allow_attributes` |
 | ARC-002 | クレートの循環・xtask に依存を足す | P-23 ＋ CNF-013（実ファイル・第 8 節） | `cyclic package dependency` / xtask |
-| ARC-007 | adapters と store の外で `std::time` | CNF-012 の反例テスト | xtask |
+| ARC-003 | core の `#![no_std]` を外す・core で `std::time` を読む・core に `regex` を足す | CNF-007 / CNF-012 / CNF-013（実ファイル・第 9 節）＋ `cargo check` | xtask / E0433 |
+| ARC-007 | adapters と store の外で `std::time` | CNF-012 の反例テスト ＋ 実ファイル（第 9 節） | xtask |
 | ARC-013 | 許可外のライセンス・先回りの許可・lock 無し・xtask の依存 | P-24 / P-25 / P-22 ＋ CNF-013（実ファイル・第 8 節） | cargo-deny / `--locked` / xtask |
 | QLT-002 | lint・整形・言語の違反 | P-01〜P-20 | すべて非 0。復帰は 0 |
 | QLT-003 | `#[allow]`・`= "allow"`・`continue-on-error`・`rustfmt.toml` | P-03 ＋ CNF-011（実ファイル・第 8 節） | `allow_attributes`（forbid） / xtask |
 | QLT-004 | 一行に詰めた `main`・`rustfmt.toml` | P-20 ＋ CNF-011 | `Diff in`・終了 1 / xtask |
+| QLT-009 | 実測値（region 99.71%）より上の下限 100 を置く | `cargo llvm-cov … --fail-under-regions 100`（第 9 節） | 終了 1。下限 90 の `make coverage` は終了 0 |
 | QLT-011 | `Cargo.lock` を消して `--locked`・lock が古い状態で `--locked` | P-22 ＋ 実ファイル（第 8 節） | 終了 101 |
 | CNF-001 | `Default` の derive・impl・穴埋め | xtask の正例・反例 | 反例は CNF-001、正例は 0 |
 | CNF-002 | `OnceLock`・proc-macro・`XlibSurface` / `XCBSurface` | 同上 | 反例は CNF-002 |
-| CNF-003 | 2 つ目の主要宣言 | 同上 | 反例は CNF-003。ローカル型は通る |
+| CNF-003 | 2 つ目の主要宣言 | 同上 ＋ 実ファイル（第 9 節） | 反例は CNF-003。ローカル型は通る |
 | CNF-004 | 禁止語尾・禁止モジュール名 | 同上 | 反例は CNF-004。`TickProcessor` は通る |
 | CNF-006 | 無い規則 ID・ID の無い reason・複数行 | 同上 | 反例は CNF-006 |
-| CNF-007 | `-core` / `-application` に `#![no_std]` が無い | 同上 | 反例は CNF-007。bin は対象外。実ファイルは中核クレートが生まれてから |
+| CNF-007 | `-core` / `-application` に `#![no_std]` が無い | 同上 ＋ 実ファイル（第 9 節） | 反例は CNF-007。bin は対象外 |
 | CNF-008 | `build.rs`（`crates/app/build.rs` を含む）・マニフェストの `build = ` | 同上 | 反例は CNF-008。`rebuild.rs` は通る。例外は無い |
 | CNF-009 | 状態の不一致・行の欠落・証明の欠落・未定義 ID・雛形値・切れたリンク | 同上 ＋ 実ファイル（第 8 節） | 反例は CNF-009。マトリクスの 1 行を active にすると 2 件を報告した |
 | CNF-010 | Issue 番号の無い `FIXME` | 同上 ＋ 実ファイル（第 8 節） | 反例は CNF-010 |
 | CNF-011 | `rustfmt.toml`・`= "allow"`・`continue-on-error` | 同上 ＋ 実ファイル（第 8 節） | 反例は CNF-011 |
-| CNF-012 | core の `std::time`・app の `std::env::var`・`crates/app/build.rs` の `std::fs` | 同上 | 反例は CNF-012。adapters・store・`std::env::args` は通る |
-| CNF-013 | ui → adapters・core の外部 crate・xtask の依存 | 同上 ＋ 実ファイル（第 8 節） | 反例は CNF-013 |
+| CNF-012 | core の `std::time`・app の `std::env::var`・`crates/app/build.rs` の `std::fs` | 同上 ＋ 実ファイル（第 9 節） | 反例は CNF-012。adapters・store・`std::env::args` は通る |
+| CNF-013 | ui → adapters・core の外部 crate・xtask の依存 | 同上 ＋ 実ファイル（第 8 節・第 9 節） | 反例は CNF-013 |
 | CNF-014 | Windows のクレートの lint の表の 1 項目を緩める・消す | xtask の正例・反例 | 反例は CNF-014 を 2 件（rust と clippy の表）。正例と他のクレートは通る |
 
 ## 3. Issue #1 で確かめたこと（文書だけ）
@@ -94,11 +96,11 @@ Issue #2 で同じことを xtask の CNF-009 が見て、違反なしだった�
 | P-24 | ARC-013 | `cargo deny --locked check licenses --deny license-not-encountered（allow = []）` | 4 | `│            rejected: license is not explicitly allowed` |
 | P-25 | ARC-013 | `cargo deny --locked check licenses --deny license-not-encountered（allow = ["MIT", "Apache-2.0"]）` | 4 | `error[license-not-encountered]: license was not encountered` |
 
-## 5. `xtask` の正例・反例（`cargo test -p xtask`・80 件）
+## 5. `xtask` の正例・反例（`cargo test -p xtask`・81 件）
 
 | 検査 | 件数 | テスト名 |
 | --- | --- | --- |
-| CNF-001 | 6 | cnf001_catches_derive_default, cnf001_catches_impl_default, cnf001_catches_struct_update_syntax, cnf001_ignores_clean_source, cnf001_ignores_markdown, cnf001_ignores_test_module |
+| CNF-001 | 7 | cnf001_catches_derive_default, cnf001_catches_impl_default, cnf001_catches_struct_update_syntax, cnf001_ignores_clean_source, cnf001_ignores_markdown, cnf001_ignores_test_module, cnf001_sees_past_a_single_item_cfg_test_but_not_the_test_module（Issue #4） |
 | CNF-002 | 4 | cnf002_catches_lazy_global, cnf002_catches_proc_macro_manifest, cnf002_catches_x_surfaces, cnf002_ignores_clean_source |
 | CNF-003 | 3 | cnf003_allows_single_declaration, cnf003_catches_second_declaration, cnf003_ignores_nested_declaration |
 | CNF-004 | 3 | cnf004_allows_context_dependent_name, cnf004_catches_forbidden_module_name, cnf004_catches_forbidden_suffix |
@@ -121,13 +123,12 @@ nene-ruler からの差分: CNF-008 のアイコンの例外を外した（`cnf0
 - 移植した `check.rs` のテストを書き換えた直後、`make fmt-check` が落ちた（手で書いた `assert_eq!` の折り返し）。`make fmt` で直した。整形は検査であって修復ではない（QLT-004）ので、CI には直す経路が無い
 - 第 8 節の CNF-013 の実ファイル検査で `--offline` の `cargo run` を使ったところ、cargo が `Cargo.lock` に `serde` を書き込み、戻した後の `make conformance` が `--locked` で落ちた（`cannot update the lock file`）。`cargo generate-lockfile` で戻した。**lock が古い状態でのゲート通過を `--locked` が拒む**ことの、意図しない実ファイルでの発火である（QLT-011）
 - nene-ruler で見つかった欠陥（`indexing_slicing` が固定長配列の定数添字で発火しない）は、slice に直した P-14 を写したので再現しなかった
+- 🔴 **Issue #4: `#[cfg(test)] extern crate std;` が検査を止めていた。** 検査器は「桁 0 の `#[cfg(test)]` より後を見ない」と決めていたが、`lib.rs` の先頭にある `#[cfg(test)] extern crate std;`（`no_std` のテストに要る）がそれに当たり、`lib.rs` の残り全部が CNF-001〜013 の対象外になっていた。`lib.rs` の末尾に `std::time` を書いても CNF-012 が鳴らず、実ファイルの発火で見つけた。nene-ruler の `xtask` にも同じ穴がある（還流点）。終わりを「`#[cfg(test)]` の次の行が `mod` で始まる所」に強め、正例・反例（`cnf001_sees_past_a_single_item_cfg_test_but_not_the_test_module`）を足し、`cnf001_ignores_test_module` の fixture を `mod tests` の形に直した
 
 ## 7. まだ証明していないこと
 
-- 中核クレートの実ファイルでの CNF-007 / CNF-012 / CNF-013 の発火（ARC-003）。クレートが無い
-- `make lint-windows` は `xtask` だけを Windows のターゲットで検査して 0 件。Windows の 2 クレートの `#[expect(unsafe_code)]` と CNF-014 の実ファイルは、クレートが生まれてから
-- `make coverage`（QLT-009）。中核が無い。`cargo-llvm-cov` も未導入
-- CI の `make ci` と commit-msg フックの実行証拠（最初の PR で得る）
+- `make lint-windows` は `xtask` と `core` を Windows のターゲットで検査して 0 件。Windows の 2 クレートの `#[expect(unsafe_code)]` と CNF-014 の実ファイルは、クレートが生まれてから
+- CI の `make ci` と commit-msg フックの実行証拠（最初の PR で得る。commit-msg フックは手元で #2 と #4 のコミットで動いた）
 - ruleset（`main` の保護・squash-only）。未設定
 - 併合の決定性・Xvfb での表示・Windows の実機・SMB の上での同時編集
 
@@ -163,10 +164,45 @@ nene-ruler からの差分: CNF-008 のアイコンの例外を外した（`cnf0
 
 元に戻した後の `make conformance`: `規約違反なし（検査 38 ファイル）`。
 
-## 9. 再現
+## 9. Issue #4 — 部品の核を core に置く（2026-10-21）
+
+同じコンテナ。`crates/core`（`nene-docket-core`・`#![no_std]`・依存 0）が生まれた。rustc 1.98.0 / cargo-llvm-cov 0.9.1。
+
+### 9.1 ゲート
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` | 差分なし |
+| `make lint` | 0 件（`#[expect]` は 0） |
+| `make lint-windows` | 0 件 |
+| `make test` | core 49・xtask 81、すべて成功 |
+| `make conformance` | 違反なし（68 ファイル） |
+| `make doc-check` | 警告なし |
+| `make coverage` | core: regions 99.71%（2442 中 7 が未到達）・functions 100%・lines 100%。下限 90 で終了 0 |
+
+### 9.2 実ファイルでの発火
+
+| 規則 | やったこと | 実出力 |
+| --- | --- | --- |
+| CNF-007（ARC-003） | `crates/core/src/lib.rs` の `#![no_std]` を注釈に | `CNF-007: crates/core/src/lib.rs — nene-docket-core は中核クレートだが、先頭の属性に #![no_std] が無い（ARC-003）` |
+| ARC-003（構造） | `lib.rs` の末尾に `std::time::SystemTime::now()` を呼ぶ関数を足して `cargo check -p nene-docket-core` | `error[E0433]: cannot find module or crate std in this scope`。`no_std` なので lint 以前に名前解決で落ちる |
+| CNF-012（ARC-007） | 同じ関数で `make conformance` | 初回は**鳴らなかった**（第 6 節の穴）。検査器を直した後: `CNF-012: crates/core/src/lib.rs:46 — std::time はアダプタと store の外で読まない（ARC-007）` |
+| CNF-003（RS-012） | `pixel_point.rs` のテストの前に 2 つ目の `pub struct Second;` | `CNF-003: crates/core/src/pixel_point.rs:37 — Second は 2 つ目の主要宣言（1 つ目は PixelPoint）。ファイルを分ける（RS-012）` |
+| CNF-013（ARC-002 / ARC-013） | `crates/core/Cargo.toml` に `regex = "1"`（`--offline` で実行） | `CNF-013: crates/core/Cargo.toml:16 — regex への依存は crates/core/ に許されていない（ARC-002 / ARC-013）` |
+| QLT-009 | `cargo llvm-cov -p nene-docket-core --locked --summary-only --fail-under-regions 100` | 表は同じ値（99.71%）で出し、**終了 1**。下限 90 の `make coverage` は終了 0 |
+
+元に戻した後の `make conformance`: `規約違反なし（検査 68 ファイル）`。
+
+### 9.3 まだ証明していないこと（Issue #4）
+
+- 1 万件の表の配置が 16 ms に収まること（FR-002）。`TableLayout::visible_rows` が見えている行だけを返すことは単体テストで見たが、時間は窓を出してから測る
+- 描画命令が 2 OS で同じ画素になること。UI クレートが無い
+
+## 10. 再現
 
 ```bash
 make prove
 cargo test -p xtask
 make conformance
+make coverage
 ```

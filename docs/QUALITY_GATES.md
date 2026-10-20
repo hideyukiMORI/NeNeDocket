@@ -7,7 +7,7 @@
 
 🔴 Issue #2 で nene-ruler の機械（lint の表・`clippy.toml`・`deny.toml`・`xtask`・`Makefile`・CI・フック）を移植し、
 `make prove`（26 件）と `cargo test -p xtask`（80 件）と実ファイルでの発火でこのリポジトリの道具で測った規則だけを active にした（[quality/gate-proofs.md](quality/gate-proofs.md)・[ADR 0005](adr/0005-rust-foundation-and-measured-limits.md)）。
-製品クレートはまだ無いので、中核クレートの実ファイルが要る規則（ARC-003）と CI の実行証拠が要る規則（GIT / QLT-005）は planned のまま。
+Issue #4 で `crates/core` が生まれ、中核の実ファイルで CNF-007 / CNF-012 / CNF-013 を発火させて ARC-003 を、`make coverage` の下限で QLT-009 を active にした。CI の実行証拠が要る規則（GIT / QLT-005）は planned のまま。
 
 完了条件は、差分の挙動と直接の依存・呼び出し元に必要な最小限の検証が成功し、その根拠・対象・結果・再利用条件が記録されていること。
 既存の個別 target（`make lint` / `make test` / …）と対象指定を使う。全件（`make check REASON=…`）は既定ではない
@@ -84,7 +84,7 @@ nene-ruler では `indexing_slicing` が固定長配列の定数添字を「安�
 中核（core / application）の region カバレッジ下限を 90% とする。閾値は上げてよいが下げてはならない。下げるには ADR が要る。
 **置いていない層は「置いていない」と書く。** 分岐は stable の rustc では測れないので、単位は region（nene-ruler ADR 0010 の継承）。
 
-- 機械強制: **planned**（`make coverage` の `--fail-under-regions 90`。target は在るが中核クレートが無いので測れない。中核が生まれてから active にする）
+- 機械強制: **active**（`make coverage` の `--fail-under-regions 90`。実測値と発火は [gate-proofs](quality/gate-proofs.md) 第 9 節。application ができたら `-p` に足す）
 
 ### QLT-010 — ゲートの弱体化はアーキテクチャ変更
 
@@ -124,7 +124,7 @@ Xvfb の上での表示確認は自動でも「仮想の X サーバでの確認
 lint が見ないもの、つまり**このリポジトリ固有の規約**を検査する。依存ゼロで書き、`make conformance` から常に呼ぶ。
 各規則には正例・反例の単体テストを付け、`make test` に結線する（QLT-007）。nene-ruler の `xtask` を写し、クレート名・CNF-008 の例外（無し）・CNF-012 の除外・CNF-013 の許可表だけを変えた（Issue #2）。
 
-🔴 **`.rs` は桁 0 の `#[cfg(test)]` が現れた行より後を見ない**（テストは意図的な違反を書く場所）。
+🔴 **`.rs` は、桁 0 の `#[cfg(test)]` の次の行が `mod` で始まる所より後を見ない**（テストは意図的な違反を書く場所）。`#[cfg(test)] extern crate std;` のような 1 項目だけの印では止まらない（Issue #4 で実ファイルで見つけた穴）。
 🔴 **検出語は `concat!` で分割して書く**（検査器が自分自身を違反として報告しないため）。
 
 ### CNF-001 — `Default` の禁止
@@ -236,7 +236,7 @@ CNF-009 が「本文に定義があるのにここに行が無い」「状態が
 | --- | --- | --- |
 | ARC-001 | planned | レビュー事項（CNF-004 と `pub_use` が温床を減らす） |
 | ARC-002 | active | cargo の循環拒否（P-23）＋ CNF-013（実ファイル: gate-proofs 第 8 節） |
-| ARC-003 | planned | CNF-007（`#![no_std]`）＋ CNF-013 は在る。中核クレートの実ファイルで発火させてから |
+| ARC-003 | active | CNF-007（`#![no_std]`）＋ CNF-013（外部 crate の禁止）。実ファイル発火と `std` の名前解決エラー E0433 は gate-proofs 第 9 節 |
 | ARC-004 | planned | |
 | ARC-005 | planned | |
 | ARC-006 | planned | CNF-002 と RS-014 が一部を守る |
@@ -278,7 +278,7 @@ CNF-009 が「本文に定義があるのにここに行が無い」「状態が
 | QLT-006 | planned | |
 | QLT-007 | planned | `make prove` と `xtask` のテスト。証明の網羅は人手 |
 | QLT-008 | planned | レビュー事項 |
-| QLT-009 | planned | `make coverage`（region 90%）。中核クレートが生まれてから |
+| QLT-009 | active | `make coverage`（region 90%）。発火は gate-proofs 第 9 節 |
 | QLT-010 | 不能 | PR の手続き |
 | QLT-011 | active | `rust-toolchain.toml` ＋ `--locked`（P-22） |
 | QLT-012 | planned | |
