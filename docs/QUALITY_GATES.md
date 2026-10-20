@@ -7,7 +7,7 @@
 
 🔴 Issue #2 で nene-ruler の機械（lint の表・`clippy.toml`・`deny.toml`・`xtask`・`Makefile`・CI・フック）を移植し、
 `make prove`（26 件）と `cargo test -p xtask`（80 件）と実ファイルでの発火でこのリポジトリの道具で測った規則だけを active にした（[quality/gate-proofs.md](quality/gate-proofs.md)・[ADR 0005](adr/0005-rust-foundation-and-measured-limits.md)）。
-Issue #4 で `crates/core` が生まれ、中核の実ファイルで CNF-007 / CNF-012 / CNF-013 を発火させて ARC-003 を、`make coverage` の下限で QLT-009 を active にした。CI の実行証拠が要る規則（GIT / QLT-005）は planned のまま。
+Issue #4 で `crates/core` が生まれ、中核の実ファイルで CNF-007 / CNF-012 / CNF-013 を発火させて ARC-003 を、`make coverage` の下限で QLT-009 を active にした。PR #3 で CI が `make ci` を走らせ、QLT-005 と GIT-001 / GIT-003 を active にした。ruleset が要る GIT-002 / GIT-004 は planned のまま。
 
 完了条件は、差分の挙動と直接の依存・呼び出し元に必要な最小限の検証が成功し、その根拠・対象・結果・再利用条件が記録されていること。
 既存の個別 target（`make lint` / `make test` / …）と対象指定を使う。全件（`make check REASON=…`）は既定ではない
@@ -53,7 +53,7 @@ lint を `allow` に落とす設定・`continue-on-error`・`--cap-lints`・`rus
 CI で必要な判定は、すべてローカルで実行できる。CI の workflow は `make ci` を呼び、PR のメタデータを環境変数で渡すだけ。
 判定のロジックを workflow に書かない。検査を足したくなったら、まず `Makefile` と `xtask` に足す。
 
-- 機械強制: **planned**（最初の PR で `make ci` の CI 実行証拠を得てから active にする）
+- 機械強制: **active**（`check.yml` は `make ci` を呼ぶだけ。PR #3 の実行 39517454232 で、手元と同じ `GIT-002: invalid branch name` が CI でも出た・[gate-proofs](quality/gate-proofs.md) 第 10 節）
 
 ### QLT-006 — アーキテクチャは実行可能
 
@@ -266,15 +266,15 @@ CNF-009 が「本文に定義があるのにここに行が無い」「状態が
 | RS-017 | active | `overflow-checks`（P-21） |
 | RS-018 | active | `default_numeric_fallback`（P-08） |
 | RS-019 | active | forbid の抑制不能（P-01）・腐った抑制（P-02）・`#[allow]` の禁止（P-03）・CNF-006 |
-| GIT-001 | planned | PR テンプレート＋`make ci`（`Closes #N`） |
-| GIT-002 | planned | ruleset＋`make ci`（head ブランチ名） |
-| GIT-003 | planned | `.githooks/commit-msg`＋`make ci`（全コミットと PR タイトル） |
-| GIT-004 | planned | PR テンプレート＋`make ci`（欄）＋ruleset（squash-only） |
+| GIT-001 | active | PR テンプレート＋`make ci`（`Closes #N`）。CI の実行は gate-proofs 第 10 節 |
+| GIT-002 | planned | `make ci`（head ブランチ名）は CI で落ちた。ruleset（main の保護）が未設定 |
+| GIT-003 | active | `.githooks/commit-msg`＋`make ci`（全コミットと PR タイトル）。CI の実行は gate-proofs 第 10 節 |
+| GIT-004 | planned | PR テンプレート＋`make ci`（欄）は CI で動いた。ruleset（squash-only）が未設定 |
 | QLT-001 | planned | `make check` の `REASON` 要求 |
 | QLT-002 | active | clippy `-D warnings`・rustfmt・rustdoc（P-01〜P-20） |
 | QLT-003 | active | `allow_attributes` の forbid（P-03）＋ CNF-011 |
 | QLT-004 | active | `cargo fmt --check`（P-20）＋ CNF-011 |
-| QLT-005 | planned | |
+| QLT-005 | active | `check.yml` → `make ci` だけ。CI と手元が同じ出力（gate-proofs 第 10 節） |
 | QLT-006 | planned | |
 | QLT-007 | planned | `make prove` と `xtask` のテスト。証明の網羅は人手 |
 | QLT-008 | planned | レビュー事項 |
@@ -332,4 +332,4 @@ CNF-009 が「本文に定義があるのにここに行が無い」「状態が
 `main` への直接 push・force push・ブランチ削除は禁止する。
 
 🔴 **リポジトリ設定（ruleset）を適用したら、その事実を [quality/gate-proofs.md](quality/gate-proofs.md) に記録する。**
-**設定していないものを「必須になっている」と書かない。** Issue #2 の時点で ruleset は未設定。CI（`check.yml` → `make ci`）は配線済みだが、最初の PR で実行証拠を得るまで GIT-00x と QLT-005 は planned。
+**設定していないものを「必須になっている」と書かない。** ruleset は未設定。CI（`check.yml` → `make ci`）は PR #3 で動いた（gate-proofs 第 10 節）が、必須 check にするのは ruleset の仕事であり、設定して記録するまで GIT-002 / GIT-004 は planned。

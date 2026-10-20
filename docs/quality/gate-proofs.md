@@ -41,6 +41,9 @@ CNF-009 は active の規則ごとに `| ID |` で始まる行がここにある
 | QLT-002 | lint・整形・言語の違反 | P-01〜P-20 | すべて非 0。復帰は 0 |
 | QLT-003 | `#[allow]`・`= "allow"`・`continue-on-error`・`rustfmt.toml` | P-03 ＋ CNF-011（実ファイル・第 8 節） | `allow_attributes`（forbid） / xtask |
 | QLT-004 | 一行に詰めた `main`・`rustfmt.toml` | P-20 ＋ CNF-011 | `Diff in`・終了 1 / xtask |
+| QLT-005 | harness の枝名の PR を Ready にする | CI の `check`（`make ci`）・第 10 節 | CI でも手元と同じ `GIT-002: invalid branch name`・終了 2 |
+| GIT-001 | PR 本文に `Closes #N` が無い | xtask の反例 `pull_request_rejects_draft_missing_close_and_bad_title` ＋ CI の実行（第 10 節） | xtask / CI は `Closes #1` のある本文を通した |
+| GIT-003 | 英語の説明・Issue 番号なし・不正な type | xtask の反例 ＋ commit-msg フック ＋ CI の実行（第 10 節） | xtask / 手元のフックが #2 と #4 で動いた / CI は 3 コミットと PR タイトルを通した |
 | QLT-009 | 実測値（region 99.71%）より上の下限 100 を置く | `cargo llvm-cov … --fail-under-regions 100`（第 9 節） | 終了 1。下限 90 の `make coverage` は終了 0 |
 | QLT-011 | `Cargo.lock` を消して `--locked`・lock が古い状態で `--locked` | P-22 ＋ 実ファイル（第 8 節） | 終了 101 |
 | CNF-001 | `Default` の derive・impl・穴埋め | xtask の正例・反例 | 反例は CNF-001、正例は 0 |
@@ -128,7 +131,7 @@ nene-ruler からの差分: CNF-008 のアイコンの例外を外した（`cnf0
 ## 7. まだ証明していないこと
 
 - `make lint-windows` は `xtask` と `core` を Windows のターゲットで検査して 0 件。Windows の 2 クレートの `#[expect(unsafe_code)]` と CNF-014 の実ファイルは、クレートが生まれてから
-- CI の `make ci` と commit-msg フックの実行証拠（最初の PR で得る。commit-msg フックは手元で #2 と #4 のコミットで動いた）
+- ruleset（`main` の保護・squash-only）。未設定。GIT-002 / GIT-004 はこれで active になる
 - ruleset（`main` の保護・squash-only）。未設定
 - 併合の決定性・Xvfb での表示・Windows の実機・SMB の上での同時編集
 
@@ -198,7 +201,20 @@ nene-ruler からの差分: CNF-008 のアイコンの例外を外した（`cnf0
 - 1 万件の表の配置が 16 ms に収まること（FR-002）。`TableLayout::visible_rows` が見えている行だけを返すことは単体テストで見たが、時間は窓を出してから測る
 - 描画命令が 2 OS で同じ画素になること。UI クレートが無い
 
-## 10. 再現
+## 10. PR #3 — CI の `make ci` の実行証拠（2026-10-21）
+
+PR #3 を draft から Ready にした。`check.yml` の `check`（ubuntu-24.04・actions/checkout）が実行 [39517454232](https://github.com/hideyukiMORI/NeNeDocket/actions/runs/39517454232) で `make ci` を呼んだ。
+
+| 項目 | 実出力 |
+| --- | --- |
+| CI の環境変数 | `PR_HEAD_REF: claude/cloud-session-qus6l5`・`PR_BASE_SHA: 60350f9…`・`PR_DRAFT: false` |
+| `cargo run --quiet -p xtask --locked -- validate-git` | `GIT-002: invalid branch name claude/cloud-session-qus6l5`・`make: *** [Makefile:60: validate-git] Error 1`・終了 2 |
+| GIT-001 / GIT-003 / GIT-004 の欄 | 報告なし（`Closes #1`・全欄・GIT-003 の形のタイトルと 3 コミットは通った） |
+| 手元の `make validate-git` | 同じ 1 行（第 8.1 節） |
+
+CI と手元が同じ検証器で同じ結果を出した（QLT-005）。落ちた理由は harness の枝名で、PR 本文に書いた逸脱そのもの。ruleset が無いので、この失敗は merge を止めない（GIT-002 / GIT-004 が planned のまま、の理由）。
+
+## 11. 再現
 
 ```bash
 make prove

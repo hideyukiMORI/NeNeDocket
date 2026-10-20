@@ -15,12 +15,12 @@
 | ui-x11 / adapters-x11 / store / application / app | ❌ 無い |
 | IME の方式（FR-015） | ❌ ADR 未。X11 の窓を出して XIM を実測してから決める |
 | 署名と鍵の方式（FR-010） | ❌ ADR 未。権限の Issue で決める |
-| CI の必須 check（`make ci`）と commit-msg フック | 未配線 |
+| CI の `check`（`make ci`）と commit-msg フック | ✅ PR #3 で CI が動き、枝名で落ちた（gate-proofs 第 10 節）。QLT-005・GIT-001・GIT-003 を active に |
 | ruleset（main の保護・squash-only） | 未設定。施主が GitHub で設定したら gate-proofs に記録する |
 
 ## 次に行うこと
 
-1. **Issue #1 / #2 の PR を merge する。** 枝は harness の `claude/cloud-session-qus6l5` で GIT-002 の形ではないので、CI の `make ci` は GIT-002 で落ちる（gate-proofs 第 8.1 節）。施主が squash の件名を GIT-003 の形で付けて merge する。CI の実行証拠を得たら GIT-001〜004 と QLT-005 を active にする（証明行を gate-proofs に足す）
+1. **PR #3（Issue #1 / #2 / #4）を merge する。** 枝は harness の `claude/cloud-session-qus6l5` で、CI の `make ci` は GIT-002 で落ちている（gate-proofs 第 10 節）。ruleset が無いので merge はできる。施主が squash の件名を PR のタイトル（GIT-003 の形）で付けて merge する。ruleset（main の保護・squash-only・`check` を必須）を設定したら gate-proofs に記録し、GIT-002 / GIT-004 を active に
 2. **X11 の窓**（ui-x11 ＋ adapters-x11 ＋ app）: x11rb ＋ cairo で窓を出し、core の `DrawCommand` を描き、表 1 枚と入力欄を動かす。Xvfb で撮る。XIM を実測して IME の ADR。依存を足す ADR（x11rb / cairo-rs）と deny.toml の実測
 3. core の `Item` / `Op` / `merge`（ADR 0004）と、同じ操作の集合を別の順で読むテスト。store のジャーナル版 1
 4. 署名の ADR と権限（FR-010）。スナップショットの ADR（FR-017 を実測してから）

@@ -14,7 +14,7 @@
 Issue には問題と根拠・意図する結果・影響する規則 ID とモジュール・受け入れ条件・検証の計画・**やらないこと**を書く。
 読み取りだけの調査は Issue 無しでよい。リポジトリの初期化コミットだけが例外。
 
-- 機械強制: **planned**（`make ci` が PR 本文の `Closes #N` を検査する。最初の PR で CI の実行証拠を得てから active にする）
+- 機械強制: **active**（`make ci` が PR 本文の `Closes #N` を検査する。CI の実行証拠は PR #3 の実行 39517454232・[gate-proofs](quality/gate-proofs.md) 第 10 節）
 - 不能: Issue の中身の妥当性
 
 ### GIT-002 — ブランチ名は一つの形
@@ -26,7 +26,7 @@ Issue には問題と根拠・意図する結果・影響する規則 ID とモ�
 例: `feat/2-workspace-and-gates`。`main` での直接開発・force push・既定ブランチの削除は禁止（初期化の例外を除く）。
 クラウドセッションが harness から割り当てた枝名（`claude/…`）で作業するときは、PR の本文にその事実を書き、squash merge の件名を GIT-003 の形に揃える。
 
-- 機械強制: **planned**（ruleset で `main` を保護。ブランチ名の形は `make ci` が PR の head で検査する）
+- 機械強制: **planned**（ruleset で `main` を保護するのが未設定。ブランチ名の形は `make ci` が PR の head で検査し、PR #3 で実際に落ちた・gate-proofs 第 10 節。ruleset を設定して記録したら active にする）
 
 ### GIT-003 — コミットメッセージは一つの形
 
@@ -42,7 +42,7 @@ Conventional Commits を、この正確な形で書く。
 - 互換性を壊す公開契約の変更（ジャーナルの版を含む）は `:` の前に `!` を付け、フッタに `BREAKING CHANGE:` を書く
 - 件名には「何を」ではなく**判断**を置く（例: `ジャーナルは追記だけで、Undo は逆の操作を足す`）
 
-- 機械強制: **planned**（`.githooks/commit-msg` → `xtask commit-msg`。CI は `make ci` が PR の全コミットと PR タイトルを同じ検証器で検査する。最初の PR で実行証拠を得てから active にする）
+- 機械強制: **active**（`.githooks/commit-msg` → `xtask commit-msg`。CI は `make ci` が PR の全コミットと PR タイトルを同じ検証器で検査する。実行証拠は PR #3・gate-proofs 第 10 節）
 - 補足: squash merge の件名も同じ形。**マージ時に人が書き換える件名が最後の穴**なので、PR タイトルを同じ形に揃える。`gh pr merge --subject` で件名を渡し、`(#Issue) (#PR)` の二重を作らない（nene-ruler 2026-10-20 の教訓）
 
 ### GIT-004 — PR が統合の境界
@@ -54,7 +54,7 @@ PR には目的・使った正典経路・規則 ID・振る舞いの変更・�
 CI の必須 `check` は Git 規約・検証記録の存在・差分の空白を確認する。記録の妥当性はレビューし、CI 成功を製品テストの実行証拠とは扱わない。
 文書だけの PR でも本文は全欄書く（nene-ruler で欄を欠いた PR が ruleset 未設定のまま merge された）。
 
-- 機械強制: **planned**（PR テンプレート・`make ci` の欄の検査・ruleset の squash-only）
+- 機械強制: **planned**（PR テンプレートと `make ci` の欄の検査は CI で動いた（gate-proofs 第 10 節）。ruleset の squash-only が未設定。設定して記録したら active にする）
 
 ---
 
