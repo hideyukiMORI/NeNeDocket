@@ -1,4 +1,4 @@
-//! 編集行の文字の欄（題名・担当・期限・ラベル）。欄の文字列と課題の項目を行き来する。閉じた集合（RS-002）。
+//! 文字で編集する欄（編集行の題名・担当・期限・ラベルと、表の下の段の本文）。欄の文字列と課題の項目を行き来する。閉じた集合（RS-002）。
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -19,14 +19,24 @@ pub enum EditSlot {
     Due,
     /// ラベル。`,` で区切る。前後の空白は落とし、空は無し。
     Labels,
+    /// 本文。複数行。表の下の段（FR-001）。
+    Body,
 }
 
 /// ラベルの区切り。
 const LABEL_SEPARATOR: char = ',';
 
 impl EditSlot {
-    /// 編集行に並ぶ順。
-    pub const ALL: [Self; 4] = [Self::Title, Self::Assignee, Self::Due, Self::Labels];
+    /// 全部（確定・読み直しの順）。
+    pub const ALL: [Self; 5] = [
+        Self::Title,
+        Self::Assignee,
+        Self::Due,
+        Self::Labels,
+        Self::Body,
+    ];
+    /// 編集行に並ぶ順。本文は段。
+    pub const ROW: [Self; 4] = [Self::Title, Self::Assignee, Self::Due, Self::Labels];
 
     /// 対応する項目。
     #[must_use]
@@ -36,6 +46,7 @@ impl EditSlot {
             Self::Assignee => Field::Assignee,
             Self::Due => Field::Due,
             Self::Labels => Field::Labels,
+            Self::Body => Field::Body,
         }
     }
 
@@ -47,6 +58,7 @@ impl EditSlot {
             Self::Assignee => String::from(item.assignee()),
             Self::Due => item.due().map(Date::text).unwrap_or_default(),
             Self::Labels => item.labels().join(", "),
+            Self::Body => String::from(item.body()),
         }
     }
 
@@ -59,6 +71,7 @@ impl EditSlot {
             Self::Due if text.is_empty() => Some(FieldValue::Due(None)),
             Self::Due => Date::parse(text).map(|date| FieldValue::Due(Some(date))),
             Self::Labels => Some(FieldValue::Labels(Self::labels_of(text))),
+            Self::Body => Some(FieldValue::Body(String::from(text))),
         }
     }
 
@@ -83,6 +96,7 @@ mod tests {
     fn text_and_value_round_trip_and_a_bad_date_is_refused() {
         let item = Item::created(ItemId::new(AccountId::new(1), 1))
             .with(FieldValue::Title(String::from("t")))
+            .with(FieldValue::Body(String::from("line 1\nline 2")))
             .with(FieldValue::Assignee(String::from("a")))
             .with(FieldValue::Due(Date::new(2026, 12, 31)))
             .with(FieldValue::Labels(alloc::vec![
@@ -94,6 +108,17 @@ mod tests {
             assert_eq!(slot.value_of(&text), Some(item.value_of(slot.field())));
         }
         assert_eq!(EditSlot::Due.text_of(&item), "2026-12-31");
+        assert_eq!(EditSlot::Body.text_of(&item), "line 1\nline 2");
+        assert_eq!(EditSlot::ROW.len(), 4);
+    }
+
+    #[test]
+    fn dates_and_labels_are_normalised_or_refused() {
+        let item =
+            Item::created(ItemId::new(AccountId::new(1), 1)).with(FieldValue::Labels(alloc::vec![
+                String::from("bug"),
+                String::from("ui")
+            ]));
         assert_eq!(EditSlot::Due.value_of(""), Some(FieldValue::Due(None)));
         assert_eq!(EditSlot::Due.value_of("2026-13-01"), None);
         assert_eq!(EditSlot::Due.value_of("tomorrow"), None);

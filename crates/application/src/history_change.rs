@@ -52,12 +52,14 @@ impl HistoryChange {
     }
 }
 
-/// 値の文言。状態は表示言語の語、期限は `YYYY-MM-DD`、ラベルは `, ` 区切り。
+/// 本文の改行を 1 行に収める印。
+const LINE_BREAK_MARK: &str = "↵";
+
+/// 値の文言。状態は表示言語の語、期限は `YYYY-MM-DD`、ラベルは `, ` 区切り、本文の改行は `↵`。
 fn value_text(language: Language, value: &FieldValue) -> String {
     match value {
-        FieldValue::Title(text) | FieldValue::Body(text) | FieldValue::Assignee(text) => {
-            text.clone()
-        }
+        FieldValue::Title(text) | FieldValue::Assignee(text) => text.clone(),
+        FieldValue::Body(text) => text.replace('\n', LINE_BREAK_MARK),
         FieldValue::State(state) => String::from(wording::text(language, Word::StateName(*state))),
         FieldValue::Due(due) => due.map(Date::text).unwrap_or_default(),
         FieldValue::Labels(labels) => labels.join(", "),

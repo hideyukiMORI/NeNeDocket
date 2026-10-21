@@ -314,7 +314,7 @@ impl Pen {
             self.target
                 .DrawTextLayout(origin, line.layout(), &brush, D2D1_DRAW_TEXT_OPTIONS_NONE);
         }
-        if let Some(caret) = caret {
+        if let Some(caret) = caret.filter(|caret| caret.shows_bar()) {
             let x = (left + prefix_advance(line.layout(), text, caret.cursor())?).floor();
             let cursor_line = D2D_RECT_F {
                 left: x,

@@ -570,7 +570,34 @@ application に設定の版 2・`SettingsPort`・`Environment` の言語と明�
 
 🔴 **正直に:** 権限を有効にする前の履歴（alice の 2 行）は捨てられて数に出る（ADR 0010 の 4）。権限を変える画面は無い。秘密鍵は平文。SMB の上と Windows は施主の実機で。
 
-## 23. 再現
+## 23. Issue #31 — 本文（複数行の欄・2026-10-21）
+
+同じコンテナ。core に `text_area`（行ごとの `Text` 命令・カーソルの行を追う・行をまたぐ選択は棒を 1 本だけ `TextCaret::without_bar`）と `TextEdit` の行（Home / End は行の中・`applied_in_area` で Enter は改行、上下は隣の行）。application に `EditSlot::Body`・`BodyPane`・道具の段の「本文」・表の下の段（履歴と両方なら 1/4 ずつ）・本文の検索・履歴の `↵`。UI は棒の無いカーソルを描かない。
+
+### 23.1 ゲート
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 317 件 |
+| `make conformance` | 違反なし（212 ファイル） |
+| `make coverage` | core ＋ application regions 99.08% |
+
+テストが要求すること: 行と桁の往復、Home / End が行の中で止まること、上下が端で先頭・末尾に落ちること、Enter が改行を挿すこと、行ごとの命令でカーソルの行にだけ棒が出て選択は行ごとに切れること、下にはみ出すカーソルの行まで上を省くこと、段の Esc で `Set body` が 1 つ追記されること、別の行を選ぶと欄が入れ替わり前の値が追記されること、検索が本文に効くこと、履歴が改行を `↵` で 1 行にすること、Tab の順（本文のチェックは履歴の次）。
+
+### 23.2 Xvfb（`:95`・2 アカウント・QLT-013）
+
+| 手順 | 見えたもの | PNG |
+| --- | --- | --- |
+| alice が追加し、「本文」を押す | 表の下に空の段 | |
+| 段を押して `first line` Enter `second line` | 2 行。Up Home Shift+End で 1 行目が選択され、棒は 1 本 | [03-a-selection](screenshots/2026-10-21-body-03-a-selection.png) |
+| Esc | ジャーナルに `set … body first line\nsecond line` が 1 行（改行は逃がし） | |
+| bob が行を選び「本文」と「履歴」を押す | 段に 2 行、履歴に `Body :  -> first line↵second line`、表は残る | [05-b-body-and-history](screenshots/2026-10-21-body-05-b-body-and-history.png) |
+| bob が検索に `second` | 1 件（本文に効く） | |
+
+🔴 **正直に:** 本文の段にスクロールバーは無い（カーソルの行を追うだけ）。段の高さは変えられない。`xdotool` の 1 回目はクリックが段の 1 画素上に当たり、何も起こらなかった（手順の誤り・2 回目で記録）。
+
+## 24. 再現
 
 ```bash
 make prove

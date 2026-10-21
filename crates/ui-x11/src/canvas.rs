@@ -205,7 +205,7 @@ fn draw_text(
     set_paint(context, palette, paint);
     context.move_to(left, baseline);
     context.show_text(text)?;
-    if let Some(caret) = caret {
+    if let Some(caret) = caret.filter(|caret| caret.shows_bar()) {
         let x = left + prefix_advance(context, text, caret.cursor())?;
         context.rectangle(x.floor(), top, 1.0_f64, font.height());
         context.fill()?;
