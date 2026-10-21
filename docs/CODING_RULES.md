@@ -233,6 +233,8 @@
 | `windows` / `windows-numerics` | Win32・Direct2D・DirectWrite。adapters-windows と ui-win32 | 同上・[ADR 0009](adr/0009-windows-port-plain-window-and-timer.md) | Issue #22 で導入（Windows では未実行） |
 | `ed25519-dalek` 2（default-features 無し） | FR-010 の署名。core の唯一の外部クレート | [ADR 0010](adr/0010-signatures-and-permissions.md) | Issue #29 で導入。BSD-3-Clause |
 | `encoding_rs` 0.8（default-features 無し・`alloc`） | 添付の文字コード（UTF-8・UTF-16 の BOM・`Shift_JIS`）。store の唯一の外部クレート | [ADR 0017](adr/0017-attachment-viewers-and-external-open.md) | Issue #63 で導入。`(Apache-2.0 OR MIT) AND BSD-3-Clause`・依存は `cfg-if` |
+| `png` 0.18（default-features 無し） | 添付の PNG の復号。media だけ | [ADR 0018](adr/0018-image-viewer-png-jpeg.md) | Issue #64 で導入。MIT / Apache-2.0。`flate2`・`miniz_oxide` 0.8・`fdeflate`・`crc32fast`・`simd-adler32`・`adler2`・`bitflags` を引く（`flate2` は lock で 1.1.4） |
+| `jpeg-decoder` 0.3（default-features 無し） | 添付の JPEG の復号。media だけ | 同上 | Issue #64 で導入。MIT / Apache-2.0・依存 0 |
 
 版は `Cargo.lock` で固定し、マニフェストに `*` や `=` を書かない。ゲートは lock が更新される状態を拒む（QLT-011）。
 

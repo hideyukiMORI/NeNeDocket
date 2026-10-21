@@ -16,6 +16,8 @@ pub enum JournalFailure {
     AttachmentUnreadable,
     /// 添付の写しを置けない（FR-021）。
     AttachmentUnwritable,
+    /// 添付の画像を復号できない（FR-022）。
+    AttachmentUndecodable,
 }
 
 impl JournalFailure {
@@ -28,6 +30,7 @@ impl JournalFailure {
             Self::PermissionsUnwritable => Word::CannotWritePermissions,
             Self::AttachmentUnreadable => Word::Attachment(AttachmentWord::CannotRead),
             Self::AttachmentUnwritable => Word::Attachment(AttachmentWord::CannotWrite),
+            Self::AttachmentUndecodable => Word::Attachment(AttachmentWord::CannotDecode),
         }
     }
 }

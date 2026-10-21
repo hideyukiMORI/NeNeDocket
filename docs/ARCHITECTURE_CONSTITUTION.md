@@ -184,7 +184,7 @@ UI 層は、application が作った値を描き、利用者の操作を意図�
 
 ### ARC-013 — 外部依存は許可制
 
-- 依存を足すときは ADR を 1 本立てる。core の外部クレートは `ed25519-dalek` だけ（[ADR 0010](adr/0010-signatures-and-permissions.md)）。application・xtask は**依存 0**、`store` の外部クレートは `encoding_rs` だけ（[ADR 0017](adr/0017-attachment-viewers-and-external-open.md)）である
+- 依存を足すときは ADR を 1 本立てる。core の外部クレートは `ed25519-dalek` だけ（[ADR 0010](adr/0010-signatures-and-permissions.md)）。application・xtask は**依存 0**、`store` の外部クレートは `encoding_rs` だけ（[ADR 0017](adr/0017-attachment-viewers-and-external-open.md)）、`media` は `png` と `jpeg-decoder` だけ（[ADR 0018](adr/0018-image-viewer-png-jpeg.md)）である
 - X11 と描画は `x11rb` と `cairo-rs`、Windows は `windows` だけ（[ADR 0002](adr/0002-no-toolkit-x11rb-cairo-win32-direct2d.md)）。UI ツールキットを入れない
 - 署名（FR-010）の依存は ADR 0010 の 1 つだけ（Issue #29）
 - バージョンに `*` を書かない（`clippy::wildcard_dependencies`）。版の固定は `Cargo.lock` の仕事であり、マニフェストに `=` を書かない

@@ -9,6 +9,7 @@ use nene_docket_core::attachment::Attachment;
 use nene_docket_core::item_id::ItemId;
 use nene_docket_core::op::Op;
 use nene_docket_core::permissions::Permissions;
+use nene_docket_core::shared_bitmap::SharedBitmap;
 
 use crate::admission_report::AdmissionReport;
 use crate::attachment_text::AttachmentText;
@@ -114,6 +115,17 @@ pub trait JournalPort {
         item: ItemId,
         attachment: &Attachment,
     ) -> Result<AttachmentText, JournalFailure>;
+
+    /// 添付の写しを画像として読む（FR-022）。PNG / JPEG。大きければ縮めた画素。ID は中身から（UI のキャッシュの鍵）。
+    ///
+    /// # Errors
+    ///
+    /// 写しを読めない・復号できない。
+    fn read_attachment_image(
+        &self,
+        item: ItemId,
+        attachment: &Attachment,
+    ) -> Result<SharedBitmap, JournalFailure>;
 
     /// 持ち主が権限を変える（FR-010）。書いたら鍵と権限を読み直す。
     ///

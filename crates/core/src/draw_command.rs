@@ -4,6 +4,7 @@ use alloc::string::String;
 
 use crate::paint::Paint;
 use crate::pixel_rect::PixelRect;
+use crate::shared_bitmap::SharedBitmap;
 use crate::text_align::TextAlign;
 use crate::text_caret::TextCaret;
 
@@ -36,6 +37,15 @@ pub enum DrawCommand {
         paint: Paint,
         /// カーソルと選択。無ければ描かない。
         caret: Option<TextCaret>,
+    },
+    /// 画素の列の `source`（画素の座標）を `dest` に伸縮して描く（FR-022）。
+    Image {
+        /// 描く先。
+        dest: PixelRect,
+        /// 画素の列のどの部分か。
+        source: PixelRect,
+        /// 画素の列。UI は ID でキャッシュする。
+        bitmap: SharedBitmap,
     },
     /// 以降の描画を矩形で切り抜く。`Unclip` まで。
     Clip(PixelRect),

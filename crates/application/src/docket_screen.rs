@@ -2043,10 +2043,12 @@ mod tests {
 
     use nene_docket_core::appearance::Appearance;
     use nene_docket_core::attachment_kind::AttachmentKind;
+    use nene_docket_core::bitmap::Bitmap;
     use nene_docket_core::logical_clock::LogicalClock;
     use nene_docket_core::op_id::OpId;
     use nene_docket_core::permissions::Permissions;
     use nene_docket_core::pixel_point::PixelPoint;
+    use nene_docket_core::shared_bitmap::SharedBitmap;
     use nene_docket_core::signing_key::SigningKey;
 
     use crate::admission_report::AdmissionReport;
@@ -2209,6 +2211,20 @@ mod tests {
 
         fn attachment_path(&self, _item: ItemId, attachment: &Attachment) -> String {
             alloc::format!("/docket/attachments/{}", attachment.file_name())
+        }
+
+        /// `broken` で始まる画像は復号できない。他は 2 × 2 の画素（ID 42）。
+        fn read_attachment_image(
+            &self,
+            _item: ItemId,
+            attachment: &Attachment,
+        ) -> Result<SharedBitmap, JournalFailure> {
+            if attachment.name().starts_with("broken") {
+                return Err(JournalFailure::AttachmentUndecodable);
+            }
+            Bitmap::new(2, 2, alloc::vec![9_u8; 16])
+                .map(|bitmap| SharedBitmap::new(42, bitmap))
+                .ok_or(JournalFailure::AttachmentUndecodable)
         }
 
         /// 名前で決める: `.csv` は 2 列の表、`big` で始まれば先頭だけ、`unreadable` で始まれば読めない、他は 2 行の文。
@@ -2453,6 +2469,7 @@ mod tests {
                 DrawCommand::Fill { .. }
                 | DrawCommand::Stroke { .. }
                 | DrawCommand::Clip(_)
+                | DrawCommand::Image { .. }
                 | DrawCommand::Unclip => None,
             })
             .collect()
@@ -3414,6 +3431,71 @@ mod tests {
         // 鍵でも押せる（ボタンにフォーカスがある）。
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.opened.borrow().len(), 2);
+    }
+
+    /// フレームの画像の命令（描く先・元）。
+    fn images(frame: &DocketFrame) -> Vec<(PixelRect, PixelRect)> {
+        frame
+            .commands()
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::Image { dest, source, .. } => Some((*dest, *source)),
+                DrawCommand::Text { .. }
+                | DrawCommand::Fill { .. }
+                | DrawCommand::Stroke { .. }
+                | DrawCommand::Clip(_)
+                | DrawCommand::Unclip => None,
+            })
+            .collect()
+    }
+
+    fn wheel(screen: &mut DocketScreen, x: u16, y: u16, notches: i8) -> DocketFrame {
+        screen.step(&FrameInput::new(
+            BOUNDS,
+            PointerInput::new(Some(PixelPoint::new(x, y)), ButtonPhase::Idle, notches),
+        ))
+    }
+
+    #[test]
+    fn a_selected_image_is_drawn_fitted_then_zoomed_by_the_wheel_and_panned_by_dragging() {
+        let (mut screen, _) = attach_and_select("/tmp/photo.png");
+        let drawn = images(&idle(&mut screen));
+        assert_eq!(drawn.len(), 1, "{drawn:?}");
+        let (dest, source) = drawn[0];
+        assert_eq!(source, PixelRect::new(0, 0, 2, 2));
+        assert_eq!(dest.width(), dest.height());
+        assert_eq!(screen.attachments.zoom(), 100);
+        // ホイールを上に 1 刻み → 110%。下に 3 刻み → 80%。
+        wheel(&mut screen, 500, 370, -1);
+        assert_eq!(screen.attachments.zoom(), 110);
+        wheel(&mut screen, 500, 370, 3);
+        assert_eq!(screen.attachments.zoom(), 80);
+        // 画像の外のホイールは効かない。
+        wheel(&mut screen, 500, FIRST_ROW_Y, -1);
+        assert_eq!(screen.attachments.zoom(), 80);
+    }
+
+    #[test]
+    fn dragging_the_image_pans_it_and_a_broken_image_is_reported() {
+        let (mut screen, _) = attach_and_select("/tmp/photo.png");
+        idle(&mut screen);
+        // 押したまま 10 右へ → ずれ (10, 0)。離すとドラッグは終わる。
+        screen.step(&pointer(500, 370, ButtonPhase::Pressed));
+        screen.step(&pointer(510, 370, ButtonPhase::Held));
+        assert_eq!(screen.attachments.pan(), (10_i32, 0_i32));
+        screen.step(&pointer(510, 370, ButtonPhase::Released));
+        screen.step(&pointer(600, 370, ButtonPhase::Pressed));
+        screen.step(&pointer(600, 375, ButtonPhase::Held));
+        assert_eq!(screen.attachments.pan(), (10_i32, 5_i32));
+        // 別の添付を選ぶと倍率とずれは戻る。
+        let (mut broken, _) = attach_and_select("/tmp/broken.png");
+        idle(&mut broken);
+        assert!(
+            broken
+                .notices()
+                .contains(&Notice::Journal(JournalFailure::AttachmentUndecodable))
+        );
+        assert!(images(&idle(&mut broken)).is_empty());
     }
 
     #[test]

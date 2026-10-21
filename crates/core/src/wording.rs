@@ -96,6 +96,7 @@ const fn japanese_attachment(word: AttachmentWord) -> &'static str {
         AttachmentWord::Open => "開く",
         AttachmentWord::Truncated => "先頭だけを出しています",
         AttachmentWord::CannotOpen => "OS のアプリで開けません",
+        AttachmentWord::CannotDecode => "画像を読めません",
     }
 }
 
@@ -175,6 +176,7 @@ const fn english_attachment(word: AttachmentWord) -> &'static str {
         AttachmentWord::Open => "Open",
         AttachmentWord::Truncated => "Showing the beginning only",
         AttachmentWord::CannotOpen => "Cannot open with the system application",
+        AttachmentWord::CannotDecode => "Cannot decode the image",
     }
 }
 
@@ -253,6 +255,7 @@ const fn simplified_chinese_attachment(word: AttachmentWord) -> &'static str {
         AttachmentWord::Open => "打开",
         AttachmentWord::Truncated => "仅显示开头部分",
         AttachmentWord::CannotOpen => "无法用系统应用打开",
+        AttachmentWord::CannotDecode => "无法读取图像",
     }
 }
 
@@ -331,6 +334,7 @@ const fn traditional_chinese_attachment(word: AttachmentWord) -> &'static str {
         AttachmentWord::Open => "開啟",
         AttachmentWord::Truncated => "僅顯示開頭部分",
         AttachmentWord::CannotOpen => "無法用系統應用程式開啟",
+        AttachmentWord::CannotDecode => "無法讀取圖像",
     }
 }
 
@@ -408,6 +412,7 @@ const fn korean_attachment(word: AttachmentWord) -> &'static str {
         AttachmentWord::Open => "열기",
         AttachmentWord::Truncated => "앞부분만 표시합니다",
         AttachmentWord::CannotOpen => "시스템 앱으로 열 수 없습니다",
+        AttachmentWord::CannotDecode => "이미지를 읽을 수 없습니다",
     }
 }
 
@@ -487,6 +492,7 @@ const fn spanish_attachment(word: AttachmentWord) -> &'static str {
         AttachmentWord::Open => "Abrir",
         AttachmentWord::Truncated => "Solo se muestra el comienzo",
         AttachmentWord::CannotOpen => "No se puede abrir con la aplicación del sistema",
+        AttachmentWord::CannotDecode => "No se puede leer la imagen",
     }
 }
 
@@ -495,7 +501,7 @@ mod tests {
     use super::*;
 
     /// 全部の語（`Word` の閉じた集合を 1 か所で列挙する。増えたらここも増える）。
-    const WORDS: [Word; 68] = [
+    const WORDS: [Word; 69] = [
         Word::All,
         Word::StateName(ItemState::Open),
         Word::StateName(ItemState::InProgress),
@@ -564,6 +570,7 @@ mod tests {
         Word::Attachment(AttachmentWord::Open),
         Word::Attachment(AttachmentWord::Truncated),
         Word::Attachment(AttachmentWord::CannotOpen),
+        Word::Attachment(AttachmentWord::CannotDecode),
     ];
 
     #[test]

@@ -16,6 +16,7 @@ pub mod key_input;
 pub mod key_map;
 mod pending_frame;
 mod pointer_tracker;
+pub mod surface_cache;
 mod transfer;
 pub mod ui_failure;
 pub mod window_visual;

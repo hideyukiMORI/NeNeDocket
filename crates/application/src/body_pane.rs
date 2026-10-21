@@ -187,6 +187,7 @@ mod tests {
                 DrawCommand::Fill { .. }
                 | DrawCommand::Stroke { .. }
                 | DrawCommand::Clip(_)
+                | DrawCommand::Image { .. }
                 | DrawCommand::Unclip => None,
             })
             .collect()

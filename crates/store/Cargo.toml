@@ -15,4 +15,5 @@ workspace = true
 [dependencies]
 nene-docket-application = { path = "../application" }
 nene-docket-core = { path = "../core" }
+nene-docket-media = { path = "../media" }
 encoding_rs = { version = "0.8.35", default-features = false, features = ["alloc"] }

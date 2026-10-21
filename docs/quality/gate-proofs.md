@@ -894,7 +894,35 @@ Xvfb（`:103` 英語 / `:104` 日本語・`scratchpad/view.sh` / `view2.sh`・�
 
 🔴 **正直に:** 英語の UI では日本語の字が □ になる（起動時に言語でフォントの家族を選ぶ・ADR 0007 の既知の制約で、本文の欄も同じ）。`xdg-open` の先は記録だけ（コンテナに既定のアプリは無い）。Windows の `ShellExecuteW` は lint だけ。
 
-## 41. 再現
+## 41. Issue #64 — 画像のビューワー: PNG / JPEG を `crates/media` で復号し、UI が伸縮して描く（ADR 0018 受理・2026-10-21）
+
+同じコンテナ。新しいクレート `crates/media`（`png` 0.18 ＋ `jpeg-decoder` 0.3・依存は core だけ・store が使う）。`flate2` は `Cargo.lock` で 1.1.4（1.1.10 は `miniz_oxide` が 2 版になり `make deny` の `multiple-versions` が落ちる）。core に `Bitmap`（RGBA・`premultiplied_bgra`）・`SharedBitmap`（`Arc` ＋ ID・ID は添付の SHA-256 の先頭 8 バイト）・`DrawCommand::Image { dest, source, bitmap }`・`image_fit::place`（収まる大きさ 100%・ホイール 10%・ずれ）。application に `AttachmentView::Image` と段の画像（ホイールで拡大・押したまま動かすと移動・行を選び直すと戻る）。ui-x11 に `SurfaceCache`（ID → cairo の `ImageSurface`・8 枚まで）と Bilinear のパターン、ui-win32 に `ID2D1Bitmap` の覚え（lint だけ）。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` / `deny` | 差分なし・0 件・0 件・警告なし・ok（`allow` は変えていない） |
+| `make test` | 410 件（core 113・application 112・store 56・media 4・ui-x11 16・adapters-x11 10・xtask 81） |
+| `make conformance` | 違反なし（262 ファイル・CNF-013 に media の表） |
+| `make coverage` | 行 97.57%・region 97.16%（閾値 90） |
+
+bench（scratchpad の `bench-img`・release・`Canvas::render` を 20 回）:
+
+| 画像 | 復号（縮小込み） | 初回（surface の作成 ＋ 描画） | 2 回目から | 拡大の部分 |
+| --- | --- | --- | --- | --- |
+| JPEG 4000 × 3000（1.6 MB → 2000 × 1500） | 297〜324 ms | 20.5 ms | **1.0 ms** | 0.7 ms |
+| PNG 600 × 400（α 付き） | 3.0 ms | 4.2 ms | 1.1 ms | 0.8 ms |
+
+cairo の既定のフィルタ（Good）では 2 回目からが 36 ms だった（縮めるときの畳み込み）。Bilinear に替えて 1 ms。目標 16 ms の中。復号は選んだときに 1 度（0.3 秒・画面は止まる）。
+
+Xvfb（`:105`・release・`scratchpad/image.sh`・日本語 UI）: `logo-alpha.png`（600 × 400・α 付き）と `big-4000x3000.jpg`（ImageMagick の `plasma:fractal`）を添付し、段を高くして行を選ぶ。
+
+1. PNG が収まる大きさで中央に出る（透明は段の面の色・[01-png](screenshots/2026-10-21-image-01-png.png)）
+2. JPEG を選ぶと 2000 × 1500 に縮めた画素が収まる大きさで出る（[02-jpeg](screenshots/2026-10-21-image-02-jpeg.png)）
+3. ホイールを上に 5 刻み → 150%、押したまま左上へ動かす → ずれる（[03-zoomed-panned](screenshots/2026-10-21-image-03-zoomed-panned.png)）
+
+🔴 **正直に:** debug ビルドでは 4000 × 3000 の復号に数秒かかり、画面が止まる（release は 0.3 秒）。同じフレームで前の選択の色が残る 1 フレームの欠陥を見つけ、行を全部問い合わせてから描く形に直した。Windows の `CreateBitmap` / `DrawBitmap` は lint だけ。EXIF の向きは見ない。
+
+## 42. 再現
 
 ```bash
 make prove

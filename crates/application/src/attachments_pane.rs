@@ -1,6 +1,6 @@
 //! 添付の段（FR-021 / FR-022）。表の下に、選んだ課題の添付（名前・大きさ・SHA-256）を並べる。
 //! 上の編集行はパスの欄と「添付する」、行を選んで「外す」。写しの中身が記録と合わない行は印を付ける（FR-014）。
-//! 行を選ぶと下に中身を出す: 文は読み取り専用の欄、CSV / TSV は表、それ以外はパスと「開く」（OS の既定のアプリ）。
+//! 行を選ぶと下に中身を出す: 文は読み取り専用の欄、CSV / TSV は表、画像は伸縮して（ホイールで拡大・ドラッグで移動）、それ以外はパスと「開く」（OS の既定のアプリ）。
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -10,18 +10,21 @@ use nene_docket_core::attachment_word::AttachmentWord;
 use nene_docket_core::button;
 use nene_docket_core::column_width::ColumnWidth;
 use nene_docket_core::draw_command::DrawCommand;
+use nene_docket_core::image_fit;
 use nene_docket_core::interaction::Interaction;
 use nene_docket_core::item::Item;
 use nene_docket_core::key_intent::KeyIntent;
 use nene_docket_core::language::Language;
 use nene_docket_core::layout::Layout;
 use nene_docket_core::paint::Paint;
+use nene_docket_core::pixel_point::PixelPoint;
 use nene_docket_core::pixel_rect::PixelRect;
 use nene_docket_core::preedit::Preedit;
 use nene_docket_core::response::Response;
 use nene_docket_core::response_phase::ResponsePhase;
 use nene_docket_core::scroll_bar;
 use nene_docket_core::scroll_state::ScrollState;
+use nene_docket_core::shared_bitmap::SharedBitmap;
 use nene_docket_core::table_layout::TableLayout;
 use nene_docket_core::text_align::TextAlign;
 use nene_docket_core::text_area;
@@ -48,6 +51,8 @@ const ATTACH: WidgetId = WidgetId::new(30);
 const VIEW_SCROLL: WidgetId = WidgetId::new(31);
 /// 「開く」。
 const OPEN: WidgetId = WidgetId::new(32);
+/// 画像（ホイールで拡大・ドラッグで移動）。
+const IMAGE_VIEW: WidgetId = WidgetId::new(33);
 /// 添付の行（添字を足す）。
 const ATTACHMENT_ROW: WidgetId = WidgetId::new(8_000);
 
@@ -69,12 +74,14 @@ const MAX_COLUMN_PX: u16 = 320;
 const LIST_ROWS_WITH_VIEW: usize = 3;
 /// ホイール 1 刻みで動く行。
 const WHEEL_ROWS: i32 = 3;
+/// ホイール 1 刻みで変わる倍率（%）。
+const ZOOM_STEP: u32 = 10;
 /// SHA-256 の先頭だけ出す桁数。
 const DIGEST_DIGITS: usize = 8;
 /// 写しが合わない行の印。
 const ALTERED_MARK: &str = "⚠ ";
 
-/// 出すかどうか・パスの欄・選んだ添付の連番・一覧と中身のスクロール・倍率。
+/// 出すかどうか・パスの欄・選んだ添付の連番・一覧と中身のスクロール・画像の倍率とずれとドラッグ・倍率。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttachmentsPane {
     shown: bool,
@@ -82,6 +89,9 @@ pub struct AttachmentsPane {
     selected: Option<u32>,
     scroll: ScrollState,
     view_scroll: ScrollState,
+    zoom: u32,
+    pan: (i32, i32),
+    drag: Option<(PixelPoint, (i32, i32))>,
     scale: UiScale,
 }
 
@@ -95,8 +105,23 @@ impl AttachmentsPane {
             selected: None,
             scroll: ScrollState::top(0, 0),
             view_scroll: ScrollState::top(0, 0),
+            zoom: 100,
+            pan: (0_i32, 0_i32),
+            drag: None,
             scale,
         }
+    }
+
+    /// 画像の倍率（%・収まる大きさが 100）。
+    #[must_use]
+    pub const fn zoom(&self) -> u32 {
+        self.zoom
+    }
+
+    /// 画像の中央からのずれ（画素）。
+    #[must_use]
+    pub const fn pan(&self) -> (i32, i32) {
+        self.pan
     }
 
     /// 出す・隠すを切り替える。
@@ -325,29 +350,33 @@ impl AttachmentsPane {
     }
 
     /// 見えている行。押すと選ぶ（中身のスクロールは上へ戻る）。写しが合わない行は印と理由を名前に添える。
+    /// 先に全部の行を問い合わせて選択を決め、それから描く（同じフレームで前の選択の色が残らない）。
     fn rows(
         &mut self,
         interaction: &mut Interaction,
         (table, attachments, context): (&TableLayout, &[Attachment], &AttachmentsContext<'_>),
         commands: &mut Vec<DrawCommand>,
     ) {
-        commands.push(DrawCommand::Clip(table.body()));
+        let mut visible = Vec::new();
         for (index, rect) in table.visible_rows(self.scroll.offset()) {
             let Some(attachment) = usize::try_from(index).ok().and_then(|i| attachments.get(i))
             else {
                 continue;
             };
             let response = interaction.probe(ATTACHMENT_ROW.indexed(index), rect, false);
-            if response.clicked() && self.selected != Some(attachment.sequence()) {
-                self.selected = Some(attachment.sequence());
-                self.view_scroll = ScrollState::top(0, 0);
+            if response.clicked() {
+                self.select(attachment.sequence());
             }
+            visible.push((rect, attachment, response.phase()));
+        }
+        commands.push(DrawCommand::Clip(table.body()));
+        for (rect, attachment, phase) in visible {
             if self.selected == Some(attachment.sequence()) {
                 commands.push(DrawCommand::Fill {
                     rect,
                     paint: Paint::Selection,
                 });
-            } else if response.phase() != ResponsePhase::Idle {
+            } else if phase != ResponsePhase::Idle {
                 commands.push(DrawCommand::Fill {
                     rect,
                     paint: Paint::Surface,
@@ -372,6 +401,18 @@ impl AttachmentsPane {
             }
         }
         commands.push(DrawCommand::Unclip);
+    }
+
+    /// 行を選ぶ。別の行なら中身のスクロール・倍率・ずれは戻る。
+    fn select(&mut self, sequence: u32) {
+        if self.selected == Some(sequence) {
+            return;
+        }
+        self.selected = Some(sequence);
+        self.view_scroll = ScrollState::top(0, 0);
+        self.zoom = 100;
+        self.pan = (0_i32, 0_i32);
+        self.drag = None;
     }
 
     /// 名前の列。写しが合わなければ印と理由（印の列は広くないので名前の列に出す）。
@@ -420,6 +461,7 @@ impl AttachmentsPane {
             AttachmentView::Table { rows, widths, .. } => {
                 self.view_table(interaction, (area, rows, widths), commands);
             }
+            AttachmentView::Image(bitmap) => self.view_image(interaction, (area, bitmap), commands),
             AttachmentView::Path(path) => {
                 return self.view_path(interaction, (area, path, language), commands);
             }
@@ -534,6 +576,75 @@ impl AttachmentsPane {
             .saturating_mul(CHAR_PX)
             .saturating_add(PADDING_PX.saturating_mul(2));
         self.px(text.clamp(MIN_COLUMN_PX, MAX_COLUMN_PX))
+    }
+
+    /// 画像: 収まるように縮めて中央に。ホイールで倍率、ドラッグでずれ。
+    fn view_image(
+        &mut self,
+        interaction: &mut Interaction,
+        (area, bitmap): (PixelRect, &SharedBitmap),
+        commands: &mut Vec<DrawCommand>,
+    ) {
+        let response = interaction.probe(IMAGE_VIEW, area, false);
+        let pointer = interaction.pointer();
+        let position = pointer.position();
+        if position.is_some_and(|point| area.contains(point)) {
+            self.zoom = Self::zoomed(self.zoom, pointer.wheel());
+        }
+        // 離した（clicked）フレームも Held なので、そこでドラッグを終える。
+        self.drag_image(
+            response.phase() == ResponsePhase::Held && !response.clicked(),
+            position,
+        );
+        commands.push(DrawCommand::Fill {
+            rect: area,
+            paint: Paint::Surface,
+        });
+        commands.push(DrawCommand::Stroke {
+            rect: area,
+            paint: Paint::Border,
+        });
+        let pixels = bitmap.bitmap();
+        if let Some((dest, source)) = image_fit::place(
+            area.inset(1),
+            (pixels.width(), pixels.height()),
+            self.zoom,
+            self.pan,
+        ) {
+            commands.push(DrawCommand::Image {
+                dest,
+                source,
+                bitmap: bitmap.clone(),
+            });
+        }
+    }
+
+    /// ホイール 1 刻みで 10%。上（負）で拡大、下で縮小。
+    fn zoomed(zoom: u32, notches: i8) -> u32 {
+        let step = u32::from(notches.unsigned_abs()).saturating_mul(ZOOM_STEP);
+        let next = if notches < 0 {
+            zoom.saturating_add(step)
+        } else {
+            zoom.saturating_sub(step)
+        };
+        next.clamp(image_fit::MIN_ZOOM, image_fit::MAX_ZOOM)
+    }
+
+    /// 押したまま動かした分だけずらす。離したら終わり。
+    fn drag_image(&mut self, held: bool, position: Option<PixelPoint>) {
+        let Some(point) = position.filter(|_| held) else {
+            self.drag = None;
+            return;
+        };
+        match self.drag {
+            None => self.drag = Some((point, self.pan)),
+            Some((start, (pan_x, pan_y))) => {
+                self.pan = (
+                    pan_x.saturating_add(i32::from(point.x()) - i32::from(start.x())),
+                    pan_y.saturating_add(i32::from(point.y()) - i32::from(start.y())),
+                );
+            }
+        }
     }
 
     /// それ以外: パスと「開く」。
