@@ -5,7 +5,7 @@
 ## 約束
 
 - **失うのは「同期の前の数秒」だけ。** 追記は操作ごとに `write_all` ＋ `sync_data`（SPECIFICATION 第 2 節）。それより前の行は残る
-- **書けなかった操作は捨てない。** 追記に失敗した操作（空き容量ゼロ・切れた共有）は store が順に覚え、次の追記・同期で先に書き直す。残っている間は失敗を示し続け、スナップショットは書かない（嘘の読み位置を残さないため）
+- **書けなかった操作は捨てない。** 追記に失敗した操作（空き容量ゼロ・切れた共有）は store が順に覚え、次の追記・同期で先に書き直す（同期は読み直しの刻みでも試す・#99）。残っている間は失敗を示し続け、スナップショットは書かない（嘘の読み位置を残さないため）
 - **ハンドルは 1 度だけ開き直す。** 追記が失敗したら自分のジャーナルを同じ場所で開き直して 1 度だけ試す（スリープ復帰・共有の再接続で古いハンドルが無効になったとき）
 - **派生ファイルの残骸は自分の分だけ捨てる。** 途中で止まった置き換えの `<名前>.tmp` は、次に開いたときに自分のアカウントの分（スナップショット・自分の鍵）と、持ち主なら権限と台帳のファイルの分を消す。他人の分は消さない（ADR 0004 の 2）。添付の `.tmp` は誰のものか名前から分からず、時刻も使わない（ARC-004）ので消さない（無害: 添付の一覧には出ず、`attach` の行も無い）
 - **読み手は `.tmp` を読まない。** `keys/` の `.tmp` は鍵として読まない（他人の残骸で全員の起動が止まらないように）
@@ -19,8 +19,8 @@
 | スナップショットの `rename` の途中 | `.tmp` が残る・状態と索引の世代が違う | `.tmp` は捨てる。状態の最後の行の検査和（状態と索引の両方）が合わず捨てて全部読む。台帳は同じ | `damage::tests::a_snapshot_pair_from_two_generations_is_discarded_…` / `file_journal::tests::temporaries_of_my_account_…` |
 | 権限・台帳・鍵のファイルの `rename` の途中 | `.tmp` が残り、元のファイルはそのまま（rename は原子的） | 持ち主が次に開いたとき `.tmp` を捨てる。元のファイルは最後に rename が終わった版 | `file_journal::tests::temporaries_of_my_account_…` / `leftovers::tests` / `key_file::tests::a_leftover_temporary_is_skipped_…` |
 | 添付の写しの途中 | `attachments/<課題>/<連番>-<名前>.tmp` が残り `attach` の行が無い | 一覧に出ない。消さない（上の約束）。同じ連番で付け直せば `.tmp` は上書きされる | `attachment_store::tests`（写しの検査） |
-| 空き容量ゼロ | 追記が失敗 | 失敗を示す。操作は store が覚え、空きができた後の追記・同期で古い順に書き直す。残っている間はスナップショットを書かない | `file_journal::tests::a_failed_append_is_kept_in_order_…`（追記の失敗を 4 回仕込む） |
-| スリープ復帰・共有の切断 | 読み直しが失敗し続ける・自分のハンドルが無効 | 読めない間は示し、復帰したら黙って続く（読み直しはスレッド・#75）。追記は 1 度開き直して試し、駄目なら覚えて示す。スナップショットを書けなければ示し、台帳が変わっていなくても次の回（5 分ごと）にまた試し、書けたら知らせを消す（#100） | `own_journal::tests::reopening_gives_a_fresh_handle_…`（ファイルが消えた後に開き直す）・読み直しは `file_journal::tests::broken_lines_are_counted_and_a_missing_folder_is_unreadable`・スナップショットは `docket_screen::tests::a_failed_checkpoint_is_shown_retried_and_cleared_…` |
+| 空き容量ゼロ | 追記が失敗 | 失敗を示す。操作は store が覚え、空きができた後の追記・同期（利用者の操作を待たずに、読み直しの刻みでも・#99）で古い順に書き直し、書けたら知らせを消す。残っている間はスナップショットを書かない | `file_journal::tests::a_failed_append_is_kept_in_order_…`（追記の失敗を 4 回仕込む）・`file_journal::tests::a_sync_alone_writes_the_unwritten_ops_…`・`docket_screen::tests::unwritten_ops_are_written_in_order_on_a_refresh_tick_…` |
+| スリープ復帰・共有の切断 | 読み直しが失敗し続ける・自分のハンドルが無効 | 読めない間は示し、復帰したら黙って続く（読み直しはスレッド・#75）。追記は 1 度開き直して試し、駄目なら覚えて示す。他人のジャーナルを読めるようになった刻みで書き直し、書けたら知らせを消す（読めない間は刻みで開き直さない・#99）。スナップショットを書けなければ示し、台帳が変わっていなくても次の回（5 分ごと）にまた試し、書けたら知らせを消す（#100） | `own_journal::tests::reopening_gives_a_fresh_handle_…`（ファイルが消えた後に開き直す）・読み直しは `file_journal::tests::broken_lines_are_counted_and_a_missing_folder_is_unreadable`・スナップショットは `docket_screen::tests::a_failed_checkpoint_is_shown_retried_and_cleared_…`・刻みの書き直しは `docket_screen::tests::unwritten_ops_wait_while_the_others_cannot_be_read` |
 | 画面のプロセスだけが `kill` される | 設定・スナップショットが書かれない | 次の起動は全部読む（遅いだけ）。設定は最後に書いた版 | スナップショット無しの起動は `file_journal::tests` の全部 |
 
 ## 施主の実機で
