@@ -2,17 +2,19 @@
 
 use nene_docket_application::docket_frame::DocketFrame;
 use nene_docket_core::language::Language;
+use nene_docket_core::pixel_point::PixelPoint;
 use nene_docket_core::pixel_rect::PixelRect;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
-    AtomEnum, ConnectionExt as _, CreateGCAux, CreateWindowAux, EventMask, GcontextWrapper,
-    PropMode, Window, WindowClass, WindowWrapper,
+    AtomEnum, ClientMessageEvent, ConnectionExt as _, CreateGCAux, CreateWindowAux, EventMask,
+    GcontextWrapper, PropMode, SelectionNotifyEvent, Window, WindowClass, WindowWrapper,
 };
 use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
 use crate::canvas::Canvas;
 use crate::display::Display;
+use crate::drop_target::DropTarget;
 use crate::font_family;
 use crate::surface_cache::SurfaceCache;
 use crate::transfer::Transfer;
@@ -35,6 +37,8 @@ pub struct DocketWindow<'d> {
     font: Option<(Language, &'static str)>,
     /// 添付の画像の surface の覚え（FR-022）。
     surfaces: SurfaceCache,
+    /// XDND の受け手（FR-021 の第 2 段）。
+    drops: DropTarget,
 }
 
 impl<'d> DocketWindow<'d> {
@@ -79,6 +83,7 @@ impl<'d> DocketWindow<'d> {
             bounds: PixelRect::new(0, 0, INITIAL_WIDTH, INITIAL_HEIGHT),
             font: None,
             surfaces: SurfaceCache::empty(),
+            drops: DropTarget::idle(),
         };
         opened.declare_hints()?;
         connection.map_window(opened.window.window())?;
@@ -162,6 +167,36 @@ impl<'d> DocketWindow<'d> {
             AtomEnum::STRING,
             TITLE.as_bytes(),
         )?;
+        connection.change_property32(
+            PropMode::REPLACE,
+            window,
+            atoms.xdnd_aware,
+            AtomEnum::ATOM,
+            &[DropTarget::version()],
+        )?;
         Ok(())
+    }
+
+    /// XDND の `ClientMessage`。扱ったら真。
+    ///
+    /// # Errors
+    ///
+    /// X の要求が失敗した。
+    pub fn xdnd_message(&mut self, message: &ClientMessageEvent) -> Result<bool, UiFailure> {
+        let window = self.window.window();
+        self.drops.client_message(self.display, window, message)
+    }
+
+    /// 落とす中身の変換の答え。落とされたファイルがあれば位置（窓の座標）とパスの列。
+    ///
+    /// # Errors
+    ///
+    /// X の要求が失敗した。
+    pub fn xdnd_selection(
+        &mut self,
+        event: &SelectionNotifyEvent,
+    ) -> Result<Option<(PixelPoint, Vec<String>)>, UiFailure> {
+        let window = self.window.window();
+        self.drops.selection_notify(self.display, window, event)
     }
 }

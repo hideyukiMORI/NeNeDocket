@@ -922,7 +922,25 @@ Xvfb（`:105`・release・`scratchpad/image.sh`・日本語 UI）: `logo-alpha.p
 
 🔴 **正直に:** debug ビルドでは 4000 × 3000 の復号に数秒かかり、画面が止まる（release は 0.3 秒）。同じフレームで前の選択の色が残る 1 フレームの欠陥を見つけ、行を全部問い合わせてから描く形に直した。Windows の `CreateBitmap` / `DrawBitmap` は lint だけ。EXIF の向きは見ない。
 
-## 42. 再現
+## 42. Issue #65 — 添付のドラッグ＆ドロップ（X11 は XDND・Windows は `WM_DROPFILES`・2026-10-21）
+
+同じコンテナ。application の `FrameInput::with_drop(位置, パスの列)` を `DocketScreen::step` が受け、位置が表の行ならその課題、添付の段なら選んでいる課題に `attach_file`（写してから `Attach` を追記・Issue #62 と同じ経路）、その行を選んで段を出す。他の場所は何もしない。ui-x11 に XDND 版 5 の受け手（`XdndAware`・`XdndEnter` / `XdndPosition` → `XdndStatus`・`XdndDrop` → `ConvertSelection(text/uri-list)` → `SelectionNotify` → property を読んで `XdndFinished`・`uri_list` で `file://` を戻す）。ui-win32 に `DragAcceptFiles` と `WM_DROPFILES`（`DragQueryPoint` / `DragQueryFileW` / `DragFinish`・lint だけ）。依存は増えない。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 413 件（application 114・ui-x11 17） |
+| `make conformance` | 違反なし（264 ファイル） |
+| `make coverage` | 行 97.59%・region 97.18%（閾値 90） |
+
+Xvfb（`:106`・`scratchpad/dnd.sh`・送り手は scratchpad の `xdnd-send`（x11rb 70 行: `XdndSelection` の持ち主になり `XdndEnter` / `XdndPosition` を送り、`XdndStatus` を待って `XdndDrop`、`SelectionRequest` に `text/uri-list` を書き、`XdndFinished` を待つ）:
+
+1. 2 件の課題がある窓の 1 行目（y = 120）に `file:///…/logo-alpha.png` と `file:///…/memo.txt` を落とす → `XdndStatus` accept=1、`XdndFinished` accepted=1、`attachments/<課題>/1-logo-alpha.png` と `2-memo.txt` が置かれ、1 行目が選ばれて添付の段が出る（[01-row](screenshots/2026-10-21-dnd-01-row.png)）
+2. 添付の段（y = 450）に `sales.csv` を落とす → 選んでいる 1 件目に `3-sales.csv`（[02-pane](screenshots/2026-10-21-dnd-02-pane.png)）。ジャーナルに `attach` が 3 行
+
+🔴 **正直に:** 落とす相手が GTK / Qt のアプリでないので、`XdndTypeList`（型が 3 つを超える）と `XdndLeave` の経路はテストの偽の送り手でしか通していない。`WM_DROPFILES` は Windows で動かしていない。
+
+## 43. 再現
 
 ```bash
 make prove
