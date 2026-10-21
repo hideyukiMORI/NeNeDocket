@@ -2,7 +2,7 @@
 
 A small, fast issue tracker for Windows and X11. Rust, no UI toolkit, no server.
 
-> **Status (2026-10-21):** `nene-docket <folder>` opens a docket on X11. Issues are added, renamed, moved between states and deleted in a hand-drawn table (`x11rb` + cairo, under 1 ms per frame at 10,000 rows); every edit is appended to this account's journal and fsynced, Ctrl+Z / Ctrl+Y append the inverse op, the `History` pane shows who changed what and when, the UI speaks six languages (ja / en / zh-hans / zh-hant / ko / es) and ships the 125 colour schemes of nene-nib, and two processes on the same folder see each other's changes within 3 seconds (verified on Xvfb). A Windows build (`make build-windows`, Win32 + Direct2D) compiles but has not been run on Windows yet; no IME preedit and no permissions yet. Rules and gates are measured (`make prove`, 26 proofs; core + application at 99.5% region coverage).
+> **Status (2026-10-21):** `nene-docket <folder>` opens a docket on X11. Issues are added, renamed, moved between states and deleted in a hand-drawn table (`x11rb` + cairo, under 1 ms per frame at 10,000 rows); every edit is appended to this account's journal and fsynced, Ctrl+Z / Ctrl+Y append the inverse op, the `History` pane shows who changed what and when, the UI speaks six languages (ja / en / zh-hans / zh-hant / ko / es) and ships the 125 colour schemes of nene-nib, and two processes on the same folder see each other's changes within 3 seconds (verified on Xvfb). A Windows build (`make build-windows`, Win32 + Direct2D) compiles but has not been run on Windows yet; no IME preedit. Permissions are optional: with them on, every line is signed (Ed25519) and verified by every reader. Rules and gates are measured (`make prove`, 26 proofs; core + application at 98.7% region coverage).
 
 ```bash
 cargo build --release -p nene-docket
@@ -10,7 +10,7 @@ target/release/nene-docket /path/to/docket   # the folder is created if missing
 target/release/nene-docket                   # reopens the most recent docket (or ./docket the first time)
 ```
 
-The account (a random 128-bit id and your `USER` name) is created once in `$XDG_CONFIG_HOME/nene-docket/account.v1.txt`; recent dockets and the refresh interval live next to it in `settings.v1.txt`.
+The account (a random 128-bit id, your `USER` name and a secret key) is created once in `$XDG_CONFIG_HOME/nene-docket/account.v2.txt`; recent dockets, the refresh interval, language, theme and column layout live next to it in `settings.v4.txt`. The config folder belongs to one machine: do not copy it to another (a copied key is reported as a key mismatch). Use a second machine as a second account, and if a key is lost let the docket owner run `--succeed NEW OLD` so the old id's history carries the new name (ADR 0013).
 
 ## What it will be
 

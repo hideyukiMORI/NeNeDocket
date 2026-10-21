@@ -30,6 +30,8 @@
 | 署名（signature） | 版 2 の行と `permissions.v1.txt` に付く 64 バイト。読み手が公開鍵で検証し、通らない行は捨てて数える | `Signature`（core）・`verifier`（store）・ADR 0010 |
 | 持ち主（owner） | 台帳を作ったアカウント。権限を有効にし、編集者とグループを決め、`permissions.v1.txt` に署名する | `docket.v1.txt` の `owner`・`administration`（store） |
 | グループ（group） | アカウントの集合。中の全員が書ける | `Permissions::groups`（core）・FR-010 |
+| 引き継ぎ（succession） | 新しい ID が古い ID を引き継ぐと持ち主が書いた行。読み手は古い ID の履歴を新しい名前で出し、古い ID に新しい ID の役を与える。鍵を失くした人のため | `Permissions::successions` / `resolved`（core）・`succeeds =` 行・`--succeed`・ADR 0013 |
+| 持ち主の交代（handover） | 今の持ち主が `--owner` で持ち主を替える。直後の `permissions.v1.txt` は前の持ち主の鍵で署名され `handover` の行を持ち、新しい持ち主が開くと署名し直す | `administration::apply` / `adopt`（store）・`PermissionsReading::handover`（application）・ADR 0013 |
 | 権限（permission） | 台帳に「書ける」かどうか（持ち主・編集者・グループの中）。閲覧は制限しない | `Permissions`（core）・`permissions.v1.txt`（store）・`nene-docket --permissions on` |
 | 設定（settings） | 最近開いた台帳・読み直しの間隔・表示言語の希望・配色の希望・表の列の幅と順。版付きの `key = value`（版 4）。形は application、読み書きは adapters | `Settings` / `settings_file`（application）・`saved_settings`（adapters-x11 / adapters-windows） |
 | 表示言語（language） | 画面の語の言語。6 つの閉じた集合。希望（`system` か決まった言語）は設定に、表示する言語は OS の観測値と合わせて解決する | `Language` / `LanguageChoice`（core）・ADR 0011・FR-019 |

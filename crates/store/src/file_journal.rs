@@ -45,8 +45,11 @@ impl FileJournal {
     ///
     /// フォルダを作れない・読めない・版が違う・ジャーナルを開けない・鍵や権限のファイルが読めない。
     pub fn open(root: &Path, name: &str, account: &Account) -> Result<Self, StoreFailure> {
-        let folder = JournalFolder::open_or_create(root, name, account.id())?;
+        let mut folder = JournalFolder::open_or_create(root, name, account.id())?;
         let key_mismatch = key_file::ensure_own(root, account)?;
+        if !key_mismatch && administration::adopt(root, account)? {
+            folder = JournalFolder::open_or_create(root, name, account.id())?;
+        }
         let enabled = folder.docket().permissions_on();
         let (keys, verifier) =
             verifier::load_if_enabled(root, folder.docket().owner().filter(|_| enabled))?;
@@ -182,9 +185,21 @@ impl JournalPort for FileJournal {
     }
 
     fn names(&self) -> Vec<(AccountId, String)> {
+        let name_of = |id: AccountId| {
+            self.keys
+                .iter()
+                .find(|record| record.id() == id)
+                .map(|record| record.name().to_owned())
+        };
         self.keys
             .iter()
-            .map(|record| (record.id(), record.name().to_owned()))
+            .map(|record| {
+                let successor = self.verifier.as_ref().map_or(record.id(), |verifier| {
+                    verifier.permissions().resolved(record.id())
+                });
+                let name = name_of(successor).unwrap_or_else(|| record.name().to_owned());
+                (record.id(), name)
+            })
             .collect()
     }
 
@@ -217,6 +232,7 @@ mod tests {
 
     use super::*;
     use crate::administration;
+    use crate::permissions_store;
     use nene_docket_application::admin_command::AdminCommand;
 
     const ME: AccountId = AccountId::new(0x11);
@@ -325,6 +341,55 @@ mod tests {
             mine.names(),
             [(ME, String::from("u1")), (OTHER, String::from("u2"))]
         );
+        // 引き継ぎ（ADR 0013 の 3）: 古い ID は新しい名前で出る。鍵の無い ID へ辿れば自分の名前のまま。
+        let newer = AccountId::new(0x44);
+        administration::apply(&root, &owner, &[AdminCommand::Succeed(newer, OTHER)]).unwrap();
+        mine.refresh().unwrap();
+        assert_eq!(
+            mine.names(),
+            [(ME, String::from("u1")), (OTHER, String::from("u2"))]
+        );
+        FileJournal::open(&root, "Team", &account(newer, 4)).unwrap();
+        mine.refresh().unwrap();
+        assert_eq!(
+            mine.names(),
+            [
+                (ME, String::from("u1")),
+                (OTHER, String::from("u4")),
+                (newer, String::from("u4"))
+            ]
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_handed_over_docket_is_signed_by_the_next_owner_when_opened() {
+        let root = temp("handover");
+        let owner = account(ME, 1);
+        let next = account(OTHER, 2);
+        docket_with_permissions(&root, &owner, OTHER);
+        FileJournal::open(&root, "Team", &next).unwrap();
+        administration::apply(&root, &owner, &[AdminCommand::Owner(OTHER)]).unwrap();
+        assert!(
+            permissions_store::read(&root)
+                .unwrap()
+                .unwrap()
+                .handover()
+                .is_some()
+        );
+        // 前の持ち主も開けて、編集者として書ける。
+        let previous = FileJournal::open(&root, "Team", &owner).unwrap();
+        assert!(previous.admission().may_edit());
+        assert_eq!(previous.owner(), Some(OTHER));
+        let mut reopened = FileJournal::open(&root, "Team", &next).unwrap();
+        assert_eq!(
+            permissions_store::read(&root).unwrap().unwrap().handover(),
+            None
+        );
+        assert!(reopened.permissions().is_some_and(|p| p.owner() == OTHER));
+        reopened
+            .administer(&[AdminCommand::Allow(AccountId::new(0x55))])
+            .unwrap();
         fs::remove_dir_all(&root).unwrap();
     }
 

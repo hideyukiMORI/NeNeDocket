@@ -734,7 +734,30 @@ coverage は回していない（application の 2 ファイルの小さな差�
 
 Windows の lint と coverage は回していない（adapters-x11 だけの差分）。
 
-## 32. 再現
+## 32. Issue #51 — 鍵の交代と持ち主の交代（ADR 0013 受理・2026-10-21）
+
+同じコンテナ。`permissions.v1.txt`（版は 1 のまま）に `succeeds = <新 ID>: <旧 ID>`（0 行以上）と `handover = <前の持ち主>`（交代の直後だけ）が入った。core の `Permissions` は `successions` を持ち、`resolved` が引き継ぎを辿り（輪があっても引き継ぎの数で止まる）、`may_edit` は引き継いだ ID の役を古い ID にも与える。`handed_to` は持ち主を替えて前の持ち主を編集者に残す。store の `administration::apply` は `Succeed` / `Owner` を当て、持ち主が替わったら前の持ち主の鍵で署名して `handover` を書く。`administration::adopt` は台帳を開いた持ち主が、自分の署名でない `permissions.v1.txt`（交代の直後・鍵を失くして `docket.v1.txt` を手で直した後）を受け入れて署名し直す。`Verifier::load` は `handover` があればその鍵で確かめる。`FileJournal::names` は引き継がれた ID に引き継いだ ID の名前を返し、`Member::list` は引き継がれた ID を出さない。コマンドラインは `--succeed NEW OLD` と `--owner ACCOUNT`。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 348 件（core 99・application 82・store 45・app 15） |
+| `make conformance` | 違反なし（221 ファイル） |
+| `make coverage` | core ＋ application の region 98.72%（閾値 90） |
+| `make deny` | 回していない（依存の変更なし） |
+
+Xvfb（`:97`）で 1 度流した（`scratchpad/handover.sh`）:
+
+1. alice が台帳を作って 1 件書き、bob を編集者にして権限を有効にした。bob が 1 件書いた（署名付き）
+2. bob が鍵を失くした想定で、別の設定フォルダから同じ名前 `bob` の新しい ID（`4590…`）で参加した
+3. 新しい bob の `--owner` は `only the docket owner may change permissions` で止まった（exit 1）
+4. alice の `--succeed 4590… 17a6… --owner 4590…` で `docket.v1.txt` の `owner` が `4590…` になり、`permissions.v1.txt` は `editor = 17a6…`（古い bob）・`editor = 30be…`（alice）・`succeeds = 4590…: 17a6…`・`handover = 30be…` を持ち、alice の鍵で署名されていた
+5. alice の `--permissions off` は持ち主でないので止まった（exit 1）
+6. 新しい bob が開くと `permissions.v1.txt` が bob の鍵で署名し直され、`handover` の行が消えた。参加者の段は alice（Editor）と bob `4590`（Owner）の 2 人で、古い bob `17a6` は出ない（[01-members](screenshots/2026-10-21-handover-01-members.png)）。古い bob の課題の履歴の「誰が」は `bob`（[02-history](screenshots/2026-10-21-handover-02-history.png)）。alice も編集者として開けた
+
+権限を有効にする前の alice の版 1 の 2 行は、これまで通り捨てて数える（`lines failing signature or permission: 2`・ADR 0010）。
+
+## 33. 再現
 
 ```bash
 make prove

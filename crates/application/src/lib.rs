@@ -38,6 +38,7 @@ pub mod members_action;
 pub mod members_pane;
 pub mod notice;
 pub mod permissions_file;
+pub mod permissions_reading;
 pub mod ports;
 pub mod settings;
 pub mod settings_failure;
