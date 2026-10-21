@@ -16,6 +16,7 @@ use nene_docket_core::attachment_word::AttachmentWord;
 use nene_docket_core::auto_field::AutoField;
 use nene_docket_core::button;
 use nene_docket_core::button_phase::ButtonPhase;
+use nene_docket_core::cell_text;
 use nene_docket_core::checkbox;
 use nene_docket_core::chip;
 use nene_docket_core::column_width::ColumnWidth;
@@ -1026,23 +1027,9 @@ impl DocketScreen {
         if self.mode == PaneMode::Settings {
             return Some(self.probe_settings(detail.pane(), commands));
         }
-        let id = self.selected?;
         let item = self.selected_item()?;
         let assignee_focused = self.interaction.focus() == Some(Self::slot_id(EditSlot::Assignee));
-        let head = format!(
-            "{}  {}",
-            self.number_text(id),
-            self.word(Word::StateName(item.state()))
-        );
-        commands.push(Self::cell_text(detail.number(), &head, Paint::Muted, 0));
-        let stamps = self.stamps_text(&item);
-        commands.push(Self::cell_text(detail.stamps(), &stamps, Paint::Muted, 0));
-        commands.push(Self::cell_text(
-            detail.title_name(),
-            self.word(Word::FieldName(Field::Title)),
-            Paint::Muted,
-            0,
-        ));
+        self.head_commands(detail, &item, commands);
         let title = self.interaction.probe(TITLE, detail.title(), true);
         commands.extend(text_field::text_field(detail.title(), &self.title, title));
         self.probe_state_chips(detail.chips(), commands);
@@ -1053,7 +1040,7 @@ impl DocketScreen {
                 EditSlot::Due => Field::Due,
                 EditSlot::Labels | EditSlot::Title | EditSlot::Body => Field::Labels,
             };
-            commands.push(Self::cell_text(
+            commands.extend(cell_text::cell_text(
                 name,
                 self.word(Word::FieldName(field)),
                 Paint::Muted,
@@ -1137,7 +1124,12 @@ impl DocketScreen {
                 },
             });
             let name = candidates.get(index).map_or("", String::as_str);
-            commands.push(Self::cell_text(rect, name, Paint::Ink, self.px(MARGIN_PX)));
+            commands.extend(cell_text::cell_text(
+                rect,
+                name,
+                Paint::Ink,
+                self.px(MARGIN_PX),
+            ));
         }
         commands.push(DrawCommand::Stroke {
             rect: select_box::list_rect(field, candidates.len()),
@@ -1206,6 +1198,26 @@ impl DocketScreen {
         })
     }
 
+    /// 詳細のペインの頭の字: 番号と状態・起票と更新・題名の項目名（Issue #127）。
+    fn head_commands(&self, detail: &DetailLayout, item: &Item, commands: &mut Vec<DrawCommand>) {
+        let head = format!(
+            "{}  {}",
+            self.number_text(item.id()),
+            self.word(Word::StateName(item.state()))
+        );
+        let lines = [
+            (detail.number(), head.as_str()),
+            (detail.stamps(), &self.stamps_text(item)),
+            (
+                detail.title_name(),
+                self.word(Word::FieldName(Field::Title)),
+            ),
+        ];
+        for (rect, text) in lines {
+            commands.extend(cell_text::cell_text(rect, text, Paint::Muted, 0));
+        }
+    }
+
     /// 番号の下の 1 行: いつ誰が起票し、いつ更新したか（ADR 0023 の自動の項目）。
     fn stamps_text(&self, item: &Item) -> String {
         self.word(Word::Toolbar(ToolbarWord::Stamps))
@@ -1260,7 +1272,7 @@ impl DocketScreen {
         let title = layout.row(self.px(ROW_PX), &[ColumnWidth::Fill]);
         let hint = layout.row(self.px(ROW_PX), &[ColumnWidth::Fill]);
         let [head, title, hint] = [head, title, hint].map(|row| Self::rects::<1>(&row)[0]);
-        commands.push(Self::cell_text(
+        commands.extend(cell_text::cell_text(
             head,
             self.word(Word::Toolbar(ToolbarWord::NewItem)),
             Paint::Ink,
@@ -1270,7 +1282,7 @@ impl DocketScreen {
         if let Some(draft) = self.draft() {
             commands.extend(text_field::text_field(title, draft, response));
         }
-        commands.push(Self::cell_text(
+        commands.extend(cell_text::cell_text(
             hint,
             self.word(Word::Toolbar(ToolbarWord::DraftHint)),
             Paint::Muted,
@@ -1313,7 +1325,7 @@ impl DocketScreen {
             (&columns_name, ToolbarWord::Columns),
             (&docket, ToolbarWord::DocketSection),
         ] {
-            commands.push(Self::cell_text(
+            commands.extend(cell_text::cell_text(
                 Self::rects::<1>(rects)[0],
                 self.word(Word::Toolbar(word)),
                 Paint::Muted,
@@ -1330,7 +1342,7 @@ impl DocketScreen {
 
     /// 設定の見出しと「閉じる」。
     fn settings_head(&mut self, [title, close]: [PixelRect; 2], commands: &mut Vec<DrawCommand>) {
-        commands.push(Self::cell_text(
+        commands.extend(cell_text::cell_text(
             title,
             self.word(Word::Toolbar(ToolbarWord::Settings)),
             Paint::Ink,
@@ -1353,7 +1365,7 @@ impl DocketScreen {
         [name, rect, apply]: [PixelRect; 3],
         commands: &mut Vec<DrawCommand>,
     ) -> (PixelRect, Response) {
-        commands.push(Self::cell_text(
+        commands.extend(cell_text::cell_text(
             name,
             self.word(Word::Toolbar(ToolbarWord::Language)),
             Paint::Muted,
@@ -1381,7 +1393,7 @@ impl DocketScreen {
         [name, rect, sample]: [PixelRect; 3],
         commands: &mut Vec<DrawCommand>,
     ) {
-        commands.push(Self::cell_text(
+        commands.extend(cell_text::cell_text(
             name,
             self.word(Word::Toolbar(ToolbarWord::Theme)),
             Paint::Muted,
@@ -2561,7 +2573,7 @@ impl DocketScreen {
         let search = self.interaction.probe(SEARCH, search_rect, true);
         commands.extend(text_field::text_field(search_rect, &self.search, search));
         if self.search.text().is_empty() && !search.focused() {
-            commands.push(Self::cell_text(
+            commands.extend(cell_text::cell_text(
                 search_rect,
                 self.word(Word::Toolbar(ToolbarWord::SearchHint)),
                 Paint::Muted,
@@ -2802,7 +2814,7 @@ impl DocketScreen {
         self.probe_column_grips(header, &cells);
         self.probe_column_heads(&cells);
         for (cell, heading) in cells.into_iter().zip(headings) {
-            commands.push(Self::cell_text(
+            commands.extend(cell_text::cell_text(
                 cell,
                 heading,
                 Paint::Muted,
@@ -2976,16 +2988,16 @@ impl DocketScreen {
         for (cell, column) in cells.into_iter().zip(self.settings.order().columns()) {
             let text = self.cell_of(column, shown, &number);
             let command = if overdue && column == TableColumn::Due {
-                Self::cell_text(
+                cell_text::cell_text(
                     cell,
                     &format!("{OVERDUE_MARK} {text}"),
                     Paint::Accent,
                     self.px(MARGIN_PX),
                 )
             } else {
-                Self::cell_text(cell, &text, paint, self.px(MARGIN_PX))
+                cell_text::cell_text(cell, &text, paint, self.px(MARGIN_PX))
             };
-            commands.push(command);
+            commands.extend(command);
         }
         commands.push(DrawCommand::Stroke {
             rect: PixelRect::new(rect.x(), rect.bottom(), rect.width(), 1),
@@ -3005,21 +3017,6 @@ impl DocketScreen {
     /// 番号の列。作った人の略称と、その人の中での連番。複数アカウントでも重ならない（Issue #107）。
     fn number_text(&self, id: ItemId) -> String {
         item_number::text(id, &self.names)
-    }
-
-    fn cell_text(cell: PixelRect, text: &str, paint: Paint, padding: u16) -> DrawCommand {
-        DrawCommand::Text {
-            rect: PixelRect::new(
-                cell.x().saturating_add(padding),
-                cell.y(),
-                cell.width().saturating_sub(padding.saturating_mul(2)),
-                cell.height(),
-            ),
-            text: text.to_owned(),
-            align: TextAlign::Start,
-            paint,
-            caret: None,
-        }
     }
 
     /// 降格の文言を 1 行に並べる（FR-014）。
@@ -3067,7 +3064,7 @@ impl DocketScreen {
                 rect.height(),
             );
         }
-        commands.push(Self::cell_text(
+        commands.extend(cell_text::cell_text(
             text_rect,
             &words.join(" / "),
             Paint::Ink,
@@ -3642,6 +3639,31 @@ mod tests {
         assert_eq!(screen.ledger().docket().len(), 10_000);
         assert_eq!(frame.font_px(), 13);
         assert!(screen.notices().is_empty());
+    }
+
+    /// 窓を狭めて題名の列をつぶしても、セルの文字は自分の列の矩形で切り抜かれ、隣の列に出ない（#95）。
+    #[test]
+    fn cell_text_is_clipped_to_its_column_when_the_title_column_is_narrow() {
+        let (mut screen, _) = screen(3);
+        let narrow = PixelRect::new(0, 0, 560, 400);
+        let frame = screen.step(&FrameInput::new(narrow, PointerInput::absent()));
+        let commands = frame.commands();
+        let mut titles = 0_usize;
+        for (index, command) in commands.iter().enumerate() {
+            let DrawCommand::Text { rect, text, .. } = command else {
+                continue;
+            };
+            if !text.starts_with("Issue #") {
+                continue;
+            }
+            titles = titles.saturating_add(1);
+            let before = index.checked_sub(1).and_then(|i| commands.get(i));
+            let after = index.checked_add(1).and_then(|i| commands.get(i));
+            assert_eq!(before, Some(&DrawCommand::Clip(*rect)), "{text}");
+            assert_eq!(after, Some(&DrawCommand::Unclip), "{text}");
+            assert!(rect.width() < 50, "{text}: {rect:?}");
+        }
+        assert_eq!(titles, 3);
     }
 
     #[test]

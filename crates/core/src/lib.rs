@@ -26,6 +26,7 @@ pub mod auto_field;
 pub mod bitmap;
 pub mod button;
 pub mod button_phase;
+pub mod cell_text;
 pub mod checkbox;
 pub mod chip;
 pub mod column_width;

@@ -6,6 +6,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use nene_docket_core::account_id::AccountId;
+use nene_docket_core::cell_text;
 use nene_docket_core::checkbox;
 use nene_docket_core::column_width::ColumnWidth;
 use nene_docket_core::draw_command::DrawCommand;
@@ -23,7 +24,6 @@ use nene_docket_core::scroll_state::ScrollState;
 use nene_docket_core::select_box;
 use nene_docket_core::select_state::SelectState;
 use nene_docket_core::table_layout::TableLayout;
-use nene_docket_core::text_align::TextAlign;
 use nene_docket_core::text_edit::TextEdit;
 use nene_docket_core::text_field;
 use nene_docket_core::ui_scale::UiScale;
@@ -374,7 +374,7 @@ impl MembersPane {
                 role_text(language, member),
             ];
             for (cell, text) in table.cells(rect).into_iter().zip(texts) {
-                commands.push(Self::cell_text(
+                commands.extend(cell_text::cell_text(
                     cell,
                     &text,
                     Paint::Ink,
@@ -527,7 +527,7 @@ impl MembersPane {
         let headings =
             [Word::Name, Word::Number, Word::Role].map(|word| wording::text(language, word));
         for (cell, heading) in table.cells(header).into_iter().zip(headings) {
-            commands.push(Self::cell_text(
+            commands.extend(cell_text::cell_text(
                 cell,
                 heading,
                 Paint::Muted,
@@ -548,21 +548,6 @@ impl MembersPane {
         response
             .clicked()
             .then_some(MembersAction::TogglePermissions)
-    }
-
-    fn cell_text(cell: PixelRect, text: &str, paint: Paint, padding: u16) -> DrawCommand {
-        DrawCommand::Text {
-            rect: PixelRect::new(
-                cell.x().saturating_add(padding),
-                cell.y(),
-                cell.width().saturating_sub(padding.saturating_mul(2)),
-                cell.height(),
-            ),
-            text: String::from(text),
-            align: TextAlign::Start,
-            paint,
-            caret: None,
-        }
     }
 }
 

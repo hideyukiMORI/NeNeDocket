@@ -8,6 +8,7 @@ use alloc::vec::Vec;
 use nene_docket_core::attachment::Attachment;
 use nene_docket_core::attachment_word::AttachmentWord;
 use nene_docket_core::button;
+use nene_docket_core::cell_text;
 use nene_docket_core::column_width::ColumnWidth;
 use nene_docket_core::draw_command::DrawCommand;
 use nene_docket_core::image_fit;
@@ -26,7 +27,6 @@ use nene_docket_core::scroll_bar;
 use nene_docket_core::scroll_state::ScrollState;
 use nene_docket_core::shared_bitmap::SharedBitmap;
 use nene_docket_core::table_layout::TableLayout;
-use nene_docket_core::text_align::TextAlign;
 use nene_docket_core::text_area;
 use nene_docket_core::text_edit::TextEdit;
 use nene_docket_core::text_field;
@@ -270,7 +270,7 @@ impl AttachmentsPane {
         else {
             return actions;
         };
-        commands.push(Self::cell_text(
+        commands.extend(cell_text::cell_text(
             *label,
             wording::text(language, Word::Attachment(AttachmentWord::Path)),
             Paint::Muted,
@@ -340,7 +340,7 @@ impl AttachmentsPane {
             String::from("SHA-256"),
         ];
         for (cell, heading) in table.cells(header).into_iter().zip(headings) {
-            commands.push(Self::cell_text(
+            commands.extend(cell_text::cell_text(
                 cell,
                 &heading,
                 Paint::Muted,
@@ -392,7 +392,7 @@ impl AttachmentsPane {
                     .collect(),
             ];
             for (cell, text) in table.cells(rect).into_iter().zip(texts) {
-                commands.push(Self::cell_text(
+                commands.extend(cell_text::cell_text(
                     cell,
                     &text,
                     Paint::Ink,
@@ -441,7 +441,7 @@ impl AttachmentsPane {
         let mut area = area;
         if view.is_truncated() {
             let note = PixelRect::new(area.x(), area.y(), area.width(), self.px(ROW_PX));
-            commands.push(Self::cell_text(
+            commands.extend(cell_text::cell_text(
                 note,
                 wording::text(language, Word::Attachment(AttachmentWord::Truncated)),
                 Paint::Muted,
@@ -565,7 +565,7 @@ impl AttachmentsPane {
         commands: &mut Vec<DrawCommand>,
     ) {
         for (cell, text) in table.cells(rect).into_iter().zip(row) {
-            commands.push(Self::cell_text(cell, text, paint, self.px(PADDING_PX)));
+            commands.extend(cell_text::cell_text(cell, text, paint, self.px(PADDING_PX)));
         }
     }
 
@@ -665,14 +665,12 @@ impl AttachmentsPane {
         let (Some(text_rect), Some(button_rect)) = (row.first(), row.get(1)) else {
             return Vec::new();
         };
-        commands.push(DrawCommand::Clip(*text_rect));
-        commands.push(Self::cell_text(
+        commands.extend(cell_text::cell_text(
             *text_rect,
             path,
             Paint::Ink,
             self.px(PADDING_PX),
         ));
-        commands.push(DrawCommand::Unclip);
         let open = interaction.probe(OPEN, *button_rect, true);
         commands.extend(button::button(
             *button_rect,
@@ -742,20 +740,5 @@ impl AttachmentsPane {
             ColumnWidth::Fixed(self.px(SIZE_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(DIGEST_WIDTH_PX)),
         ])
-    }
-
-    fn cell_text(cell: PixelRect, text: &str, paint: Paint, padding: u16) -> DrawCommand {
-        DrawCommand::Text {
-            rect: PixelRect::new(
-                cell.x().saturating_add(padding),
-                cell.y(),
-                cell.width().saturating_sub(padding.saturating_mul(2)),
-                cell.height(),
-            ),
-            text: String::from(text),
-            align: TextAlign::Start,
-            paint,
-            caret: None,
-        }
     }
 }
