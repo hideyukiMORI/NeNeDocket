@@ -1,4 +1,5 @@
-//! 添付のファイルの置き場（FR-021・ADR 0016）。台帳フォルダの `attachments/<作ったアカウント>:<連番>/<添付の連番>-<名前>` に写す。
+//! 添付のファイルの置き場（FR-021・ADR 0016）。台帳フォルダの `attachments/<作ったアカウント>-<連番>/<添付の連番>-<名前>` に写す。
+//! `:` は Windows / SMB で使えない（Issue #74）。名前は core の `safe_name` で台帳フォルダのどこでも作れる形にする。
 //! 元のファイルは触らない。一時名に書いて rename する。写しは消さない（外すのは `Detach` の追記だけ）。
 
 use std::fs;
@@ -21,7 +22,7 @@ const DIRECTORY: &str = "attachments";
 /// 課題のフォルダ。
 fn item_directory(root: &Path, item: ItemId) -> PathBuf {
     root.join(DIRECTORY)
-        .join(format!("{}:{}", item.creator().hex(), item.sequence()))
+        .join(format!("{}-{}", item.creator().hex(), item.sequence()))
 }
 
 /// 写しの場所。
@@ -156,6 +157,11 @@ mod tests {
         assert!(attachment.digest_hex().starts_with("ba7816bf"));
         let copy = path_of(&root, item, &attachment);
         assert!(copy.ends_with("1-note.txt"));
+        assert!(
+            copy.to_string_lossy()
+                .contains("/attachments/00000000000000000000000000000011-2/")
+        );
+        assert!(!copy.to_string_lossy().contains(':'));
         assert_eq!(fs::read(&copy).unwrap(), b"abc");
         assert!(is_intact(&root, item, &attachment));
         fs::write(&copy, b"abd").unwrap();

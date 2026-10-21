@@ -857,7 +857,7 @@ Xvfb（`:102`・`scratchpad/snapshot.sh`）: 読み直し 1 秒の設定で alic
 
 ## 39. Issue #62 — 添付: 台帳フォルダに写し、`attach` / `detach` を追記（ADR 0016 受理・2026-10-21）
 
-同じコンテナ。core に `Attachment`（連番・名前・バイト数・SHA-256）と自前の `sha256`（FIPS 180-4・外部クレートを足さない）、`OpKind::Attach` / `Detach`、`Item::attachments` と逆の操作。store に `attachment_store`（`attachments/<作ったアカウント>:<連番>/<添付の連番>-<名前>` に一時名 → rename で写す・`is_intact`）、`attach`（11 欄）/ `detach`（8 欄）の行、スナップショットの課題の行に添付の列。application に添付の段 `AttachmentsPane`（パスの欄・「添付する」・「外す」・名前・大きさ・SHA-256 の先頭 8 桁）、履歴の「添付した」「添付を外した」、知らせ（読めない・置けない）。app に `--attach <課題> <パス>`。文言は `Word::Attachment(AttachmentWord)` で 6 言語 × 10 語。道具の段の「添付」は 110 px（90 では英語が切れた）。
+同じコンテナ。core に `Attachment`（連番・名前・バイト数・SHA-256）と自前の `sha256`（FIPS 180-4・外部クレートを足さない）、`OpKind::Attach` / `Detach`、`Item::attachments` と逆の操作。store に `attachment_store`（`attachments/<作ったアカウント>-<連番>/<添付の連番>-<名前>` に一時名 → rename で写す・`is_intact`。当初は `:` 区切りで、Windows / SMB で作れないと Issue #74 で直した）、`attach`（11 欄）/ `detach`（8 欄）の行、スナップショットの課題の行に添付の列。application に添付の段 `AttachmentsPane`（パスの欄・「添付する」・「外す」・名前・大きさ・SHA-256 の先頭 8 桁）、履歴の「添付した」「添付を外した」、知らせ（読めない・置けない）。app に `--attach <課題> <パス>`。文言は `Word::Attachment(AttachmentWord)` で 6 言語 × 10 語。道具の段の「添付」は 110 px（90 では英語が切れた）。
 
 | target | 結果 |
 | --- | --- |
