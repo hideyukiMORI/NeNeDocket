@@ -108,11 +108,12 @@ application の `JournalPort` の実装（`FileJournal`）もここ。
 時計・乱数・クリップボード・画面・IME のポートを OS の API で実装する。取得値をその場で core の型へ変換する（ARC-008）。
 `adapters-x11` は壁時計（`SystemClock`）・アカウントの保存（`saved_account`・`/dev/urandom` の ID）・設定の読み書き（`saved_settings`・FR-012）・読み直しの刻み（`RefreshTicker`・スレッドが X の窓へ `ClientMessage` を送る。ADR 0008）を持つ。
 `adapters-windows` は同じ壁時計・アカウント（`%APPDATA%`・`BCryptGenRandom`）・設定・デスクトップの dpi（`GetDpiForSystem`）を持つ。刻みは Windows では画面のタイマー（ADR 0009）。
+両方が OS の言語（`locale`）と明暗（`appearance`）を起動時に観測して環境に添える（ADR 0011 / 0012）。設定は版 2（`settings.v2.txt`）で、版 1 しか無ければ読んで版 2 に書く。
 
 ### `ui-x11` / `ui-win32`
 
 application が作った値を描き、操作を意図として渡す（ARC-011）。部品（表・セレクトボックス・入力欄・ボタン・スクロールバー）の**配置と当たり判定は core** が物理画素で計算し、UI はそれを描くだけ。可変性の隔離区画（ARC-005）。
-`ui-x11` は cairo の `ImageSurface` に描いて `PutImage` で転送し、`ui-win32` は通常の窓に Direct2D の `HwndRenderTarget` で描く（ADR 0009）。色は core の `palette` から（ARC-001）。鍵の読み替えとポインタの追跡は OS ごとの純関数で、Linux でもテストする。
+`ui-x11` は cairo の `ImageSurface` に描いて `PutImage` で転送し、`ui-win32` は通常の窓に Direct2D の `HwndRenderTarget` で描く（ADR 0009）。色はフレームが運ぶ配色（core の `Palette`）から、文言は core の `wording` から（ARC-001 / ARC-011）。X11 は表示言語の字を描ける家族を選び直し、Windows は地域名を DirectWrite に渡す（ADR 0011）。鍵の読み替えとポインタの追跡は OS ごとの純関数で、Linux でもテストする。
 
 ### `app`
 

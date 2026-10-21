@@ -26,8 +26,11 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0008](0008-account-file-and-refresh-tick.md) | アカウントは設定フォルダの乱数の ID。他人のジャーナルは X の合図で読み直す | 受理 |
 | [0009](0009-windows-port-plain-window-and-timer.md) | Windows 版は通常の窓に Direct2D で描き、読み直しの刻みは窓のタイマー。アダプタの読み書きは OS ごとに持つ | 受理 |
 | [0010](0010-signatures-and-permissions.md) | 権限を有効にした台帳では、操作の行に Ed25519 の署名を付け、読み手が公開鍵で検証する | 提案（施主の判断待ち: 依存と BSD-3-Clause） |
+| [0011](0011-ui-language-is-a-versioned-setting.md) | 表示言語は 6 言語の閉じた集合で、文言は core の 1 表から出し、希望は版付きの設定に残して OS の観測値で解決する | 受理 |
+| [0012](0012-theme-model-and-builtin-colorschemes.md) | 配色は nene-nib の組み込み 125 テーマを写し、台帳の 8 色は本文の 3 色から整数の補間で導く。希望は設定に残し `system` は OS の明暗に従う | 受理 |
 
 ## これから書くもの（Issue が立ったら）
 
 - 文字入力（IME）の方式（FR-015）
+- 利用者のテーマファイル（nene-nib の `.v1.theme`・ADR 0012 の 7）
 - スナップショット（ジャーナルが長くなったとき・FR-017。2026-10-21 の実測では 1 年分 0.6 秒で、まだ要らない。gate-proofs 第 20 節）

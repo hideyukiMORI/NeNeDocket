@@ -6,9 +6,13 @@
 //! Win32 に触れるモジュールは Windows でだけ組み立て、残り（標準ライブラリだけ）は Linux でもテストする。
 
 pub mod adapter_failure;
+#[cfg(windows)]
+pub mod appearance;
 mod config_directory;
 #[cfg(windows)]
 pub mod desktop_dpi;
+#[cfg(windows)]
+pub mod locale;
 #[cfg(windows)]
 mod random_id;
 #[cfg(windows)]

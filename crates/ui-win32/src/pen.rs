@@ -5,8 +5,9 @@
 
 use nene_docket_application::docket_frame::DocketFrame;
 use nene_docket_core::draw_command::DrawCommand;
+use nene_docket_core::language::Language;
 use nene_docket_core::paint::Paint;
-use nene_docket_core::palette;
+use nene_docket_core::palette::Palette;
 use nene_docket_core::pixel_rect::PixelRect;
 use nene_docket_core::text_align::TextAlign;
 use nene_docket_core::text_caret::TextCaret;
@@ -33,8 +34,20 @@ use windows_numerics::Vector2;
 use crate::text_line::TextLine;
 use crate::win32_failure::Win32Failure;
 
-/// 字の家族。Windows の UI の字。日本語は DirectWrite の fallback（Yu Gothic UI）に任せる（ADR 0002 の 6）。
+/// 字の家族。Windows の UI の字。日本語・中国語・韓国語は DirectWrite の fallback に任せる（ADR 0002 の 6）。地域名は表示言語から（ADR 0011）。
 const FONT_FAMILY: windows::core::PCWSTR = w!("Segoe UI");
+
+/// DirectWrite に渡す地域名。fallback の字体（日本・中国・台湾・韓国の漢字の字形）がこれで決まる。
+const fn locale_name(language: Language) -> windows::core::PCWSTR {
+    match language {
+        Language::Japanese => w!("ja-jp"),
+        Language::English => w!("en-us"),
+        Language::SimplifiedChinese => w!("zh-cn"),
+        Language::TraditionalChinese => w!("zh-tw"),
+        Language::Korean => w!("ko-kr"),
+        Language::Spanish => w!("es-es"),
+    }
+}
 /// 字の配置の最大の幅と高さ（1 行）。
 const LAYOUT_LIMIT: f32 = 100_000.0;
 
@@ -110,7 +123,8 @@ impl Pen {
         reason = "RS-010: Direct2D の BeginDraw / EndDraw を呼ぶ（ADR 0002 の 4）"
     )]
     pub fn paint(&self, frame: &DocketFrame) -> Result<(), Win32Failure> {
-        let format = self.format(f32::from(frame.font_px()))?;
+        let format = self.format(f32::from(frame.font_px()), frame.language())?;
+        let palette = frame.theme().palette();
         // SAFETY: 描画は BeginDraw と EndDraw の間だけ。矩形は画素に揃え、字は灰色の AA。
         unsafe {
             self.target.BeginDraw();
@@ -121,7 +135,7 @@ impl Pen {
         let mut drawn = Ok(());
         let mut clips = 0_u32;
         for command in frame.commands() {
-            drawn = self.draw(&format, command, &mut clips);
+            drawn = self.draw((&format, &palette), command, &mut clips);
             if drawn.is_err() {
                 break;
             }
@@ -137,17 +151,17 @@ impl Pen {
     /// 1 つの命令を描く。`clips` は開いている切り抜きの数（失敗しても閉じるため）。
     fn draw(
         &self,
-        format: &IDWriteTextFormat,
+        (format, palette): (&IDWriteTextFormat, &Palette),
         command: &DrawCommand,
         clips: &mut u32,
     ) -> Result<(), Win32Failure> {
         match command {
             DrawCommand::Fill { rect, paint } => {
-                self.fill(*rect, &self.brush(*paint)?);
+                self.fill(*rect, &self.brush(palette, *paint)?);
                 Ok(())
             }
             DrawCommand::Stroke { rect, paint } => {
-                self.stroke(*rect, &self.brush(*paint)?);
+                self.stroke(*rect, &self.brush(palette, *paint)?);
                 Ok(())
             }
             DrawCommand::Text {
@@ -156,7 +170,7 @@ impl Pen {
                 align,
                 paint,
                 caret,
-            } => self.text(format, (*rect, *align, *paint), (text, *caret)),
+            } => self.text((format, palette), (*rect, *align, *paint), (text, *caret)),
             DrawCommand::Clip(rect) => {
                 self.clip(*rect);
                 *clips = clips.saturating_add(1);
@@ -172,13 +186,13 @@ impl Pen {
         }
     }
 
-    /// 1 色の筆。色は core の表（ARC-001）。
+    /// 1 色の筆。色はフレームの配色（ARC-001）。
     #[expect(
         unsafe_code,
         reason = "RS-010: Direct2D の CreateSolidColorBrush を呼ぶ（ADR 0002 の 4）"
     )]
-    fn brush(&self, paint: Paint) -> Result<ID2D1Brush, Win32Failure> {
-        let rgb = palette::light(paint);
+    fn brush(&self, palette: &Palette, paint: Paint) -> Result<ID2D1Brush, Win32Failure> {
+        let rgb = palette.colour(paint);
         let colour = D2D1_COLOR_F {
             r: f32::from(rgb.red()) / 255.0,
             g: f32::from(rgb.green()) / 255.0,
@@ -262,7 +276,7 @@ impl Pen {
     )]
     fn text(
         &self,
-        format: &IDWriteTextFormat,
+        (format, palette): (&IDWriteTextFormat, &Palette),
         (rect, align, paint): (PixelRect, TextAlign, Paint),
         (text, caret): (&str, Option<TextCaret>),
     ) -> Result<(), Win32Failure> {
@@ -287,11 +301,13 @@ impl Pen {
             };
             // SAFETY: 描画は paint の中で呼ばれる。selection はこの関数の局所。
             unsafe {
-                self.target
-                    .FillRectangle(&raw const selection, &self.brush(Paint::Selection)?);
+                self.target.FillRectangle(
+                    &raw const selection,
+                    &self.brush(palette, Paint::Selection)?,
+                );
             }
         }
-        let brush = self.brush(paint)?;
+        let brush = self.brush(palette, paint)?;
         let origin = Vector2 { X: left, Y: top };
         // SAFETY: 描画は paint の中で呼ばれる。配置はこの関数の間生きている。
         unsafe {
@@ -319,7 +335,7 @@ impl Pen {
         unsafe_code,
         reason = "RS-010: DirectWrite の CreateTextFormat を呼ぶ（ADR 0002 の 4）"
     )]
-    fn format(&self, size: f32) -> Result<IDWriteTextFormat, Win32Failure> {
+    fn format(&self, size: f32, language: Language) -> Result<IDWriteTextFormat, Win32Failure> {
         // SAFETY: 家族名と地域名は静的な文字列。
         let format = unsafe {
             self.words.CreateTextFormat(
@@ -329,7 +345,7 @@ impl Pen {
                 DWRITE_FONT_STYLE_NORMAL,
                 DWRITE_FONT_STRETCH_NORMAL,
                 size,
-                w!("ja-jp"),
+                locale_name(language),
             )
         }?;
         Ok(format)

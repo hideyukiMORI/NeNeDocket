@@ -111,6 +111,8 @@ nene-docket-core = { path = "../core" }
 [target.'cfg(windows)'.dependencies]
 windows = { version = "0.62.2", features = [
     "Win32_Foundation",
+    "Win32_Globalization",
     "Win32_Security_Cryptography",
+    "Win32_System_Registry",
     "Win32_UI_HiDpi",
 ] }

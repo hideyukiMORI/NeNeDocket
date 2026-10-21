@@ -94,7 +94,7 @@ fn step(
 
 /// 画面に 1 フレーム渡し、描いて転送する。
 fn present(
-    window: &DocketWindow<'_>,
+    window: &mut DocketWindow<'_>,
     screen: &mut DocketScreen,
     pending: &PendingFrame,
 ) -> Result<(), UiFailure> {

@@ -15,16 +15,6 @@ impl ItemState {
     /// 表示の順。
     pub const ALL: [Self; 3] = [Self::Open, Self::InProgress, Self::Done];
 
-    /// 表に出す文字。
-    #[must_use]
-    pub const fn label(self) -> &'static str {
-        match self {
-            Self::Open => "Open",
-            Self::InProgress => "In progress",
-            Self::Done => "Done",
-        }
-    }
-
     /// ジャーナルに書く語。読み書きで同じ。
     #[must_use]
     pub const fn keyword(self) -> &'static str {
@@ -49,12 +39,11 @@ mod tests {
     use super::*;
 
     #[test]
-    fn keywords_round_trip_and_labels_are_distinct() {
+    fn keywords_round_trip_and_are_distinct() {
         for state in ItemState::ALL {
             assert_eq!(ItemState::from_keyword(state.keyword()), Some(state));
         }
         assert_eq!(ItemState::from_keyword("closed"), None);
-        assert_eq!(ItemState::InProgress.label(), "In progress");
-        assert_ne!(ItemState::Open.label(), ItemState::Done.label());
+        assert_ne!(ItemState::Open.keyword(), ItemState::Done.keyword());
     }
 }

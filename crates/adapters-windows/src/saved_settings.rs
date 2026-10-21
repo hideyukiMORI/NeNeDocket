@@ -1,25 +1,34 @@
-//! 設定ファイル（FR-012）の読み書き。設定フォルダ（`%APPDATA%`）の `settings.v1.txt`。形は application の `settings_file`。X11 版と同じ手続き。
+//! 設定ファイル（FR-012）の読み書き。設定フォルダ（`%APPDATA%`）の `settings.v2.txt`。形は application の `settings_file`。X11 版と同じ手続き。
+//!
+//! 版 2 が無く版 1（`settings.v1.txt`）があれば版 1 を読む（言語と配色は `system` で補う）。書くのは版 2 だけで、版 1 は消さない（ARC-009 の移行）。
 
 use std::fs;
 use std::io;
-use std::path::Path;
+use std::path::{Path, PathBuf};
 
 use nene_docket_application::settings::Settings;
+use nene_docket_application::settings_failure::SettingsFailure;
 use nene_docket_application::settings_file;
+use nene_docket_application::settings_port::SettingsPort;
 
 use crate::adapter_failure::AdapterFailure;
 use crate::config_directory;
 
-/// ファイル名。版は名前にある（ARC-009）。
-const FILE_NAME: &str = "settings.v1.txt";
+/// いま書く版のファイル名。版は名前にある（ARC-009）。
+const FILE_NAME: &str = "settings.v2.txt";
+/// 読めるだけの前の版のファイル名。
+const PREVIOUS_FILE_NAME: &str = "settings.v1.txt";
 
-/// 設定を読む。無ければ初期値。読めない形なら失敗（黙って既定値へ落とさない・FR-014）。
+/// 設定を読む。版 2、無ければ版 1、どちらも無ければ初期値。読めない形なら失敗（黙って既定値へ落とさない・FR-014）。
 ///
 /// # Errors
 ///
 /// 設定フォルダが決められない・ファイルが読めない形・読めない。
 pub fn load() -> Result<Settings, AdapterFailure> {
-    load_from(&config_directory::file_path(FILE_NAME)?)
+    load_from(
+        &config_directory::file_path(FILE_NAME)?,
+        &config_directory::file_path(PREVIOUS_FILE_NAME)?,
+    )
 }
 
 /// 開いた台帳を設定の先頭に置いて書く。フォルダは絶対の道にする（相対の道は起動した場所に依る）。
@@ -31,10 +40,45 @@ pub fn remember(settings: Settings, folder: &Path) -> Result<Settings, AdapterFa
     remember_at(&config_directory::file_path(FILE_NAME)?, settings, folder)
 }
 
-fn load_from(path: &Path) -> Result<Settings, AdapterFailure> {
+/// 画面が変えた設定（言語・配色）を書く、application のポートの実装。
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub struct SettingsStore {
+    path: PathBuf,
+}
+
+impl SettingsStore {
+    /// 設定フォルダの版 2 のファイルへ。
+    ///
+    /// # Errors
+    ///
+    /// 設定フォルダが決められない。
+    pub fn in_config_directory() -> Result<Self, AdapterFailure> {
+        Ok(Self {
+            path: config_directory::file_path(FILE_NAME)?,
+        })
+    }
+}
+
+impl SettingsPort for SettingsStore {
+    fn save(&mut self, settings: &Settings) -> Result<(), SettingsFailure> {
+        write_to(&self.path, settings).map_err(|_failure| SettingsFailure::Unwritable)
+    }
+}
+
+fn load_from(path: &Path, previous: &Path) -> Result<Settings, AdapterFailure> {
     match fs::read_to_string(path) {
         Ok(text) => settings_file::parse(&text)
             .ok_or_else(|| AdapterFailure::BadSettingsFile(path.to_path_buf())),
+        Err(error) if error.kind() == io::ErrorKind::NotFound => load_previous(previous),
+        Err(error) => Err(AdapterFailure::Io(error)),
+    }
+}
+
+/// 版 1 を読む。無ければ初期値。
+fn load_previous(previous: &Path) -> Result<Settings, AdapterFailure> {
+    match fs::read_to_string(previous) {
+        Ok(text) => settings_file::parse(&text)
+            .ok_or_else(|| AdapterFailure::BadSettingsFile(previous.to_path_buf())),
         Err(error) if error.kind() == io::ErrorKind::NotFound => Ok(Settings::initial()),
         Err(error) => Err(AdapterFailure::Io(error)),
     }
@@ -43,19 +87,27 @@ fn load_from(path: &Path) -> Result<Settings, AdapterFailure> {
 fn remember_at(path: &Path, settings: Settings, folder: &Path) -> Result<Settings, AdapterFailure> {
     let absolute = fs::canonicalize(folder)?;
     let remembered = settings.opened(&absolute.to_string_lossy());
+    write_to(path, &remembered)?;
+    Ok(remembered)
+}
+
+/// 設定は台帳でないので追記せず、丸ごと置き換える。
+fn write_to(path: &Path, settings: &Settings) -> Result<(), AdapterFailure> {
     if let Some(directory) = path.parent() {
         fs::create_dir_all(directory)?;
     }
-    // 設定は台帳でないので追記せず、丸ごと置き換える。
-    fs::write(path, settings_file::encode(&remembered))?;
-    Ok(remembered)
+    fs::write(path, settings_file::encode(settings))?;
+    Ok(())
 }
 
 #[cfg(test)]
 mod tests {
+    use nene_docket_core::language::Language;
+    use nene_docket_core::language_choice::LanguageChoice;
+
     use super::*;
 
-    fn temp(name: &str) -> std::path::PathBuf {
+    fn temp(name: &str) -> PathBuf {
         let root = std::env::temp_dir().join(format!("nene-docket-saved-settings-{name}"));
         if root.exists() {
             fs::remove_dir_all(&root).unwrap();
@@ -68,29 +120,62 @@ mod tests {
     fn missing_is_initial_and_remember_writes_the_absolute_folder_first() {
         let root = temp("remember");
         let path = root.join("config").join(FILE_NAME);
-        assert_eq!(load_from(&path).unwrap(), Settings::initial());
+        let previous = root.join("config").join(PREVIOUS_FILE_NAME);
+        assert_eq!(load_from(&path, &previous).unwrap(), Settings::initial());
         let docket = root.join("docket");
         fs::create_dir_all(&docket).unwrap();
         let remembered = remember_at(&path, Settings::initial(), &docket).unwrap();
-        assert!(
-            remembered
-                .latest()
-                .is_some_and(|folder| folder.ends_with("docket") && Path::new(folder).is_absolute())
-        );
-        assert_eq!(load_from(&path).unwrap(), remembered);
+        assert!(remembered.latest().is_some_and(|folder| folder.ends_with("docket")
+            && Path::new(folder).is_absolute()));
+        assert_eq!(load_from(&path, &previous).unwrap(), remembered);
         assert!(remember_at(&path, remembered, &root.join("missing")).is_err());
         fs::remove_dir_all(&root).unwrap();
     }
 
     #[test]
-    fn a_broken_file_is_refused_not_replaced() {
+    fn version_one_is_read_when_version_two_is_missing_and_the_store_writes_version_two() {
+        let root = temp("migrate");
+        let path = root.join(FILE_NAME);
+        let previous = root.join(PREVIOUS_FILE_NAME);
+        fs::write(
+            &previous,
+            "version = 1\nrefresh_seconds = 5\nrecent = /old\n",
+        )
+        .unwrap();
+        let loaded = load_from(&path, &previous).unwrap();
+        assert_eq!(loaded.refresh_seconds(), 5);
+        assert_eq!(loaded.latest(), Some("/old"));
+        assert_eq!(loaded.language(), LanguageChoice::System);
+        let mut store = SettingsStore { path: path.clone() };
+        let changed = loaded.with_language(LanguageChoice::Fixed(Language::Japanese));
+        assert_eq!(store.save(&changed), Ok(()));
+        assert!(
+            fs::read_to_string(&path)
+                .unwrap()
+                .starts_with("version = 2\n")
+        );
+        assert!(previous.exists());
+        assert_eq!(load_from(&path, &previous).unwrap(), changed);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_broken_file_is_refused_not_replaced_and_an_unwritable_store_fails() {
         let root = temp("broken");
         let path = root.join(FILE_NAME);
         fs::write(&path, "version = 9\n").unwrap();
         assert!(matches!(
-            load_from(&path),
+            load_from(&path, &root.join(PREVIOUS_FILE_NAME)),
             Err(AdapterFailure::BadSettingsFile(_))
         ));
+        let mut store = SettingsStore {
+            path: root.join("missing-dir-file").join("x").join(FILE_NAME),
+        };
+        fs::write(root.join("missing-dir-file"), "a file, not a directory").unwrap();
+        assert_eq!(
+            store.save(&Settings::initial()),
+            Err(SettingsFailure::Unwritable)
+        );
         fs::remove_dir_all(&root).unwrap();
     }
 }

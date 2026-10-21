@@ -1,35 +1,48 @@
-//! 再起動をまたいで残す設定（FR-012）。最近開いた台帳と、他人のジャーナルを読み直す間隔。
+//! 再起動をまたいで残す設定（FR-012）。最近開いた台帳・他人のジャーナルを読み直す間隔・表示言語・配色。
 
 use alloc::string::String;
 use alloc::vec::Vec;
+
+use nene_docket_core::language_choice::LanguageChoice;
+use nene_docket_core::theme_choice::ThemeChoice;
 
 /// 最近の台帳を覚える数。
 const RECENT_LIMIT: usize = 10;
 /// 読み直しの間隔の既定（秒・ADR 0004 の 8）。
 const DEFAULT_REFRESH_SECONDS: u64 = 3;
 
-/// 最近開いた台帳のフォルダ（新しいものが先）と、読み直しの間隔（秒）。
+/// 最近開いた台帳のフォルダ（新しいものが先）・読み直しの間隔（秒）・表示言語の希望・配色の希望。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     recent: Vec<String>,
     refresh_seconds: u64,
+    language: LanguageChoice,
+    theme: ThemeChoice,
 }
 
 impl Settings {
-    /// 何も開いたことが無く、間隔は既定。
+    /// 何も開いたことが無く、間隔は既定、言語と配色は OS に従う。
     #[must_use]
     pub const fn initial() -> Self {
         Self {
             recent: Vec::new(),
             refresh_seconds: DEFAULT_REFRESH_SECONDS,
+            language: LanguageChoice::System,
+            theme: ThemeChoice::System,
         }
     }
 
     /// 値から。最近の台帳は 10 件に切り、間隔は 1 秒以上に丸める。
     #[must_use]
-    pub fn new(recent: Vec<String>, refresh_seconds: u64) -> Self {
+    pub fn new(
+        recent: Vec<String>,
+        refresh_seconds: u64,
+        (language, theme): (LanguageChoice, ThemeChoice),
+    ) -> Self {
         let mut settings = Self::initial();
         settings.refresh_seconds = refresh_seconds.max(1);
+        settings.language = language;
+        settings.theme = theme;
         for folder in recent.into_iter().rev() {
             settings = settings.opened(&folder);
         }
@@ -43,6 +56,18 @@ impl Settings {
         self.recent.insert(0, String::from(folder));
         self.recent.truncate(RECENT_LIMIT);
         self
+    }
+
+    /// 表示言語の希望を変えた設定。
+    #[must_use]
+    pub fn with_language(self, language: LanguageChoice) -> Self {
+        Self { language, ..self }
+    }
+
+    /// 配色の希望を変えた設定。
+    #[must_use]
+    pub fn with_theme(self, theme: ThemeChoice) -> Self {
+        Self { theme, ..self }
     }
 
     /// 最近開いた台帳。新しいものが先。
@@ -62,10 +87,24 @@ impl Settings {
     pub const fn refresh_seconds(&self) -> u64 {
         self.refresh_seconds
     }
+
+    /// 表示言語の希望。
+    #[must_use]
+    pub const fn language(&self) -> LanguageChoice {
+        self.language
+    }
+
+    /// 配色の希望。
+    #[must_use]
+    pub const fn theme(&self) -> ThemeChoice {
+        self.theme
+    }
 }
 
 #[cfg(test)]
 mod tests {
+    use nene_docket_core::language::Language;
+
     use super::*;
 
     #[test]
@@ -73,6 +112,8 @@ mod tests {
         let mut settings = Settings::initial();
         assert_eq!(settings.latest(), None);
         assert_eq!(settings.refresh_seconds(), 3);
+        assert_eq!(settings.language(), LanguageChoice::System);
+        assert_eq!(settings.theme(), ThemeChoice::System);
         for number in 0..12_u32 {
             settings = settings.opened(&alloc::format!("/d/{number}"));
         }
@@ -84,12 +125,21 @@ mod tests {
     }
 
     #[test]
-    fn new_keeps_the_order_and_floors_the_interval() {
+    fn new_keeps_the_order_floors_the_interval_and_carries_the_choices() {
+        let dracula = ThemeChoice::from_keyword("dracula").unwrap();
         let settings = Settings::new(
             alloc::vec![String::from("a"), String::from("b"), String::from("a")],
             0,
+            (LanguageChoice::Fixed(Language::Korean), dracula),
         );
         assert_eq!(settings.recent(), ["a", "b"]);
         assert_eq!(settings.refresh_seconds(), 1);
+        assert_eq!(settings.language(), LanguageChoice::Fixed(Language::Korean));
+        assert_eq!(settings.theme(), dracula);
+        let changed = settings
+            .with_language(LanguageChoice::System)
+            .with_theme(ThemeChoice::System);
+        assert_eq!(changed.language(), LanguageChoice::System);
+        assert_eq!(changed.theme(), ThemeChoice::System);
     }
 }

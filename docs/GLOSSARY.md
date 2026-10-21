@@ -27,7 +27,11 @@
 | 鍵（key） | アカウントの署名鍵。権限を有効にした台帳でだけ使う | 別の ADR |
 | グループ（group） | アカウントの集合。権限の単位 | `Group`（core）・FR-010 |
 | 権限（permission） | 台帳・項目に対して「書ける」かどうか。閲覧は制限しない | `Permission`（core） |
-| 設定（settings） | 最近開いた台帳と読み直しの間隔（列の幅と順・見えはまだ）。版付きの `key = value`。形は application、読み書きは adapters | `Settings` / `settings_file`（application）・`saved_settings`（adapters-x11） |
+| 設定（settings） | 最近開いた台帳・読み直しの間隔・表示言語の希望・配色の希望（列の幅と順はまだ）。版付きの `key = value`（版 2）。形は application、読み書きは adapters | `Settings` / `settings_file`（application）・`saved_settings`（adapters-x11 / adapters-windows） |
+| 表示言語（language） | 画面の語の言語。6 つの閉じた集合。希望（`system` か決まった言語）は設定に、表示する言語は OS の観測値と合わせて解決する | `Language` / `LanguageChoice`（core）・ADR 0011・FR-019 |
+| 語（word）と文言の表 | 画面に出す語の名前と、言語ごとの文字列の表。UI は文字列を書かない | `Word` / `wording::text`（core） |
+| 配色（theme） | 名前・明暗・台帳の 8 色。組み込み 125 の元（`ThemeSeed`: 本文の 3 色と出典）から整数の補間で導く。希望（`system` か名前）は設定に | `Theme` / `ThemeSeed` / `theme_catalog` / `theme_derivation` / `ThemeChoice`（core）・ADR 0012 |
+| 明暗（appearance） | ライトかダークか。OS の観測値と配色の表が持つ | `Appearance`（core） |
 | 結果（outcome） | 期待される成功・失敗を表す閉じた型 | `Result<T, *Failure>`（core / application） |
 | 拒否理由（failure） | 結果に添える閉じた理由の集合 | `*Failure`（`enum`） |
 | ポート（port） | 中核がプラットフォームを使うための型のある窓口 | `*Port`（application の `trait`） |
@@ -53,7 +57,7 @@
 | 確定前の文字列（preedit） | IME が組み立て中の文字列。確定で操作になる | `Preedit`（core）・`TextEdit::with_preedit` |
 | 描画命令 | core が出し UI が描く列。塗り・縁・文字（カーソルは文字の添字）・切り抜き。色は意味（`Paint`）で渡す | `DrawCommand` / `Paint`（core） |
 | 反映（render） | 描画命令を画素へ写す操作。UI 状態を変えてよい唯一の場所 | `Canvas::render`（ui-x11）・`Pen::paint`（ui-win32） |
-| 見えの色（palette） | 色の意味（`Paint`）から 8 ビットの色へ。X11 と Windows が同じ表を使う | `palette::light` / `Rgb`（core） |
+| 見えの色（palette） | 色の意味（`Paint`）から 8 ビットの色へ。配色ごとに 1 つで、フレームが運び、X11 と Windows が同じ表を使う | `Palette` / `Rgb`（core） |
 | 隔離区画 | 可変性を許した唯一の場所 | ARC-005 の表 |
 | 規約検査（conformance） | NeNe Docket 固有の自作ゲート | `xtask`（CNF-NNN） |
 | 抑制 | `#[expect(lint, reason = "<規則 ID>: …")]`。理由付きで、発火しなくなれば落ちる | RS-019 |

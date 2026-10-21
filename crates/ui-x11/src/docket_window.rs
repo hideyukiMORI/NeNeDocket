@@ -1,6 +1,7 @@
 //! 台帳の窓。作る・描いたものを転送する・大きさを覚える。OS の通常の窓（FR-018）。
 
 use nene_docket_application::docket_frame::DocketFrame;
+use nene_docket_core::language::Language;
 use nene_docket_core::pixel_rect::PixelRect;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
@@ -12,6 +13,7 @@ use x11rb::wrapper::ConnectionExt as _;
 
 use crate::canvas::Canvas;
 use crate::display::Display;
+use crate::font_family;
 use crate::transfer::Transfer;
 use crate::ui_failure::UiFailure;
 
@@ -28,6 +30,8 @@ pub struct DocketWindow<'d> {
     window: WindowWrapper<&'d RustConnection>,
     gc: GcontextWrapper<&'d RustConnection>,
     bounds: PixelRect,
+    /// 直前のフレームの言語と、その字を描ける家族。言語が変わったら選び直す（ADR 0011）。
+    font: Option<(Language, &'static str)>,
 }
 
 impl<'d> DocketWindow<'d> {
@@ -70,6 +74,7 @@ impl<'d> DocketWindow<'d> {
             window,
             gc,
             bounds: PixelRect::new(0, 0, INITIAL_WIDTH, INITIAL_HEIGHT),
+            font: None,
         };
         opened.declare_hints()?;
         connection.map_window(opened.window.window())?;
@@ -99,19 +104,28 @@ impl<'d> DocketWindow<'d> {
     /// # Errors
     ///
     /// X の要求か cairo が失敗した。
-    pub fn present(&self, frame: &DocketFrame) -> Result<(), UiFailure> {
-        let mut canvas = Canvas::render(
-            frame,
-            self.bounds,
-            self.display.visual().format(),
-            self.display.font_family(),
-        )?;
+    pub fn present(&mut self, frame: &DocketFrame) -> Result<(), UiFailure> {
+        let family = self.font_for(frame.language())?;
+        let mut canvas =
+            Canvas::render(frame, self.bounds, self.display.visual().format(), family)?;
         Transfer::new(
             (self.window.window(), self.gc.gcontext()),
             canvas.width(),
             self.display.visual().depth(),
         )
         .present(self.display.connection(), &mut canvas)
+    }
+
+    /// 言語の字を描ける家族。同じ言語なら前回のまま。
+    fn font_for(&mut self, language: Language) -> Result<&'static str, UiFailure> {
+        if let Some((known, family)) = self.font
+            && known == language
+        {
+            return Ok(family);
+        }
+        let family = font_family::choose(language)?;
+        self.font = Some((language, family));
+        Ok(family)
     }
 
     /// 題と閉じる要求を WM へ伝える。

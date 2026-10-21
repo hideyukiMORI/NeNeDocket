@@ -1,8 +1,10 @@
 //! Windows の合成ルート（ARC-006・ADR 0009）。設定・アカウント・ジャーナル・時計を結び、Windows の画面を起動する。
 
+use nene_docket_adapters_windows::appearance;
 use nene_docket_adapters_windows::desktop_dpi;
+use nene_docket_adapters_windows::locale;
 use nene_docket_adapters_windows::saved_account;
-use nene_docket_adapters_windows::saved_settings;
+use nene_docket_adapters_windows::saved_settings::{self, SettingsStore};
 use nene_docket_adapters_windows::system_clock::SystemClock;
 use nene_docket_application::docket_screen::DocketScreen;
 use nene_docket_application::environment::Environment;
@@ -21,9 +23,15 @@ pub(crate) fn run(arguments: &Arguments) -> Result<(), LaunchFailure> {
     let account = saved_account::load_or_create()?;
     let journal = FileJournal::open(&folder, &Arguments::docket_name(&folder), account.id())?;
     let settings = saved_settings::remember(settings, &folder)?;
-    let ports = Ports::new(Box::new(journal), Box::new(SystemClock));
-    let environment = Environment::new(desktop_dpi::read());
-    let screen = DocketScreen::open(environment, account, ports);
+    let ports = Ports::new(
+        Box::new(journal),
+        Box::new(SystemClock),
+        Box::new(SettingsStore::in_config_directory()?),
+    );
+    let environment = Environment::new(desktop_dpi::read())
+        .with_language(locale::read())
+        .with_appearance(appearance::read());
+    let screen = DocketScreen::open(environment, account, ports, settings.clone());
     docket_window::run(screen, settings.refresh_seconds())?;
     Ok(())
 }

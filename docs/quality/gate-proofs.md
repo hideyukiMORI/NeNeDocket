@@ -505,7 +505,41 @@ Xvfb（`:97`）: 課題を 2 つ足し、1 つ目にラベル `ui,table , later`
 目標 1 秒（FR-017）の中だが余裕は 1/3 で、SMB の上の 1 回目はこれより遅い。スナップショットの ADR はまだ起こさない（ADR 0004 の 71 行目の条件に達していない）。
 読むのは起動時だけで、以後の読み直しは伸びた分だけ（ADR 0004 の 8）。署名を付ける（ADR 0010 の提案）と行が 130 バイト増え、約 85 MB になる。
 
-## 21. 再現
+## 21. Issue #27 — 表示言語（6 言語）と配色（2026-10-21）
+
+同じコンテナ。core に `Language` / `LanguageChoice` / `Word` / `wording`（6 × 31 語）、`Appearance` / `Palette` / `ThemeSeed` / `theme_catalog`（nene-nib の 125 配色）/ `theme_derivation` / `Theme` / `ThemeChoice`。
+application に設定の版 2・`SettingsPort`・`Environment` の言語と明暗・`DocketFrame` の言語と配色・道具の段の言語の箱と配色の欄。adapters に `locale` / `appearance` / 版 2 の読み書きと版 1 からの移行。UI はフレームの配色と言語で描く（ADR 0011 / 0012）。
+
+### 21.1 ゲート
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make build-windows` | exe（Windows では未実行のまま） |
+| `make test` | 274 件（core 82・application 51・adapters-x11 6・adapters-windows 5・ui-x11 16） |
+| `make conformance` | 違反なし（194 ファイル） |
+| `make deny` | ok（外部クレートは増えていない） |
+| `make coverage` | core ＋ application regions 99.12% |
+
+テストが要求すること: 125 配色すべてで字 / 背景のコントラスト 4.5 以上・字 / 面 4.0 以上、名前の一意性と `_` の別綴り、6 言語 × 31 語が空でない、設定の版 2 の往復と版 1 の読み込み（`language` を含む版 1 は拒む）、OS の言語の解決（`zh_HK` → 繁体字・`C` → `None`）。
+
+### 21.2 Xvfb（`:97`・`LANG=ja_JP.UTF-8`・QLT-013）
+
+| 手順 | 見えたもの | PNG |
+| --- | --- | --- |
+| 起動（設定は無し＝ `system`） | OS の言語を日本語に解決。道具の段・列の見出し・状態・履歴の語が日本語。字は IPA P ゴシック | [01-ja-system](screenshots/2026-10-21-i18n-01-ja-system.png) |
+| 言語の箱で 简体中文 | 全部の語が簡体字。字形は文泉驛正黑（IPA には無い字をコンテナの fontconfig が持っていた） | [03-zh-hans](screenshots/2026-10-21-i18n-03-zh-hans.png) |
+| 한국어 | ハングル。同じく文泉驛正黑 | [05-ko](screenshots/2026-10-21-i18n-05-ko.png) |
+| Español → 配色の欄に `dracula` と Enter | 紫の強調のダーク。面・縁・選択・控えめが導出された色 | [07-dracula](screenshots/2026-10-21-i18n-07-dracula.png) |
+| 欄で Down | `one-dark` に巡る | |
+| 欄に `solarized_light` と Enter | `_` を `-` と同じに受け、ライトの配色 | [09-solarized-light](screenshots/2026-10-21-i18n-09-solarized-light.png) |
+| 閉じる | `settings.v2.txt` に `language = es` と `theme = solarized-light`、終了コード 0 | |
+
+繁體中文と English も撮った（02 / 04 / 06・docs には置かない）。`xdotool type` は ASCII だけなので題名は英語。
+
+🔴 **正直に:** 翻訳 6 言語 × 31 語は自分で書き、母語話者の目を通していない。導出した 8 色の見た目は仮（ADR 0012 の 2）。既定のライトが `neutral-light`（橙の強調）になり、Issue #5〜#20 の青い強調から変わった。
+
+## 22. 再現
 
 ```bash
 make prove
