@@ -1,4 +1,6 @@
-//! 持ち主が台帳の権限を変える命令（FR-010・ADR 0010）。合成ルートが引数から作り、[`crate::administration`] が当てる。
+//! 持ち主が台帳の権限を変える命令（FR-010・ADR 0010）。合成ルートが引数から、画面が参加者の段から作り、store が当てる。
+
+use alloc::string::String;
 
 use nene_docket_core::account_id::AccountId;
 

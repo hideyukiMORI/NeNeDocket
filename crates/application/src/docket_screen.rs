@@ -47,6 +47,7 @@ use nene_docket_core::word::Word;
 use nene_docket_core::wording;
 
 use crate::account::Account;
+use crate::admin_command::AdminCommand;
 use crate::body_pane::BodyPane;
 use crate::docket_frame::DocketFrame;
 use crate::edit_slot::EditSlot;
@@ -56,6 +57,9 @@ use crate::history_line::HistoryLine;
 use crate::history_pane::HistoryPane;
 use crate::journal_failure::JournalFailure;
 use crate::ledger::Ledger;
+use crate::member::Member;
+use crate::members_action::MembersAction;
+use crate::members_pane::MembersPane;
 use crate::notice::Notice;
 use crate::ports::Ports;
 use crate::settings::Settings;
@@ -79,6 +83,8 @@ const LANGUAGE: WidgetId = WidgetId::new(14);
 const THEME: WidgetId = WidgetId::new(15);
 /// 16 は本文の段の欄（`body_pane`）。
 const BODY_TOGGLE: WidgetId = WidgetId::new(17);
+const MEMBERS_TOGGLE: WidgetId = WidgetId::new(18);
+/// 19 は参加者の段の「権限」のチェック（`members_pane`）。
 const FILTER_OPTION: WidgetId = WidgetId::new(100);
 const STATE_OPTION: WidgetId = WidgetId::new(200);
 const LANGUAGE_OPTION: WidgetId = WidgetId::new(300);
@@ -91,6 +97,7 @@ const FILTER_WIDTH_PX: u16 = 140;
 const SHOW_DONE_WIDTH_PX: u16 = 120;
 const HISTORY_WIDTH_PX: u16 = 100;
 const BODY_WIDTH_PX: u16 = 80;
+const MEMBERS_WIDTH_PX: u16 = 100;
 /// 本文の段の 1 行。
 const BODY_LINE_PX: u16 = 20;
 const LANGUAGE_WIDTH_PX: u16 = 110;
@@ -129,6 +136,7 @@ pub struct DocketScreen {
     due: TextEdit,
     labels: TextEdit,
     body: BodyPane,
+    members: MembersPane,
     bad_due: bool,
     state: SelectState,
     history: HistoryPane,
@@ -138,6 +146,7 @@ pub struct DocketScreen {
     names: Vec<(AccountId, String)>,
     write_failure: Option<JournalFailure>,
     read_failure: Option<JournalFailure>,
+    admin_failure: Option<JournalFailure>,
     environment: Environment,
     settings: Settings,
     language: Language,
@@ -177,6 +186,7 @@ impl DocketScreen {
             due: TextEdit::empty(),
             labels: TextEdit::empty(),
             body: BodyPane::hidden(),
+            members: MembersPane::hidden(environment.scale()),
             bad_due: false,
             state: SelectState::closed(ItemState::ALL.len(), 0),
             history: HistoryPane::hidden(environment.scale()),
@@ -185,6 +195,7 @@ impl DocketScreen {
             names,
             write_failure: None,
             read_failure,
+            admin_failure: None,
             environment,
             language_select: SelectState::closed(
                 LanguageChoice::ALL.len(),
@@ -213,7 +224,7 @@ impl DocketScreen {
         let toolbar = layout.row(self.px(ROW_PX), &self.toolbar_widths());
         let editor = layout.row(self.px(ROW_PX), &self.editor_widths());
         let (table_area, notice_rect) = self.split_notice(layout.remaining());
-        let (table_area, body_area, history_area) = self.split_panes(table_area);
+        let (table_area, [body_area, members_area, history_area]) = self.split_panes(table_area);
         let visible = self.visible_ids();
         let table = self.table_layout(table_area, visible.len());
         let track = Self::track_of(table_area, self.px(SCROLL_WIDTH_PX));
@@ -230,12 +241,38 @@ impl DocketScreen {
             self.probe_toolbar(&toolbar, &mut commands);
         let (state_rect, state_response) = self.probe_editor(&editor, &mut commands);
         self.probe_table(&table, &visible, &mut commands);
-        self.probe_scroll(track, [body_area, history_area], &mut commands);
+        self.probe_scroll(
+            track,
+            [body_area, members_area, history_area],
+            &mut commands,
+        );
         self.probe_body(body_area, &mut commands);
+        self.probe_members(members_area, &mut commands);
         self.probe_history(history_area, &mut commands);
         self.probe_filter_options(filter_rect);
         self.probe_state_options(state_rect);
         self.probe_language_options(language_rect);
+        self.box_commands(
+            [
+                (filter_rect, filter_response),
+                (state_rect, state_response),
+                (language_rect, language_response),
+            ],
+            &mut commands,
+        );
+        self.notice_commands(notice_rect, &mut commands);
+        self.interaction.end();
+        self.commit_unfocused_slots();
+        DocketFrame::new((self.scale, self.language, self.theme), commands)
+    }
+
+    /// 3 つの箱（絞り込み・状態・言語）を最後に描く（開いた候補が他の部品の上に来る）。
+    fn box_commands(&self, boxes: [(PixelRect, Response); 3], commands: &mut Vec<DrawCommand>) {
+        let [
+            (filter_rect, filter_response),
+            (state_rect, state_response),
+            (language_rect, language_response),
+        ] = boxes;
         commands.extend(select_box::select_box(
             filter_rect,
             &self.filter_options(),
@@ -254,10 +291,6 @@ impl DocketScreen {
             self.language_select,
             language_response,
         ));
-        self.notice_commands(notice_rect, &mut commands);
-        self.interaction.end();
-        self.commit_unfocused_slots();
-        DocketFrame::new((self.scale, self.language, self.theme), commands)
     }
 
     /// 表示言語の語。
@@ -350,6 +383,18 @@ impl DocketScreen {
         self.body.is_shown()
     }
 
+    /// 参加者の段を出しているか。
+    #[must_use]
+    pub const fn shows_members(&self) -> bool {
+        self.members.is_shown()
+    }
+
+    /// 台帳に参加したアカウント（FR-009）。`keys/` の名前と権限から。
+    #[must_use]
+    pub fn members(&self) -> Vec<Member> {
+        Member::list(&self.names, self.ports.journal().permissions().as_ref())
+    }
+
     /// 本文の欄の文字列（編集中の値）。
     #[must_use]
     pub fn body_text(&self) -> &str {
@@ -370,6 +415,7 @@ impl DocketScreen {
         let mut notices = Vec::new();
         notices.extend(self.write_failure.map(Notice::Journal));
         notices.extend(self.read_failure.map(Notice::Journal));
+        notices.extend(self.admin_failure.map(Notice::Journal));
         let orphans = self.ledger.docket().orphans();
         if orphans > 0 {
             notices.push(Notice::Orphans(orphans));
@@ -446,32 +492,40 @@ impl DocketScreen {
         self.scale.px(base)
     }
 
-    fn toolbar_widths(&self) -> [ColumnWidth; 8] {
+    fn toolbar_widths(&self) -> [ColumnWidth; 9] {
         [
             ColumnWidth::Fill,
             ColumnWidth::Fixed(self.px(FILTER_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(SHOW_DONE_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(HISTORY_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(BODY_WIDTH_PX)),
+            ColumnWidth::Fixed(self.px(MEMBERS_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(LANGUAGE_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(THEME_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(BUTTON_WIDTH_PX)),
         ]
     }
 
-    /// 課題を選んでいて本文か履歴を出していれば、表の下を段に使う。1 つなら 2/5、両方なら 1/4 ずつ（ヘッダ ＋ 3 行以上）。
-    fn split_panes(&self, area: PixelRect) -> (PixelRect, Option<PixelRect>, Option<PixelRect>) {
-        let body_shown = self.body.is_shown() && self.selected.is_some();
-        let history_shown = self.history.is_shown() && self.selected.is_some();
-        let height = if body_shown && history_shown {
-            (area.height() / 4).max(self.px(ROW_PX).saturating_mul(4))
-        } else {
-            self.history.height_in(area.height())
+    /// 表の下の段（上から本文・参加者・履歴）。本文と履歴は課題を選んでいるときだけ。
+    /// 高さは 1 つなら 2/5、2 つなら 1/4 ずつ、3 つなら 1/5 ずつ（ヘッダ ＋ 3 行以上）。
+    fn split_panes(&self, area: PixelRect) -> (PixelRect, [Option<PixelRect>; 3]) {
+        let shown = [
+            self.body.is_shown() && self.selected.is_some(),
+            self.members.is_shown(),
+            self.history.is_shown() && self.selected.is_some(),
+        ];
+        let count = shown.iter().filter(|flag| **flag).count();
+        let share = match count {
+            0 | 1 => self.history.height_in(area.height()),
+            2 => area.height() / 4,
+            _ => area.height() / 5,
         };
+        let height = share.max(self.px(ROW_PX).saturating_mul(4));
         let mut bottom = area.bottom();
-        let mut pane = |shown: bool| {
-            if !shown {
-                return None;
+        let mut panes = [None, None, None];
+        for (slot, flag) in panes.iter_mut().zip(shown).rev() {
+            if !flag {
+                continue;
             }
             let rect = PixelRect::new(
                 area.x(),
@@ -483,17 +537,55 @@ impl DocketScreen {
                 .y()
                 .saturating_sub(self.px(MARGIN_PX))
                 .saturating_sub(1);
-            Some(rect)
-        };
-        let history = pane(history_shown);
-        let body = pane(body_shown);
+            *slot = Some(rect);
+        }
         let table = PixelRect::new(
             area.x(),
             area.y(),
             area.width(),
             bottom.saturating_add(1).saturating_sub(area.y()),
         );
-        (table, body, history)
+        (table, panes)
+    }
+
+    /// 参加者の段。持ち主なら行の押下と「権限」のチェックを受け、権限を書く。
+    fn probe_members(&mut self, area: Option<PixelRect>, commands: &mut Vec<DrawCommand>) {
+        let Some(area) = area else {
+            return;
+        };
+        let members = self.members();
+        let owner = self.ports.journal().owner() == Some(self.ledger.account().id());
+        let enabled = self.ports.journal().permissions().is_some();
+        let (drawn, action) = self.members.probe(
+            &mut self.interaction,
+            (area, &members, self.language),
+            (owner, enabled),
+        );
+        commands.extend(drawn);
+        if let Some(action) = action {
+            self.administer(action, enabled);
+        }
+    }
+
+    /// 持ち主の求めを権限の命令にして書く。書けなければ示す（FR-014）。
+    fn administer(&mut self, action: MembersAction, enabled: bool) {
+        let commands = match action {
+            MembersAction::TogglePermissions => alloc::vec![AdminCommand::Permissions(!enabled)],
+            MembersAction::ToggleEditor(id) => {
+                let editor = self
+                    .ports
+                    .journal()
+                    .permissions()
+                    .is_some_and(|permissions| permissions.may_edit(id));
+                alloc::vec![if editor {
+                    AdminCommand::Disallow(id)
+                } else {
+                    AdminCommand::Allow(id)
+                }]
+            }
+        };
+        self.admin_failure = self.ports.journal_mut().administer(&commands).err();
+        self.names = self.ports.journal().names();
     }
 
     /// 本文の段。複数行の欄 1 つ。
@@ -697,6 +789,7 @@ impl DocketScreen {
             SHOW_DONE if pressed => self.show_done = !self.show_done,
             HISTORY_TOGGLE if pressed => self.history.toggle(),
             BODY_TOGGLE if pressed => self.body.toggle(),
+            MEMBERS_TOGGLE if pressed => self.members.toggle(),
             ADD if key == KeyIntent::Enter => self.add_item(),
             DELETE if key == KeyIntent::Enter => self.delete_item(),
             _ => return false,
@@ -960,6 +1053,7 @@ impl DocketScreen {
             done_rect,
             history_rect,
             body_rect,
+            members_rect,
             language_rect,
             theme_rect,
             add_rect,
@@ -980,6 +1074,24 @@ impl DocketScreen {
             self.show_done,
             done,
         ));
+        self.probe_pane_toggles([history_rect, body_rect, members_rect], commands);
+        let language = self.interaction.probe(LANGUAGE, language_rect, true);
+        if language.clicked() {
+            self.language_select = self.language_select.toggled();
+        }
+        let theme = self.interaction.probe(THEME, theme_rect, true);
+        commands.extend(text_field::text_field(theme_rect, &self.theme_edit, theme));
+        let add = self.interaction.probe(ADD, add_rect, true);
+        if add.clicked() {
+            self.add_item();
+        }
+        commands.extend(button::button(add_rect, self.word(Word::Add), add));
+        ((filter_rect, filter), (language_rect, language))
+    }
+
+    /// 表の下の段を出すチェック（履歴・本文・参加者）。
+    fn probe_pane_toggles(&mut self, rects: [PixelRect; 3], commands: &mut Vec<DrawCommand>) {
+        let [history_rect, body_rect, members_rect] = rects;
         let history = self.interaction.probe(HISTORY_TOGGLE, history_rect, true);
         if history.clicked() {
             self.history.toggle();
@@ -1000,18 +1112,16 @@ impl DocketScreen {
             self.body.is_shown(),
             body,
         ));
-        let language = self.interaction.probe(LANGUAGE, language_rect, true);
-        if language.clicked() {
-            self.language_select = self.language_select.toggled();
+        let members = self.interaction.probe(MEMBERS_TOGGLE, members_rect, true);
+        if members.clicked() {
+            self.members.toggle();
         }
-        let theme = self.interaction.probe(THEME, theme_rect, true);
-        commands.extend(text_field::text_field(theme_rect, &self.theme_edit, theme));
-        let add = self.interaction.probe(ADD, add_rect, true);
-        if add.clicked() {
-            self.add_item();
-        }
-        commands.extend(button::button(add_rect, self.word(Word::Add), add));
-        ((filter_rect, filter), (language_rect, language))
+        commands.extend(checkbox::checkbox(
+            members_rect,
+            self.word(Word::Members),
+            self.members.is_shown(),
+            members,
+        ));
     }
 
     /// 選んだ課題の題名・担当・期限・ラベル・状態・削除。状態の箱は最後に描く。
@@ -1241,7 +1351,7 @@ impl DocketScreen {
     fn probe_scroll(
         &mut self,
         track: PixelRect,
-        panes: [Option<PixelRect>; 2],
+        panes: [Option<PixelRect>; 3],
         commands: &mut Vec<DrawCommand>,
     ) {
         let response = self.interaction.probe(SCROLL, track, false);
@@ -1279,10 +1389,12 @@ mod tests {
     use nene_docket_core::button_phase::ButtonPhase;
     use nene_docket_core::logical_clock::LogicalClock;
     use nene_docket_core::op_id::OpId;
+    use nene_docket_core::permissions::Permissions;
     use nene_docket_core::pixel_point::PixelPoint;
     use nene_docket_core::signing_key::SigningKey;
 
     use crate::admission_report::AdmissionReport;
+    use crate::member_role::MemberRole;
     use nene_docket_core::pointer_input::PointerInput;
     use nene_docket_core::wall_clock::WallClock;
 
@@ -1291,7 +1403,7 @@ mod tests {
     use crate::journal_port::JournalPort;
     use crate::settings_port::SettingsPort;
 
-    const BOUNDS: PixelRect = PixelRect::new(0, 0, 960, 400);
+    const BOUNDS: PixelRect = PixelRect::new(0, 0, 1060, 400);
     const ME: AccountId = AccountId::new(1);
     const OTHER: AccountId = AccountId::new(2);
     /// 1 行目の中央。段は 8..36（道具）・44..72（編集）・80..108（ヘッダ）・108 から行。
@@ -1299,23 +1411,24 @@ mod tests {
     const SECOND_ROW_Y: u16 = 150;
     const TOOLBAR_Y: u16 = 20;
     const EDITOR_Y: u16 = 58;
-    /// 道具の段（960 幅）: 検索 8..136・絞り込み 144..284・完了 292..412・履歴 420..520・本文 528..608・言語 616..726・配色 734..864・追加 872..952。
-    const FILTER_X: u16 = 210;
-    const SHOW_DONE_X: u16 = 350;
-    const HISTORY_X: u16 = 470;
-    const BODY_X: u16 = 570;
-    const LANGUAGE_X: u16 = 670;
-    const THEME_X: u16 = 800;
-    const ADD_X: u16 = 910;
-    /// 編集行: 題名 8..382・担当 390..490・期限 498..598・ラベル 606..746・状態 754..864・削除 872..952。
+    /// 道具の段（1060 幅）: 検索 8..128・絞り込み 136..276・完了 284..404・履歴 412..512・本文 520..600・参加者 608..708・言語 716..826・配色 834..964・追加 972..1052。
+    const FILTER_X: u16 = 200;
+    const SHOW_DONE_X: u16 = 340;
+    const HISTORY_X: u16 = 460;
+    const BODY_X: u16 = 560;
+    const MEMBERS_X: u16 = 660;
+    const LANGUAGE_X: u16 = 770;
+    const THEME_X: u16 = 900;
+    const ADD_X: u16 = 1010;
+    /// 編集行: 題名 8..482・担当 490..590・期限 598..698・ラベル 706..846・状態 854..964・削除 972..1052。
     const TITLE_X: u16 = 100;
-    const STATE_X: u16 = 810;
-    const DELETE_X: u16 = 910;
-    const LABELS_X: u16 = 680;
-    /// スクロールバーの溝（941..952）。
-    const TRACK_X: u16 = 946;
-    const ASSIGNEE_X: u16 = 440;
-    const DUE_X: u16 = 550;
+    const STATE_X: u16 = 910;
+    const DELETE_X: u16 = 1010;
+    const LABELS_X: u16 = 780;
+    /// スクロールバーの溝（1041..1052）。
+    const TRACK_X: u16 = 1046;
+    const ASSIGNEE_X: u16 = 540;
+    const DUE_X: u16 = 650;
 
     /// 書き込みを覚え、読み直しで渡す分を積める偽のジャーナル。
     #[derive(Debug)]
@@ -1327,6 +1440,7 @@ mod tests {
         fail_read: bool,
         rejected: usize,
         admission: AdmissionReport,
+        permissions: Rc<RefCell<Option<Permissions>>>,
     }
 
     impl Default for FakeJournal {
@@ -1339,6 +1453,7 @@ mod tests {
                 fail_read: false,
                 rejected: 0,
                 admission: AdmissionReport::open(),
+                permissions: Rc::default(),
             }
         }
     }
@@ -1373,7 +1488,40 @@ mod tests {
         }
 
         fn names(&self) -> Vec<(AccountId, String)> {
-            alloc::vec![(OTHER, String::from("other"))]
+            alloc::vec![(OTHER, String::from("other")), (ME, String::from("me"))]
+        }
+
+        fn owner(&self) -> Option<AccountId> {
+            Some(ME)
+        }
+
+        fn permissions(&self) -> Option<Permissions> {
+            self.permissions.borrow().clone()
+        }
+
+        fn administer(&mut self, commands: &[AdminCommand]) -> Result<(), JournalFailure> {
+            if self.fail_write {
+                return Err(JournalFailure::PermissionsUnwritable);
+            }
+            let mut current = self.permissions.borrow_mut();
+            for command in commands {
+                *current = match (command, current.take()) {
+                    (AdminCommand::Permissions(true), _) => Some(Permissions::owner_only(ME)),
+                    (AdminCommand::Permissions(false), _)
+                    | (
+                        AdminCommand::Allow(_)
+                        | AdminCommand::Disallow(_)
+                        | AdminCommand::Group(..)
+                        | AdminCommand::Ungroup(..),
+                        None,
+                    ) => None,
+                    (AdminCommand::Allow(id), Some(p)) => Some(p.allowing(*id)),
+                    (AdminCommand::Disallow(id), Some(p)) => Some(p.disallowing(*id)),
+                    (AdminCommand::Group(name, id), Some(p)) => Some(p.grouped(name, *id)),
+                    (AdminCommand::Ungroup(name, id), Some(p)) => Some(p.ungrouped(name, *id)),
+                };
+            }
+            Ok(())
         }
     }
 
@@ -1634,7 +1782,7 @@ mod tests {
         // 検索欄に字があれば、それが題名になる。
         click(&mut screen, 100, TOOLBAR_Y);
         keys(&mut screen, &chars("Issue"));
-        keys(&mut screen, &[KeyIntent::Tab; 7]);
+        keys(&mut screen, &[KeyIntent::Tab; 8]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(title_of(&screen, ItemId::new(ME, 2)), "Issue");
     }
@@ -1707,11 +1855,11 @@ mod tests {
     #[test]
     fn delete_by_key_needs_the_focus_and_a_selection() {
         let (mut screen, spy) = screen(2);
-        keys(&mut screen, &[KeyIntent::Tab; 14]);
+        keys(&mut screen, &[KeyIntent::Tab; 15]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 0);
         click(&mut screen, 100, FIRST_ROW_Y);
-        keys(&mut screen, &[KeyIntent::Tab; 14]);
+        keys(&mut screen, &[KeyIntent::Tab; 15]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 1);
     }
@@ -1981,7 +2129,7 @@ mod tests {
             .collect();
         assert_eq!(lines.len(), 5);
         assert_eq!(lines[0][2], "undo: State : Done -> In progress");
-        assert_eq!(lines[0][1], "0000");
+        assert_eq!(lines[0][1], "me");
         assert_eq!(lines[1][2], "State : In progress -> Done");
         assert_eq!(lines[4][2], "created");
         let shown = texts(&idle(&mut screen));
@@ -2178,6 +2326,67 @@ mod tests {
         let frame = idle(&mut screen);
         assert!(texts(&frame).iter().any(|text| text == "When"));
         assert!(texts(&frame).iter().any(|text| text == "Issue #1"));
+    }
+
+    /// 参加者の段（1060×400・残り 80..391 の 2/5 = 124）: 段は 268..391、ヘッダ 268..292、行は 292 から 24 ずつ。
+    const MEMBERS_HEADER_Y: u16 = 280;
+    const FIRST_MEMBER_Y: u16 = 304;
+    const SECOND_MEMBER_Y: u16 = 328;
+
+    #[test]
+    fn the_members_pane_lists_accounts_and_the_owner_changes_permissions() {
+        let (mut screen, _) = screen(2);
+        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        assert!(screen.shows_members());
+        let members = screen.members();
+        assert_eq!(members.len(), 2);
+        assert!(members.iter().all(|m| m.role() == MemberRole::Anyone));
+        let frame = idle(&mut screen);
+        assert!(texts(&frame).iter().any(|text| text == "Anyone may edit"));
+        assert!(texts(&frame).iter().any(|text| text == "Permissions"));
+        keys(&mut screen, &[KeyIntent::Escape]);
+        keys(&mut screen, &[KeyIntent::Tab; 6]);
+        keys(&mut screen, &[KeyIntent::Char(' ')]);
+        assert!(!screen.shows_members());
+    }
+
+    #[test]
+    fn the_owner_turns_permissions_on_and_toggles_editors_from_the_pane() {
+        let (mut screen, _) = screen(2);
+        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        // 「権限」のチェック（段のヘッダの右端）を押す。
+        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        let roles: Vec<MemberRole> = screen.members().iter().map(Member::role).collect();
+        assert_eq!(roles, [MemberRole::Owner, MemberRole::Viewer]);
+        // 他人の行を押す → 編集者。もう一度 → 閲覧のみ。
+        click(&mut screen, 100, SECOND_MEMBER_Y);
+        assert_eq!(screen.members()[1].role(), MemberRole::Editor);
+        click(&mut screen, 100, SECOND_MEMBER_Y);
+        assert_eq!(screen.members()[1].role(), MemberRole::Viewer);
+        click(&mut screen, 100, FIRST_MEMBER_Y);
+        assert_eq!(screen.members()[0].role(), MemberRole::Owner);
+        assert!(screen.notices().is_empty());
+        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        assert!(
+            screen
+                .members()
+                .iter()
+                .all(|m| m.role() == MemberRole::Anyone)
+        );
+    }
+
+    #[test]
+    fn an_unwritable_permissions_file_is_shown() {
+        let (mut screen, _) = screen_with(FakeJournal {
+            fail_write: true,
+            ..FakeJournal::default()
+        });
+        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        assert_eq!(
+            screen.notices(),
+            alloc::vec![Notice::Journal(JournalFailure::PermissionsUnwritable)]
+        );
     }
 
     #[test]

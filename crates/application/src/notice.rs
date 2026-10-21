@@ -63,6 +63,7 @@ mod tests {
         let all = [
             Notice::Journal(JournalFailure::Unwritable),
             Notice::Journal(JournalFailure::Unreadable),
+            Notice::Journal(JournalFailure::PermissionsUnwritable),
             Notice::Orphans(2),
             Notice::RejectedLines(1),
             Notice::NotADate,

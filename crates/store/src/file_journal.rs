@@ -4,13 +4,16 @@
 use std::path::Path;
 
 use nene_docket_application::account::Account;
+use nene_docket_application::admin_command::AdminCommand;
 use nene_docket_application::admission_report::AdmissionReport;
 use nene_docket_application::journal_failure::JournalFailure;
 use nene_docket_application::journal_port::JournalPort;
 use nene_docket_application::key_record::KeyRecord;
 use nene_docket_core::account_id::AccountId;
 use nene_docket_core::op::Op;
+use nene_docket_core::permissions::Permissions;
 
+use crate::administration;
 use crate::journal_folder::JournalFolder;
 use crate::journal_version::JournalVersion;
 use crate::key_file;
@@ -23,7 +26,7 @@ use crate::verifier::{self, Verifier};
 #[derive(Debug)]
 pub struct FileJournal {
     folder: JournalFolder,
-    account: AccountId,
+    account: Account,
     own: OwnJournal,
     others: OtherJournals,
     pending: Vec<Op>,
@@ -64,7 +67,7 @@ impl FileJournal {
         }
         Ok(Self {
             folder,
-            account: account.id(),
+            account: account.clone(),
             own,
             others: OtherJournals::fresh(account.id()),
             pending,
@@ -114,6 +117,26 @@ impl FileJournal {
         self.verifier = verifier;
         Ok(())
     }
+
+    /// 権限を書き、`docket.v1.txt` と検証器を読み直す。有効・無効が変われば自分のジャーナルを版を変えて開き直す。
+    /// 既に取り込んだ他人の行は読み直さない（開き直したときから完全に効く・ADR 0010 の 4）。
+    fn administer_and_reload(&mut self, commands: &[AdminCommand]) -> Result<(), StoreFailure> {
+        let root = self.folder.root().to_path_buf();
+        administration::apply(&root, &self.account, commands)?;
+        self.folder = JournalFolder::open_or_create(&root, self.folder.name(), self.account.id())?;
+        let enabled = self.folder.docket().permissions_on();
+        let (keys, verifier) =
+            verifier::load_if_enabled(&root, self.folder.docket().owner().filter(|_| enabled))?;
+        self.keys = keys;
+        if verifier.is_some() != self.verifier.is_some() {
+            let signing = verifier.as_ref().map(|_| self.account.key().clone());
+            let (own, _already_delivered) =
+                OwnJournal::open(&self.folder.journal_directory(), self.account.id(), signing)?;
+            self.own = own;
+        }
+        self.verifier = verifier;
+        Ok(())
+    }
 }
 
 impl JournalPort for FileJournal {
@@ -153,7 +176,7 @@ impl JournalPort for FileJournal {
                 self.own_unverified
                     .saturating_add(self.others.unverified().len()),
                 self.key_mismatch,
-                verifier.permissions().may_edit(self.account),
+                verifier.permissions().may_edit(self.account.id()),
             ),
         }
     }
@@ -163,6 +186,21 @@ impl JournalPort for FileJournal {
             .iter()
             .map(|record| (record.id(), record.name().to_owned()))
             .collect()
+    }
+
+    fn owner(&self) -> Option<AccountId> {
+        self.folder.docket().owner()
+    }
+
+    fn permissions(&self) -> Option<Permissions> {
+        self.verifier
+            .as_ref()
+            .map(|verifier| verifier.permissions().clone())
+    }
+
+    fn administer(&mut self, commands: &[AdminCommand]) -> Result<(), JournalFailure> {
+        self.administer_and_reload(commands)
+            .map_err(|_failure| JournalFailure::PermissionsUnwritable)
     }
 }
 
@@ -178,8 +216,8 @@ mod tests {
     use nene_docket_core::wall_clock::WallClock;
 
     use super::*;
-    use crate::admin_command::AdminCommand;
     use crate::administration;
+    use nene_docket_application::admin_command::AdminCommand;
 
     const ME: AccountId = AccountId::new(0x11);
     const OTHER: AccountId = AccountId::new(0x22);
@@ -287,6 +325,37 @@ mod tests {
             mine.names(),
             [(ME, String::from("u1")), (OTHER, String::from("u2"))]
         );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn the_owner_administers_from_the_port_and_others_may_not() {
+        let root = temp("administer");
+        let owner = account(ME, 1);
+        let mut mine = FileJournal::open(&root, "Team", &owner).unwrap();
+        assert_eq!(mine.owner(), Some(ME));
+        assert_eq!(mine.permissions(), None);
+        mine.administer(&[AdminCommand::Permissions(true), AdminCommand::Allow(OTHER)])
+            .unwrap();
+        assert!(mine.is_signed());
+        assert!(mine.permissions().is_some_and(|p| p.may_edit(OTHER)));
+        mine.append(&create(1, ME)).unwrap();
+        mine.sync().unwrap();
+        assert!(
+            root.join("journal")
+                .join(own_journal::file_name(ME, JournalVersion::Two))
+                .exists()
+        );
+        let mut theirs = FileJournal::open(&root, "Team", &account(OTHER, 2)).unwrap();
+        assert_eq!(
+            theirs.administer(&[AdminCommand::Permissions(false)]),
+            Err(JournalFailure::PermissionsUnwritable)
+        );
+        assert_eq!(theirs.refresh().unwrap(), vec![create(1, ME)]);
+        mine.administer(&[AdminCommand::Permissions(false)])
+            .unwrap();
+        assert!(!mine.is_signed());
+        assert_eq!(mine.permissions(), None);
         fs::remove_dir_all(&root).unwrap();
     }
 

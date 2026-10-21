@@ -37,7 +37,7 @@ use crate::windows_app::WindowsApp;
 const CLASS: PCWSTR = w!("NeNeDocket");
 const TITLE: PCWSTR = w!("NeNe Docket");
 /// 最初の窓の大きさ（X11 版と同じ）。
-const INITIAL_WIDTH: i32 = 960;
+const INITIAL_WIDTH: i32 = 1120;
 const INITIAL_HEIGHT: i32 = 600;
 /// `WM_MOUSELEAVE`。windows クレートでは Controls の機能にあるので、値だけをここに置く（winuser.h の 0x02A3）。
 const WM_MOUSELEAVE: u32 = 0x02A3;

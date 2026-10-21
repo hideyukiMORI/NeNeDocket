@@ -597,7 +597,35 @@ application に設定の版 2・`SettingsPort`・`Environment` の言語と明�
 
 🔴 **正直に:** 本文の段にスクロールバーは無い（カーソルの行を追うだけ）。段の高さは変えられない。`xdotool` の 1 回目はクリックが段の 1 画素上に当たり、何も起こらなかった（手順の誤り・2 回目で記録）。
 
-## 24. 再現
+## 24. Issue #33 — 参加者の段と画面からの権限（2026-10-21）
+
+同じコンテナ。application に `AdminCommand`（store から移動）・`Member` / `MemberRole`・`MembersPane`（名前・ID・役、持ち主には 4 列目に「権限」のチェック、行の押下で編集者の切り替え）・`JournalPort::owner / permissions / administer`・`JournalFailure::PermissionsUnwritable`。store の `FileJournal::administer` は書いた後に `docket.v1.txt`・鍵・権限を読み直し、有効・無効が変われば自分のジャーナルを版を変えて開き直す。道具の段が 9 列になったので窓の初期の幅を 960 → 1120 に（X11 / Win32）。文言 9 語 × 6 言語。
+
+### 24.1 ゲート
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 322 件 |
+| `make conformance` | 違反なし（216 ファイル） |
+| `make coverage` | core ＋ application regions 98.97% |
+
+テストが要求すること: 役が権限から決まり一覧が ID の順であること、段の「権限」で持ち主と閲覧のみに変わり行の押下で編集者と閲覧のみを行き来し持ち主の行は変わらないこと、書けなければ通知が出ること、ポートの `administer` が持ち主以外で失敗し有効にすると版 2 で書き無効に戻せること。
+
+### 24.2 Xvfb（`:94`・3 アカウント・QLT-013）
+
+| 手順 | 見えたもの | PNG |
+| --- | --- | --- |
+| alice が台帳を作り、bob と carol が参加して閉じる | `keys/` に 3 人 | |
+| alice が「参加者」を押す | 名前・ID・役（誰でも編集）と、持ち主なので「権限」のチェック | |
+| 「権限」を押す | alice が持ち主、他は閲覧のみ。`docket.v1.txt` に `permissions = on` | |
+| bob の行を押す | bob が編集者。`permissions.v1.txt` に `editor = <bob>` と署名 | |
+| bob と carol が開いて 1 件ずつ足す | alice と bob は bob の課題を見て carol の課題は見ず、carol には「not an editor」 | [04-three](screenshots/2026-10-21-members-04-three.png) |
+| alice が「権限」を外す | `permissions = off`。開き直した人から誰でも編集 | |
+
+🔴 **正直に:** 権限の変更は、既に読み進めた行には開き直すまで効かない（ADR 0010 の 4）。グループは画面から触れない（コマンドラインだけ）。段にスクロールは無い。1 回目の実行は bob が先に台帳を作って持ち主になり（手順の誤り）、2 回目は通知の行で段が上がってチェックの代わりに carol の行を押した（手順の誤り・3 回目で記録）。
+
+## 25. 再現
 
 ```bash
 make prove

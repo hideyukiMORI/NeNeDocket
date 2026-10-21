@@ -58,4 +58,22 @@ pub enum Word {
     KeyMismatch,
     /// 自分はこの台帳の編集者でない。
     NotAnEditor,
+    /// 参加者の段（FR-009）。
+    Members,
+    /// 参加者の「名前」。
+    Name,
+    /// 参加者の「役」。
+    Role,
+    /// 役: 持ち主。
+    Owner,
+    /// 役: 編集者。
+    Editor,
+    /// 役: 閲覧のみ。
+    Viewer,
+    /// 役: 権限が無い台帳では誰でも編集。
+    Anyone,
+    /// 権限のチェック（有効・無効）。
+    Permissions,
+    /// 権限を書けない。
+    CannotWritePermissions,
 }
