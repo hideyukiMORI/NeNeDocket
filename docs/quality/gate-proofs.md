@@ -940,7 +940,22 @@ Xvfb（`:106`・`scratchpad/dnd.sh`・送り手は scratchpad の `xdnd-send`（
 
 🔴 **正直に:** 落とす相手が GTK / Qt のアプリでないので、`XdndTypeList`（型が 3 つを超える）と `XdndLeave` の経路はテストの偽の送り手でしか通していない。`WM_DROPFILES` は Windows で動かしていない。
 
-## 43. 再現
+## 43. Issue #66 — PDF の `hayro` を試した（ADR 0019・却下・2026-10-21）
+
+同じコンテナ・`scratchpad/pdftry`（`hayro = "0.8"` だけ・release）。PDF は reportlab で 3 つ作った（ASCII の Helvetica・IPAゴシック埋め込み・平成角ゴ / 平成明朝の CID 埋め込みなし）。`pdftoppm` の参照と見比べた。
+
+| 観点 | 実測 |
+| --- | --- |
+| 描画 | ASCII・図形・埋め込み日本語は正しい（[01-embedded](screenshots/2026-10-21-hayro-01-embedded.png)）。埋め込みなしの CID は白紙。`font_resolver` で IPAゴシックを渡すと出る（[02-cid-fallback](screenshots/2026-10-21-hayro-02-cid-fallback.png)・明朝もゴシックになる） |
+| 速さ | A4 1 ページ 1 倍 2〜5 ms・2 倍 6〜15 ms・読み込み 0.1 ms |
+| 依存 | 75 クレート（`cargo tree` 136 行）。重複: `syn` 2 / 3・`fearless_simd` 0.7 / 1.1・`miniz_oxide` 0.8 / 0.9。`Zlib` だけのクレート 2 つ |
+| ビルド | 依存だけのクリーンビルド 104 秒・`target/release` 283 MB・rlib 72 本 |
+
+この台帳のゲート（`multiple-versions = "deny"`・依存は許可制）を弱めないと入らないので、ADR 0019 で今は却下。製品のコードは変えていない（`make deny` などのゲートはそのまま）。
+
+🔴 **正直に:** 試した PDF は 3 つだけ。画像・透明・暗号化・大きなページは測っていない。却下の理由は hayro の出来ではなく依存の重さ。
+
+## 44. 再現
 
 ```bash
 make prove
