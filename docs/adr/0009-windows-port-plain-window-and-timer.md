@@ -33,14 +33,15 @@ X11 版の読み直しの刻みは、アダプタのスレッドが X の窓へ 
 - active: `unsafe` は 2 クレートだけ `deny`（他は `forbid`・E0453）。関数ごとの `#[expect(unsafe_code, reason = "RS-010: …")]` と `// SAFETY:`（`undocumented_unsafe_blocks`）。lint の表の写しは CNF-014（実ファイルで発火・gate-proofs 第 19 節）
 - active: CNF-013（2 クレートは application・core・windows-rs だけ）、CNF-012（時刻・乱数・環境は adapters-windows だけ）
 - active: `make lint-windows`（Windows のターゲットの clippy・0 件）と `make build-windows`（exe）
-- planned: Windows での実行の確認（QLT-013）。施主の Windows で、窓・表・入力・日本語・2 プロセスの読み直しを見るまで「動く」と書かない
-- planned: `WM_IME_COMPOSITION`（確定前の文字列）と `WM_DPICHANGED`（起動後の dpi の変化）
+- 確認済み（機械の強制ではなく施主の実機・QLT-013）: 施主の Windows 11（10.0.26300・125%）で、窓・表・追加・題名・状態・削除・Ctrl+Z / Ctrl+Y・検索・絞り込み・列の幅と順・段の境・日本語の表示・2 プロセスの読み直し（ローカルと NAS で 10 回とも 3 秒以内）・ドラッグ＆ドロップ・添付の段を見た（gate-proofs 第 51 節・Issue #90）。2 倍（150%）の表示は崩れた（#93 / #94 / #95）
+- 確認済み（施主の実機）: `WM_IME_COMPOSITION`（確定前の文字列・ADR 0020・gate-proofs 第 51.7 節）
+- planned: `WM_DPICHANGED`（起動後の dpi の変化）。施主の実機で、開いたまま 150% → 125% にしても倍率が変わらないのを見た（gate-proofs 第 51.6 節）
 
 ## 結果
 
 - 得たもの: 同じ中核で Windows の exe が組める。描く手続きだけが 2 本（cairo と Direct2D）
 - 失うもの: アカウントと設定の読み書きが 2 つのアダプタに 2 度書かれる（adapters は store に依存できない。PROJECT_LAYOUT 第 2 節）。3 つ目の OS が来たら、標準ライブラリだけの読み書きを store へ寄せる ADR を書く
-- 残る穴: Windows で一度も動かしていない。字の大きさ・行の高さの見え方は Segoe UI と IPA ゴシックで違う。IME の確定前の文字列は出ない（確定した字は `WM_CHAR` で入る）。起動後に dpi が変わっても倍率は変わらない
+- 残る穴: 施主の Windows 11 の 1 台で動かした（gate-proofs 第 51 節）。2 倍の表示は窓の初期の大きさ・チェックボックスと選択箱の寸法・セルの切り取りが崩れる（#93 / #94 / #95・修正の PR 待ち）。字の大きさ・行の高さの見え方は Segoe UI と IPA ゴシックで違う。IME は Microsoft IME だけを見た。起動後に dpi が変わっても倍率は変わらない
 
 ## 却下した選択肢
 

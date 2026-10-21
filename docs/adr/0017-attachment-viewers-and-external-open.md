@@ -21,7 +21,7 @@
 ## 強制
 
 - active: 拡張子の判定（core `attachment_kind`）、CSV の読み（core `csv`）、種類ごとの見せ方（application `attachment_view`）、段の中身・「開く」・失敗の知らせ・先頭だけの印（application `docket_screen`）、文字コードの判定と上限（store `attachment_store`: UTF-8・BOM・`Shift_JIS`・256 KiB）、`xdg-open` の起動と無い命令の失敗（adapters-x11 `external_opener`）。CNF-013（store の表に `encoding_rs`）。Issue #63・gate-proofs 第 40 節
-- 不能: Windows の `ShellExecuteW` は Windows で動かしていない（ADR 0009 と同じ）。`xdg-open` の先のアプリが開けたかは分からない（`xdg-open` の戻りだけ）
+- 不能: Windows の `ShellExecuteW` は施主の Windows で PDF を既定のアプリで開いた（施主の報告・gate-proofs 第 51.5 節）。`xdg-open` の先のアプリが開けたかは分からない（`xdg-open` の戻りだけ）
 
 ## 結果
 

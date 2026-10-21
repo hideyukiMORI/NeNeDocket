@@ -17,6 +17,9 @@
 
 ## 施主の NAS で確かめること（結果はここと gate-proofs 第 49 節に足す）
 
+- **結果（2026-10-21・Issue #90）:** gate-proofs 第 51.9 節。Buffalo LinkStation LS710D、`--probe-share` の append+sync は 47〜53 ms（ローカルの約 60 倍）、同じ PC の 2 プロセスで届くまでの最大 2.7 秒・壊れた行 0、3 台目は 2.4 秒以内。SMB の版は未取得。2 台目の PC は無い
+
+
 - 機種・SMB の版・マウントの設定（Linux なら `mount | grep cifs` の `vers=` / `actimeo=` / `cache=`、Windows なら SMB 3 かどうか）
 - `--probe-share <台帳>` の 4 つの数（Issue #75）
 - 2 台から同時に編集する: 片方で追加し、もう片方に何秒で届くか（10 回の最大）。両方で続けて 1 分操作し、壊れた行の数が 0 のまま
