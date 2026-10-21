@@ -1038,7 +1038,21 @@ Xvfb（1120×600・`LANG=ja_JP.UTF-8`・送り手は scratchpad の `clip-own`: 
 
 🔴 **正直に:** 属性キャッシュ・一覧のキャッシュ・oplock の遅れ・`fsync` の無視は、このコンテナ（ローカルディスク）では出ない。施主の NAS での確認（設計文書の第 2 節: 機種と SMB の版・`--probe-share`・2 台の同時編集・3 台目が見えるまでの秒数）は**未実施**。
 
-## 50. 再現
+## 50. Issue #78 — 壁時計のずれ: 地方時の表示・ずれの印・期限の「今日」の約束（2026-10-21）
+
+同じコンテナ。順序は論理時計のままで（`merge` の壁時計をずらしたテストを足した）、変えたのは表示だけ。application に `ClockDisplay`（時差といま。5 分以上先の壁時計には `⚠`）と `ClockChoice`（設定の `clock = local|utc`・版 6・adapters は `settings.v6.txt` を書き版 5→1 の順に読む）。`ClockPort::offset_minutes` は X11 が `date +%z`、Windows が `GetTimeZoneInformation`（`cfg(windows)`・`make lint-windows`）。履歴の段と `--audit` は `HistoryLine::columns(language, display)` を通る。期限の「今日」は SPECIFICATION 第 2 節に約束だけ。mtime は CNF-015（第 49 節）。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` / `deny` | 差分なし・0 件・0 件・警告なし・ok |
+| `make test` | 448 件（core: `text_at`・壁時計をずらしても同じ台帳 / application: `ClockDisplay`・`ClockChoice`・設定の版 6 / adapters-x11: `+0900` の読み） |
+| `make conformance` | 違反なし |
+
+Xvfb（`TZ=Asia/Tokyo`・`scratchpad/skew78.sh`・送り手は `scratchpad/skew-append`: 別アカウントが壁時計を 3,600 秒進めて課題を 1 つ作る）: 履歴が地方時（UTC 10:09 → 19:09）で出て（[01-local-time](screenshots/2026-10-21-clock-01-local-time.png)）、進んだ時計の課題の行には `⚠ 20:09`（[02-skew-mark](screenshots/2026-10-21-clock-02-skew-mark.png)）。`--audit` も同じ行で、`clock = utc` にすると `10:09` / `⚠ 11:09`。
+
+🔴 **正直に:** 施主の 2 台の時計を意図的にずらした実機の確認は未実施。遅れている時計には印が付かない（自分より先の時計しか分からない）。X11 の時差は `date` に頼り、無い環境では UTC になる（示さない）。期限の色分けは無い。
+
+## 51. 再現
 
 ```bash
 make prove

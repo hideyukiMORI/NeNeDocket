@@ -290,6 +290,36 @@ mod tests {
     }
 
     #[test]
+    fn wall_clock_skew_between_machines_does_not_change_the_docket() {
+        let ops = two_accounts();
+        let expected = merge(&ops);
+        // B の時計が 1 時間進んでいる（壁時計は表示にだけ・ADR 0004）。
+        let skewed: Vec<Op> = ops
+            .iter()
+            .map(|op| {
+                let shift = if op.id().account() == A {
+                    0_i64
+                } else {
+                    3_600_i64
+                };
+                let moved = Op::new(
+                    op.id(),
+                    WallClock::new(op.wall().seconds() + shift),
+                    op.kind().clone(),
+                );
+                match op.undoes() {
+                    Some(target) => moved.undoing(target),
+                    None => moved,
+                }
+            })
+            .collect();
+        assert_eq!(merge(&skewed), expected);
+        let mut reversed = skewed.clone();
+        reversed.reverse();
+        assert_eq!(merge(&reversed), expected);
+    }
+
+    #[test]
     fn the_last_op_in_the_total_order_wins_and_losers_stay_in_the_history() {
         let ops = two_accounts();
         let item = ItemId::new(A, 1);

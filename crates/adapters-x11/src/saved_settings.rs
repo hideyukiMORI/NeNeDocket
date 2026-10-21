@@ -1,6 +1,6 @@
-//! 設定ファイル（FR-012）の読み書き。設定フォルダの `settings.v5.txt`。形は application の `settings_file`。
+//! 設定ファイル（FR-012）の読み書き。設定フォルダの `settings.v6.txt`。形は application の `settings_file`。
 //!
-//! 版 5 が無ければ版 4（`settings.v4.txt`）、版 3、版 2、版 1 の順に読む（無い鍵は既定で補う）。書くのは版 5 だけで、前の版は消さない（ARC-009 の移行）。
+//! 版 6 が無ければ版 5（`settings.v5.txt`）、版 4、版 3、版 2、版 1 の順に読む（無い鍵は既定で補う）。書くのは版 6 だけで、前の版は消さない（ARC-009 の移行）。
 
 use std::fs;
 use std::io;
@@ -15,9 +15,10 @@ use crate::adapter_failure::AdapterFailure;
 use crate::config_directory;
 
 /// いま書く版のファイル名。版は名前にある（ARC-009）。
-const FILE_NAME: &str = "settings.v5.txt";
+const FILE_NAME: &str = "settings.v6.txt";
 /// 読めるだけの前の版のファイル名（新しい順）。
-const PREVIOUS_FILE_NAMES: [&str; 4] = [
+const PREVIOUS_FILE_NAMES: [&str; 5] = [
+    "settings.v5.txt",
     "settings.v4.txt",
     "settings.v3.txt",
     "settings.v2.txt",
@@ -135,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn older_versions_are_read_in_order_and_the_store_writes_version_five() {
+    fn older_versions_are_read_in_order_and_the_store_writes_version_six() {
         let root = temp("migrate");
         let path = root.join(FILE_NAME);
         let version_two = root.join("settings.v2.txt");
@@ -156,7 +157,7 @@ mod tests {
         assert!(
             fs::read_to_string(&path)
                 .unwrap()
-                .starts_with("version = 5\n")
+                .starts_with("version = 6\n")
         );
         assert!(previous.exists());
         assert_eq!(load_chain(&chain).unwrap(), changed);

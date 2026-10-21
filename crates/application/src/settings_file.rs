@@ -1,9 +1,9 @@
-//! 設定ファイルの形（FR-012）。版 5: `version = 5`・`refresh_seconds = <秒>`・`language = system|<tag>`・`theme = system|<name>`・
+//! 設定ファイルの形（FR-012）。版 6: `version = 6`・`refresh_seconds = <秒>`・`language = system|<tag>`・`theme = system|<name>`・
 //! `columns = <番号>,<状態>,<担当>,<期限>,<ラベル>`（論理画素）・`order = <列>,…`（6 列の並び）・`pane_px = auto|<高さ>`（表の下の段）・
-//! `recent = <フォルダ>`（新しいものが先、1 行に 1 つ）。
+//! `clock = local|utc`（履歴と `--audit` の時刻・Issue #78）・`recent = <フォルダ>`（新しいものが先、1 行に 1 つ）。
 //!
-//! 版 4（`pane_px` が無い）・版 3（`order` も無い）・版 2（`columns` も無い）・版 1（`language` と `theme` も無い）も読める。
-//! 無い鍵は既定で補い、書くのは版 5 だけ（ARC-009 の移行）。
+//! 版 5（`clock` が無い）・版 4（`pane_px` も無い）・版 3（`order` も無い）・版 2（`columns` も無い）・版 1（`language` と `theme` も無い）も読める。
+//! 無い鍵は既定で補い、書くのは版 6 だけ（ARC-009 の移行）。
 //! 前の版にその版に無い鍵があれば知らない鍵として拒む。
 //! 形はここ（純関数）、読み書きはアダプタ。知らない版・知らない鍵・読めない値は `None` で、黙って既定値へ落とさない（FR-014）。
 
@@ -13,17 +13,18 @@ use alloc::vec::Vec;
 use nene_docket_core::language_choice::LanguageChoice;
 use nene_docket_core::theme_choice::ThemeChoice;
 
+use crate::clock_choice::ClockChoice;
 use crate::column_order::ColumnOrder;
 use crate::column_widths::ColumnWidths;
 use crate::pane_height::PaneHeight;
 use crate::settings::Settings;
 
 /// いま書く版。
-const VERSION: &str = "5";
+const VERSION: &str = "6";
 
 /// 読み取り中の値。
 struct Reading {
-    /// 版の番号（5・4・3・2・1）。
+    /// 版の番号（6・5・4・3・2・1）。
     version: Option<u8>,
     refresh_seconds: Option<u64>,
     language: Option<LanguageChoice>,
@@ -31,10 +32,11 @@ struct Reading {
     columns: Option<ColumnWidths>,
     order: Option<ColumnOrder>,
     pane: Option<PaneHeight>,
+    clock: Option<ClockChoice>,
     recent: Vec<String>,
 }
 
-/// 文字列から設定を読む（版 5・4・3・2・1）。
+/// 文字列から設定を読む（版 6・5・4・3・2・1）。
 #[must_use]
 pub fn parse(text: &str) -> Option<Settings> {
     let mut reading = Reading {
@@ -45,6 +47,7 @@ pub fn parse(text: &str) -> Option<Settings> {
         columns: None,
         order: None,
         pane: None,
+        clock: None,
         recent: Vec::new(),
     };
     for line in text.lines() {
@@ -60,7 +63,8 @@ impl Reading {
         match key {
             "version" => {
                 self.version = Some(match value {
-                    VERSION => 5,
+                    VERSION => 6,
+                    "5" => 5,
                     "4" => 4,
                     "3" => 3,
                     "2" => 2,
@@ -74,6 +78,7 @@ impl Reading {
             "columns" => self.columns = Some(ColumnWidths::parse(value)?),
             "order" => self.order = Some(ColumnOrder::parse(value)?),
             "pane_px" => self.pane = Some(PaneHeight::parse(value)?),
+            "clock" => self.clock = Some(ClockChoice::from_keyword(value)?),
             "recent" if value.is_empty() => return None,
             "recent" => self.recent.push(String::from(value)),
             _ => return None,
@@ -96,11 +101,13 @@ impl Reading {
         let columns = since(version, 3, self.columns, ColumnWidths::initial())?;
         let order = since(version, 4, self.order, ColumnOrder::initial())?;
         let pane = since(version, 5, self.pane, PaneHeight::Auto)?;
+        let clock = since(version, 6, self.clock, ClockChoice::Local)?;
         Some(
             Settings::new(self.recent, self.refresh_seconds?, choices)
                 .with_columns(columns)
                 .with_order(order)
-                .with_pane(pane),
+                .with_pane(pane)
+                .with_clock(clock),
         )
     }
 }
@@ -116,17 +123,18 @@ fn since<T>(version: u8, from: u8, value: Option<T>, default: T) -> Option<T> {
     }
 }
 
-/// 設定を文字列にする（版 5）。`parse` の逆。
+/// 設定を文字列にする（版 6）。`parse` の逆。
 #[must_use]
 pub fn encode(settings: &Settings) -> String {
     let mut text = alloc::format!(
-        "version = {VERSION}\nrefresh_seconds = {}\nlanguage = {}\ntheme = {}\ncolumns = {}\norder = {}\npane_px = {}\n",
+        "version = {VERSION}\nrefresh_seconds = {}\nlanguage = {}\ntheme = {}\ncolumns = {}\norder = {}\npane_px = {}\nclock = {}\n",
         settings.refresh_seconds(),
         settings.language().keyword(),
         settings.theme().keyword(),
         settings.columns().text(),
         settings.order().text(),
-        settings.pane().text()
+        settings.pane().text(),
+        settings.clock().keyword()
     );
     for folder in settings.recent() {
         text.push_str("recent = ");
@@ -152,13 +160,27 @@ mod tests {
                 ThemeChoice::from_keyword("dracula").unwrap(),
             ),
         );
-        let settings = settings.with_pane(PaneHeight::Fixed(200));
+        let settings = settings
+            .with_pane(PaneHeight::Fixed(200))
+            .with_clock(ClockChoice::Utc);
         let text = encode(&settings);
         assert_eq!(
             text,
-            "version = 5\nrefresh_seconds = 5\nlanguage = ja\ntheme = dracula\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = 200\nrecent = /srv/team\nrecent = ./docket\n"
+            "version = 6\nrefresh_seconds = 5\nlanguage = ja\ntheme = dracula\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = 200\nclock = utc\nrecent = /srv/team\nrecent = ./docket\n"
         );
         assert_eq!(parse(&text), Some(settings));
+        assert_eq!(
+            parse(
+                "version = 5\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = auto\n"
+            ),
+            Some(Settings::initial())
+        );
+        assert_eq!(
+            parse(
+                "version = 5\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = auto\nclock = utc\n"
+            ),
+            None
+        );
         assert_eq!(
             parse(
                 "version = 4\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\n"
@@ -218,6 +240,7 @@ mod tests {
     #[test]
     fn a_different_version_a_missing_key_or_an_unknown_key_is_refused() {
         for text in [
+            "version = 7\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = auto\nclock = local\n",
             "version = 6\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = auto\n",
             "version = 5\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\n",
             "version = 2\nrefresh_seconds = 3\ntheme = system\n",
@@ -239,6 +262,7 @@ mod tests {
             "version = 3\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 1,2\n",
             "version = 4\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = title\n",
             "version = 5\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = 10\n",
+            "version = 6\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = auto\nclock = jst\n",
             "version = 2\nrefresh_seconds = 3\nlanguage = system\ntheme = system\nrecent =\n",
         ] {
             assert_eq!(parse(text), None, "{text}");

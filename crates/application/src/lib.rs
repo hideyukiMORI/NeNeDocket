@@ -24,6 +24,8 @@ pub mod attachments_context;
 pub mod attachments_pane;
 pub mod audit_report;
 pub mod body_pane;
+pub mod clock_choice;
+pub mod clock_display;
 pub mod clock_port;
 pub mod column_order;
 pub mod column_widths;

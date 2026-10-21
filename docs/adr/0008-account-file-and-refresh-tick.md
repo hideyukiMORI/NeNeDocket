@@ -48,3 +48,7 @@ Issue #11 で画面をジャーナル（ADR 0004）に結んだ。決めずに�
 | アカウントのファイルを台帳のフォルダに置く | 台帳は共有フォルダで、アカウントはマシンのもの。別の台帳を開いても同じ ID でなければならない |
 | アカウントの形を store に置く | store は application と core にしか依存できず、adapters は store に依存できない（PROJECT_LAYOUT 第 2 節）。純関数は application に、I/O は adapters に |
 | `uuid` クレート | 外部クレートを増やす理由が無い。16 バイトの乱数は `/dev/urandom` で足りる（ARC-013） |
+
+## 補足（Issue #78・2026-10-21）
+
+時計のポートは `now()` に加えて `offset_minutes()`（地方時と UTC の差・分）を返す。X11 は起動時に `date +%z` を 1 度だけ読み（`SystemClock::observed`・`date` が無ければ 0）、Windows は `GetTimeZoneInformation`。プロセスの間は固定で、夏時間の切り替えは次の起動まで反映しない。使うのは表示（履歴・`--audit`）だけで、順序は論理時計のまま（ADR 0004）。設定の版 6 の `clock = local|utc` で UTC に戻せる。

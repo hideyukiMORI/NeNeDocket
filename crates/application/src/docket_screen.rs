@@ -58,6 +58,7 @@ use crate::attachments_action::AttachmentsAction;
 use crate::attachments_context::AttachmentsContext;
 use crate::attachments_pane::AttachmentsPane;
 use crate::body_pane::BodyPane;
+use crate::clock_display::ClockDisplay;
 use crate::docket_frame::DocketFrame;
 use crate::drag_target::DragTarget;
 use crate::edit_slot::EditSlot;
@@ -1038,9 +1039,10 @@ impl DocketScreen {
         let Some(area) = area else {
             return;
         };
+        let display = self.clock_display();
         let clicked = self.history.probe(
             &mut self.interaction,
-            (area, lines, self.language),
+            (area, lines, self.language, display),
             commands,
         );
         if let Some(line) = clicked.and_then(|index| lines.get(index)) {
@@ -1071,6 +1073,11 @@ impl DocketScreen {
     }
 
     /// 鍵を持つ欄。
+    /// 履歴の時刻の見せ方: 設定が地方時ならアダプタの時差、UTC なら 0。いまはずれの印の基準（Issue #78）。
+    fn clock_display(&self) -> ClockDisplay {
+        ClockDisplay::of(self.settings.clock(), self.ports.clock())
+    }
+
     fn focused_slot(&self) -> Option<EditSlot> {
         EditSlot::ALL
             .into_iter()
@@ -2945,7 +2952,7 @@ mod tests {
         // 他人が 3 件作った: 作成・題名・状態で 9 行。
         let lines = screen.history_lines();
         assert_eq!(lines.len(), 9);
-        let change = lines[0].columns(Language::English)[2].clone();
+        let change = lines[0].columns(Language::English, screen.clock_display())[2].clone();
         assert!(change.starts_with("0000-3: "), "{change}");
         let frame = idle(&mut screen);
         assert!(texts(&frame).iter().any(|text| text == "When"));
@@ -2980,11 +2987,11 @@ mod tests {
         click(&mut screen, HISTORY_X, TOOLBAR_Y);
         let lines = screen.history_lines();
         assert_eq!(
-            lines[0].columns(Language::English),
+            lines[0].columns(Language::English, screen.clock_display()),
             ["2023-11-14 22:13", "me", "added an editor: other"]
         );
         assert_eq!(
-            lines[1].columns(Language::English)[2],
+            lines[1].columns(Language::English, screen.clock_display())[2],
             "turned permissions on"
         );
         // 権限の記録は戻せない: Undo は何も書かない。
@@ -3010,7 +3017,7 @@ mod tests {
         let lines: Vec<[String; 3]> = screen
             .history_lines()
             .iter()
-            .map(|line| line.columns(Language::English))
+            .map(|line| line.columns(Language::English, screen.clock_display()))
             .collect();
         assert_eq!(lines.len(), 5);
         assert_eq!(lines[0][2], "undo: State : Done -> In progress");
@@ -3256,7 +3263,7 @@ mod tests {
         assert_eq!(
             lines
                 .first()
-                .map(|line| line.columns(Language::English)[2].clone()),
+                .map(|line| line.columns(Language::English, screen.clock_display())[2].clone()),
             Some(String::from("Body :  -> first↵second"))
         );
     }

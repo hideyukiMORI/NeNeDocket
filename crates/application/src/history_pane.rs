@@ -20,6 +20,7 @@ use nene_docket_core::widget_id::WidgetId;
 use nene_docket_core::word::Word;
 use nene_docket_core::wording;
 
+use crate::clock_display::ClockDisplay;
 use crate::history_line::HistoryLine;
 
 /// 履歴のスクロールバーの ID。画面の他の部品（1〜10・12〜19・100〜・200〜・300〜・1000〜・3000〜）と重ならない。
@@ -84,7 +85,7 @@ impl HistoryPane {
     pub fn probe(
         &mut self,
         interaction: &mut Interaction,
-        (area, lines, language): (PixelRect, &[HistoryLine], Language),
+        (area, lines, language, display): (PixelRect, &[HistoryLine], Language, ClockDisplay),
         commands: &mut Vec<DrawCommand>,
     ) -> Option<usize> {
         let track = PixelRect::new(
@@ -100,7 +101,7 @@ impl HistoryPane {
             .scroll
             .resized(table.content_height(), u32::from(table.body().height()));
         self.header(&table, language, commands);
-        let clicked = self.rows(interaction, (&table, lines, language), commands);
+        let clicked = self.rows(interaction, (&table, lines, language, display), commands);
         self.scroll_bar(interaction, (track, area), commands);
         clicked
     }
@@ -156,7 +157,7 @@ impl HistoryPane {
     fn rows(
         &self,
         interaction: &mut Interaction,
-        (table, lines, language): (&TableLayout, &[HistoryLine], Language),
+        (table, lines, language, display): (&TableLayout, &[HistoryLine], Language, ClockDisplay),
         commands: &mut Vec<DrawCommand>,
     ) -> Option<usize> {
         let padding = self.px(PADDING_PX);
@@ -184,7 +185,11 @@ impl HistoryPane {
             } else {
                 Paint::Ink
             };
-            for (cell, text) in table.cells(rect).into_iter().zip(line.columns(language)) {
+            for (cell, text) in table
+                .cells(rect)
+                .into_iter()
+                .zip(line.columns(language, display))
+            {
                 commands.push(Self::cell_text(cell, &text, paint, padding));
             }
         }
