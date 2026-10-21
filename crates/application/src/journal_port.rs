@@ -5,7 +5,9 @@ use alloc::vec::Vec;
 
 use nene_docket_core::account_id::AccountId;
 use nene_docket_core::op::Op;
+use nene_docket_core::permissions::Permissions;
 
+use crate::admin_command::AdminCommand;
 use crate::admission_report::AdmissionReport;
 use crate::journal_failure::JournalFailure;
 
@@ -38,6 +40,19 @@ pub trait JournalPort {
     /// 署名と権限の検証の報告（FR-010）。権限を使わない台帳は [`AdmissionReport::open`]。
     fn admission(&self) -> AdmissionReport;
 
-    /// 台帳の `keys/` にあるアカウントの名前（FR-009）。履歴の「誰が」に使う。
+    /// 台帳の `keys/` にあるアカウントの名前（FR-009）。履歴の「誰が」と参加者の段に使う。
     fn names(&self) -> Vec<(AccountId, String)>;
+
+    /// 台帳の持ち主。持ち主の無い古い台帳は `None`。
+    fn owner(&self) -> Option<AccountId>;
+
+    /// 権限。有効でなければ `None`。
+    fn permissions(&self) -> Option<Permissions>;
+
+    /// 持ち主が権限を変える（FR-010）。書いたら鍵と権限を読み直す。
+    ///
+    /// # Errors
+    ///
+    /// 持ち主でない・書けない。
+    fn administer(&mut self, commands: &[AdminCommand]) -> Result<(), JournalFailure>;
 }

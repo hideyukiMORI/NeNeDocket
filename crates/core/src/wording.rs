@@ -55,6 +55,15 @@ const fn japanese(word: Word) -> &'static str {
         Word::UnverifiedLines => "署名か権限が通らない行",
         Word::KeyMismatch => "台帳にある自分の公開鍵が手元と違います",
         Word::NotAnEditor => "この台帳の編集者ではありません。変更は無視されます",
+        Word::Members => "参加者",
+        Word::Name => "名前",
+        Word::Role => "役",
+        Word::Owner => "持ち主",
+        Word::Editor => "編集者",
+        Word::Viewer => "閲覧のみ",
+        Word::Anyone => "誰でも編集",
+        Word::Permissions => "権限",
+        Word::CannotWritePermissions => "権限を書けません",
     }
 }
 
@@ -94,6 +103,15 @@ const fn english(word: Word) -> &'static str {
         Word::UnverifiedLines => "lines failing signature or permission",
         Word::KeyMismatch => "my key in this docket differs from mine",
         Word::NotAnEditor => "not an editor of this docket; changes are ignored",
+        Word::Members => "Members",
+        Word::Name => "Name",
+        Word::Role => "Role",
+        Word::Owner => "Owner",
+        Word::Editor => "Editor",
+        Word::Viewer => "Read only",
+        Word::Anyone => "Anyone may edit",
+        Word::Permissions => "Permissions",
+        Word::CannotWritePermissions => "permissions: cannot write",
     }
 }
 
@@ -132,6 +150,15 @@ const fn simplified_chinese(word: Word) -> &'static str {
         Word::UnverifiedLines => "签名或权限未通过的行",
         Word::KeyMismatch => "台账中的本人公钥与本机不一致",
         Word::NotAnEditor => "不是此台账的编辑者，改动将被忽略",
+        Word::Members => "成员",
+        Word::Name => "名称",
+        Word::Role => "角色",
+        Word::Owner => "所有者",
+        Word::Editor => "编辑者",
+        Word::Viewer => "只读",
+        Word::Anyone => "任何人可编辑",
+        Word::Permissions => "权限",
+        Word::CannotWritePermissions => "无法写入权限",
     }
 }
 
@@ -170,6 +197,15 @@ const fn traditional_chinese(word: Word) -> &'static str {
         Word::UnverifiedLines => "簽名或權限未通過的行",
         Word::KeyMismatch => "帳冊中的本人公鑰與本機不一致",
         Word::NotAnEditor => "不是此帳冊的編輯者，改動將被忽略",
+        Word::Members => "成員",
+        Word::Name => "名稱",
+        Word::Role => "角色",
+        Word::Owner => "擁有者",
+        Word::Editor => "編輯者",
+        Word::Viewer => "唯讀",
+        Word::Anyone => "任何人可編輯",
+        Word::Permissions => "權限",
+        Word::CannotWritePermissions => "無法寫入權限",
     }
 }
 
@@ -208,6 +244,15 @@ const fn korean(word: Word) -> &'static str {
         Word::UnverifiedLines => "서명 또는 권한이 맞지 않는 행",
         Word::KeyMismatch => "장부에 있는 내 공개 키가 이 기기와 다릅니다",
         Word::NotAnEditor => "이 장부의 편집자가 아닙니다. 변경은 무시됩니다",
+        Word::Members => "참가자",
+        Word::Name => "이름",
+        Word::Role => "역할",
+        Word::Owner => "소유자",
+        Word::Editor => "편집자",
+        Word::Viewer => "읽기 전용",
+        Word::Anyone => "누구나 편집 가능",
+        Word::Permissions => "권한",
+        Word::CannotWritePermissions => "권한을 쓸 수 없습니다",
     }
 }
 
@@ -247,6 +292,15 @@ const fn spanish(word: Word) -> &'static str {
         Word::UnverifiedLines => "líneas sin firma o permiso válidos",
         Word::KeyMismatch => "mi clave en este registro no coincide con la local",
         Word::NotAnEditor => "no es editor de este registro; los cambios se ignoran",
+        Word::Members => "Miembros",
+        Word::Name => "Nombre",
+        Word::Role => "Rol",
+        Word::Owner => "Propietario",
+        Word::Editor => "Editor",
+        Word::Viewer => "Solo lectura",
+        Word::Anyone => "Cualquiera puede editar",
+        Word::Permissions => "Permisos",
+        Word::CannotWritePermissions => "permisos: no se puede escribir",
     }
 }
 
@@ -255,7 +309,7 @@ mod tests {
     use super::*;
 
     /// 全部の語（`Word` の閉じた集合を 1 か所で列挙する。増えたらここも増える）。
-    const WORDS: [Word; 34] = [
+    const WORDS: [Word; 43] = [
         Word::All,
         Word::StateName(ItemState::Open),
         Word::StateName(ItemState::InProgress),
@@ -290,6 +344,15 @@ mod tests {
         Word::UnverifiedLines,
         Word::KeyMismatch,
         Word::NotAnEditor,
+        Word::Members,
+        Word::Name,
+        Word::Role,
+        Word::Owner,
+        Word::Editor,
+        Word::Viewer,
+        Word::Anyone,
+        Word::Permissions,
+        Word::CannotWritePermissions,
     ];
 
     #[test]

@@ -9,6 +9,8 @@ pub enum JournalFailure {
     Unwritable,
     /// 他人のジャーナルを読めなかった。
     Unreadable,
+    /// 権限（`permissions.v1.txt` と `docket.v1.txt`）を書けなかった。
+    PermissionsUnwritable,
 }
 
 impl JournalFailure {
@@ -18,6 +20,7 @@ impl JournalFailure {
         match self {
             Self::Unwritable => Word::CannotWriteJournal,
             Self::Unreadable => Word::CannotReadJournals,
+            Self::PermissionsUnwritable => Word::CannotWritePermissions,
         }
     }
 }

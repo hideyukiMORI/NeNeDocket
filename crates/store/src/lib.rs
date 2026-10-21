@@ -5,7 +5,6 @@
 //! 各プロセスは自分のジャーナルにだけ**追記**し、他人のジャーナルは伸びた分だけ**読む**。ロックは使わない。
 //! 現在時刻・乱数・環境・ファイルを読める 3 区画の 1 つ（ARC-007 / CNF-012）。直列化の型は core の型と分ける。
 
-pub mod admin_command;
 pub mod administration;
 pub mod admission_failure;
 mod crc32;
