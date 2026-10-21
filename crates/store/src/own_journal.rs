@@ -1,0 +1,165 @@
+//! 自分のジャーナル。追記と同期（fsync）だけ。書き換えない・縮めない（ADR 0004 の 2・4・5）。
+
+use std::fs::{File, OpenOptions};
+use std::io::Write as _;
+use std::path::{Path, PathBuf};
+
+use nene_docket_core::account_id::AccountId;
+use nene_docket_core::op::Op;
+
+use crate::journal_file;
+use crate::journal_read::JournalRead;
+use crate::journal_record;
+use crate::store_failure::StoreFailure;
+
+/// 開いたファイルと、まだ `sync` していない追記があるか。
+#[derive(Debug)]
+pub struct OwnJournal {
+    path: PathBuf,
+    file: File,
+    account: AccountId,
+    dirty: bool,
+}
+
+impl OwnJournal {
+    /// `journal/<account>.v1.log` を追記で開く（無ければ作る）。起動時に中身を読み、壊れた末尾は捨てて数える。
+    ///
+    /// # Errors
+    ///
+    /// フォルダを作れない・開けない・読めない。
+    pub fn open(
+        journal_directory: &Path,
+        account: AccountId,
+    ) -> Result<(Self, JournalRead), StoreFailure> {
+        std::fs::create_dir_all(journal_directory)?;
+        let path = journal_directory.join(file_name(account));
+        let file = OpenOptions::new().append(true).create(true).open(&path)?;
+        let read = journal_file::read_since(&path, 0)?;
+        let opened = Self {
+            path,
+            file,
+            account,
+            dirty: false,
+        };
+        Ok((opened, read))
+    }
+
+    /// 操作を 1 行追記する。同期はしない（`sync` で）。
+    ///
+    /// # Errors
+    ///
+    /// 書けない。
+    pub fn append(&mut self, op: &Op) -> Result<(), StoreFailure> {
+        let mut line = journal_record::encode(op);
+        line.push('\n');
+        self.file.write_all(line.as_bytes())?;
+        self.dirty = true;
+        Ok(())
+    }
+
+    /// 追記を記憶装置に確実に書く。追記が無ければ何もしない。
+    ///
+    /// # Errors
+    ///
+    /// 同期に失敗した。
+    pub fn sync(&mut self) -> Result<(), StoreFailure> {
+        if !self.dirty {
+            return Ok(());
+        }
+        self.file.sync_data()?;
+        self.dirty = false;
+        Ok(())
+    }
+
+    /// まだ同期していない追記があるか。
+    #[must_use]
+    pub const fn is_dirty(&self) -> bool {
+        self.dirty
+    }
+
+    /// このジャーナルのアカウント。
+    #[must_use]
+    pub const fn account(&self) -> AccountId {
+        self.account
+    }
+
+    /// ファイルの場所。
+    #[must_use]
+    pub fn path(&self) -> &Path {
+        &self.path
+    }
+}
+
+/// `<account 16 進>.v1.log`。
+#[must_use]
+pub fn file_name(account: AccountId) -> String {
+    format!("{}.v1.log", account.hex())
+}
+
+/// ファイル名からアカウントを読む。形が違えば `None`。
+#[must_use]
+pub fn account_of(file_name: &str) -> Option<AccountId> {
+    AccountId::from_hex(file_name.strip_suffix(".v1.log")?)
+}
+
+#[cfg(test)]
+mod tests {
+    use nene_docket_core::item_id::ItemId;
+    use nene_docket_core::logical_clock::LogicalClock;
+    use nene_docket_core::op_id::OpId;
+    use nene_docket_core::op_kind::OpKind;
+    use nene_docket_core::wall_clock::WallClock;
+
+    use super::*;
+
+    const ACCOUNT: AccountId = AccountId::new(0x00C0_FFEE);
+
+    fn scratch(name: &str) -> PathBuf {
+        let directory =
+            std::env::temp_dir().join(format!("nene-docket-store-{}-{name}", std::process::id()));
+        let _ignored = std::fs::remove_dir_all(&directory);
+        directory
+    }
+
+    fn op(clock: u64) -> Op {
+        Op::new(
+            OpId::new(LogicalClock::new(clock), ACCOUNT),
+            WallClock::new(0),
+            OpKind::Create(ItemId::new(ACCOUNT, clock.try_into().unwrap())),
+        )
+    }
+
+    #[test]
+    fn appends_survive_reopening_and_a_torn_tail_is_counted_not_read() {
+        let directory = scratch("own");
+        let (mut journal, first_read) = OwnJournal::open(&directory, ACCOUNT).unwrap();
+        assert!(first_read.ops().is_empty());
+        assert!(!journal.is_dirty());
+        journal.append(&op(1)).unwrap();
+        journal.append(&op(2)).unwrap();
+        assert!(journal.is_dirty());
+        journal.sync().unwrap();
+        assert!(!journal.is_dirty());
+        assert_eq!(journal.account(), ACCOUNT);
+        assert!(journal.path().ends_with(file_name(ACCOUNT)));
+        // 落ちた直後を真似る: 改行の無い断片を足す。
+        let mut raw = std::fs::OpenOptions::new()
+            .append(true)
+            .open(journal.path())
+            .unwrap();
+        raw.write_all(b"v1\t3\tgarbage").unwrap();
+        drop(raw);
+        let (_again, read) = OwnJournal::open(&directory, ACCOUNT).unwrap();
+        assert_eq!(read.ops(), [op(1), op(2)]);
+        assert!(read.has_partial_tail());
+        let _ignored = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn file_names_carry_the_account() {
+        assert_eq!(file_name(ACCOUNT), format!("{}.v1.log", ACCOUNT.hex()));
+        assert_eq!(account_of(&file_name(ACCOUNT)), Some(ACCOUNT));
+        assert_eq!(account_of("notes.txt"), None);
+        assert_eq!(account_of("zz.v1.log"), None);
+    }
+}

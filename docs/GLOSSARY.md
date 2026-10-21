@@ -13,10 +13,10 @@
 | 状態（state） | 課題の進み具合。閉じた集合 | `ItemState`（core） |
 | 操作（op） | 台帳を変える最小の単位。ID（論理時計とアカウント）・壁時計・打ち消す操作の ID・種類（作る・置く・消す・戻す）。不変 | `Op` / `OpId` / `OpKind`（core） |
 | 逆の操作 | ある操作を打ち消す操作。Undo はこれを**追記**し、`undoes` に元の ID を持つ。Redo は Undo を打ち消す | `Op::undoing`（core） |
-| ジャーナル（journal） | 1 つのアカウントが書いた操作の列。追記だけ。版を持つ | `journal/<account-id>.v1.log`（store）・ADR 0004 |
-| 自分のジャーナル | このプロセスのアカウントが書くジャーナル。書くのはこれだけ | `OwnJournal`（store） |
-| 読み直し（refresh） | 他人のジャーナルの伸びた分を読んで取り込むこと | `JournalPort::refresh`（application） |
-| 同期（sync） | 自分のジャーナルの追記を記憶装置に確実に書くこと（fsync）。数秒以内 | `JournalPort::sync` |
+| ジャーナル（journal） | 1 つのアカウントが書いた操作の列。追記だけ。版を持つ。1 行 1 操作で末尾に CRC-32 | `journal/<account 16 進>.v1.log`・`journal_record`（store）・ADR 0004 |
+| 自分のジャーナル | このプロセスのアカウントが書くジャーナル。書くのはこれだけ。起動時に壊れた末尾を数えて捨てる | `OwnJournal`（store） |
+| 読み直し（refresh） | 他人のジャーナルの伸びた分を読んで取り込むこと。読んだ位置をアカウントごとに覚える | `OtherJournals::refresh`（store）・`JournalPort`（application・予定） |
+| 同期（sync） | 自分のジャーナルの追記を記憶装置に確実に書くこと（fsync）。数秒以内 | `OwnJournal::sync`（store） |
 | 併合（merge） | 全アカウントのジャーナルから、いまの台帳の状態を作る純関数。同じ入力から同じ出力。同じ ID の操作は 1 度だけ数える | `merge::merge` → `Docket`（core）・ADR 0004 |
 | 論理時計（clock） | 操作の全順序を決める数。Lamport 時計。壁時計は表示にだけ使う | `LogicalClock`（core） |
 | 壁時計（wall clock） | 人に見せる時刻。順序には使わない | `WallClock`（core・`ClockPort` から値として） |
