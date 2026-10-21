@@ -14,12 +14,15 @@ use nene_docket_core::button;
 use nene_docket_core::checkbox;
 use nene_docket_core::column_width::ColumnWidth;
 use nene_docket_core::draw_command::DrawCommand;
+use nene_docket_core::field::Field;
 use nene_docket_core::field_value::FieldValue;
 use nene_docket_core::interaction::Interaction;
 use nene_docket_core::item::Item;
 use nene_docket_core::item_id::ItemId;
 use nene_docket_core::item_state::ItemState;
 use nene_docket_core::key_intent::KeyIntent;
+use nene_docket_core::language::Language;
+use nene_docket_core::language_choice::LanguageChoice;
 use nene_docket_core::layout::Layout;
 use nene_docket_core::op::Op;
 use nene_docket_core::op_kind::OpKind;
@@ -35,8 +38,12 @@ use nene_docket_core::table_layout::TableLayout;
 use nene_docket_core::text_align::TextAlign;
 use nene_docket_core::text_edit::TextEdit;
 use nene_docket_core::text_field;
+use nene_docket_core::theme::Theme;
+use nene_docket_core::theme_choice::ThemeChoice;
 use nene_docket_core::ui_scale::UiScale;
 use nene_docket_core::widget_id::WidgetId;
+use nene_docket_core::word::Word;
+use nene_docket_core::wording;
 
 use crate::account::Account;
 use crate::docket_frame::DocketFrame;
@@ -49,6 +56,8 @@ use crate::journal_failure::JournalFailure;
 use crate::ledger::Ledger;
 use crate::notice::Notice;
 use crate::ports::Ports;
+use crate::settings::Settings;
+use crate::settings_failure::SettingsFailure;
 
 /// 部品の ID。候補は `*_OPTION` に番号を足し、表の行は `ROW` に見えている順の番号を足す。
 const SEARCH: WidgetId = WidgetId::new(1);
@@ -64,8 +73,11 @@ const DUE: WidgetId = WidgetId::new(10);
 /// 11 は履歴の段のスクロールバー（`history_pane`）。
 const HISTORY_TOGGLE: WidgetId = WidgetId::new(12);
 const LABELS: WidgetId = WidgetId::new(13);
+const LANGUAGE: WidgetId = WidgetId::new(14);
+const THEME: WidgetId = WidgetId::new(15);
 const FILTER_OPTION: WidgetId = WidgetId::new(100);
 const STATE_OPTION: WidgetId = WidgetId::new(200);
+const LANGUAGE_OPTION: WidgetId = WidgetId::new(300);
 const ROW: WidgetId = WidgetId::new(1_000);
 
 /// 1x の寸法（SPECIFICATION 第 2 節・決め打ちしない）。
@@ -74,6 +86,8 @@ const ROW_PX: u16 = 28;
 const FILTER_WIDTH_PX: u16 = 140;
 const SHOW_DONE_WIDTH_PX: u16 = 120;
 const HISTORY_WIDTH_PX: u16 = 100;
+const LANGUAGE_WIDTH_PX: u16 = 110;
+const THEME_WIDTH_PX: u16 = 130;
 const BUTTON_WIDTH_PX: u16 = 80;
 const SCROLL_WIDTH_PX: u16 = 12;
 const NUMBER_WIDTH_PX: u16 = 72;
@@ -90,10 +104,8 @@ const WHEEL_ROWS: i32 = 3;
 /// 番号の列に出す作成者の ID の桁数。
 const CREATOR_DIGITS: usize = 4;
 
-/// 絞り込みの候補。先頭は「すべて」、以降は [`ItemState::ALL`] の順。
-const FILTER_OPTIONS: [&str; 4] = ["All", "Open", "In progress", "Done"];
-/// 状態の候補。[`ItemState::ALL`] の順。
-const STATE_OPTIONS: [&str; 3] = ["Open", "In progress", "Done"];
+/// 絞り込みの候補の数。先頭は「すべて」、以降は [`ItemState::ALL`] の順。
+const FILTER_COUNT: usize = ItemState::ALL.len() + 1;
 
 /// 画面の状態。
 #[derive(Debug)]
@@ -116,21 +128,36 @@ pub struct DocketScreen {
     ports: Ports,
     write_failure: Option<JournalFailure>,
     read_failure: Option<JournalFailure>,
+    environment: Environment,
+    settings: Settings,
+    language: Language,
+    theme: Theme,
+    language_select: SelectState,
+    theme_edit: TextEdit,
+    unknown_theme: bool,
+    settings_failure: Option<SettingsFailure>,
 }
 
 impl DocketScreen {
-    /// 環境・アカウント・ポートから始める。ジャーナルを最初に読み、台帳を併合する。
+    /// 環境・アカウント・ポート・設定から始める。ジャーナルを最初に読み、台帳を併合する。言語と配色は設定と環境から解決する。
     #[must_use]
-    pub fn open(environment: Environment, account: Account, mut ports: Ports) -> Self {
+    pub fn open(
+        environment: Environment,
+        account: Account,
+        mut ports: Ports,
+        settings: Settings,
+    ) -> Self {
         let (ops, read_failure) = match ports.journal_mut().refresh() {
             Ok(ops) => (ops, None),
             Err(failure) => (Vec::new(), Some(failure)),
         };
+        let language = settings.language().resolve(environment.language());
+        let theme = settings.theme().resolve(environment.appearance());
         Self {
             scale: environment.scale(),
             interaction: Interaction::idle(),
             search: TextEdit::empty(),
-            filter: SelectState::closed(FILTER_OPTIONS.len(), 0),
+            filter: SelectState::closed(FILTER_COUNT, 0),
             show_done: true,
             scroll: ScrollState::top(0, 0),
             selected: None,
@@ -139,12 +166,23 @@ impl DocketScreen {
             due: TextEdit::empty(),
             labels: TextEdit::empty(),
             bad_due: false,
-            state: SelectState::closed(STATE_OPTIONS.len(), 0),
+            state: SelectState::closed(ItemState::ALL.len(), 0),
             history: HistoryPane::hidden(environment.scale()),
             ledger: Ledger::open(account, ops),
             ports,
             write_failure: None,
             read_failure,
+            environment,
+            language_select: SelectState::closed(
+                LanguageChoice::ALL.len(),
+                settings.language().position(),
+            ),
+            theme_edit: TextEdit::showing(settings.theme().keyword()),
+            settings,
+            language,
+            theme,
+            unknown_theme: false,
+            settings_failure: None,
         }
     }
 
@@ -175,29 +213,79 @@ impl DocketScreen {
             rect: bounds,
             paint: Paint::Background,
         }];
-        let (filter_rect, filter_response) = self.probe_toolbar(&toolbar, &mut commands);
+        let ((filter_rect, filter_response), (language_rect, language_response)) =
+            self.probe_toolbar(&toolbar, &mut commands);
         let (state_rect, state_response) = self.probe_editor(&editor, &mut commands);
         self.probe_table(&table, &visible, &mut commands);
         self.probe_scroll(track, history_area, &mut commands);
         self.probe_history(history_area, &mut commands);
         self.probe_filter_options(filter_rect);
         self.probe_state_options(state_rect);
+        self.probe_language_options(language_rect);
         commands.extend(select_box::select_box(
             filter_rect,
-            &FILTER_OPTIONS,
+            &self.filter_options(),
             self.filter,
             filter_response,
         ));
         commands.extend(select_box::select_box(
             state_rect,
-            &STATE_OPTIONS,
+            &self.state_options(),
             self.state,
             state_response,
+        ));
+        commands.extend(select_box::select_box(
+            language_rect,
+            &self.language_options(),
+            self.language_select,
+            language_response,
         ));
         self.notice_commands(notice_rect, &mut commands);
         self.interaction.end();
         self.commit_unfocused_slots();
-        DocketFrame::new(self.scale, commands)
+        DocketFrame::new((self.scale, self.language, self.theme), commands)
+    }
+
+    /// 表示言語の語。
+    fn word(&self, word: Word) -> &'static str {
+        wording::text(self.language, word)
+    }
+
+    /// 絞り込みの候補の文言。
+    fn filter_options(&self) -> [&'static str; FILTER_COUNT] {
+        let [open, in_progress, done] = self.state_options();
+        [self.word(Word::All), open, in_progress, done]
+    }
+
+    /// 状態の候補の文言。
+    fn state_options(&self) -> [&'static str; 3] {
+        ItemState::ALL.map(|state| self.word(Word::StateName(state)))
+    }
+
+    /// 言語の候補の文言。先頭は「OS に従う」、以降は各言語の自分の名前。
+    fn language_options(&self) -> [&'static str; 7] {
+        LanguageChoice::ALL.map(|choice| match choice {
+            LanguageChoice::System => self.word(Word::FollowSystem),
+            LanguageChoice::Fixed(language) => language.native_name(),
+        })
+    }
+
+    /// 表示言語。
+    #[must_use]
+    pub const fn language(&self) -> Language {
+        self.language
+    }
+
+    /// 配色。
+    #[must_use]
+    pub const fn theme(&self) -> Theme {
+        self.theme
+    }
+
+    /// 設定（画面で変えた言語と配色を含む）。
+    #[must_use]
+    pub const fn settings(&self) -> &Settings {
+        &self.settings
     }
 
     /// 検索欄の文字列。
@@ -267,6 +355,10 @@ impl DocketScreen {
         if self.bad_due {
             notices.push(Notice::NotADate);
         }
+        notices.extend(self.settings_failure.map(Notice::Settings));
+        if self.unknown_theme {
+            notices.push(Notice::UnknownTheme);
+        }
         notices
     }
 
@@ -317,12 +409,14 @@ impl DocketScreen {
         self.scale.px(base)
     }
 
-    fn toolbar_widths(&self) -> [ColumnWidth; 5] {
+    fn toolbar_widths(&self) -> [ColumnWidth; 7] {
         [
             ColumnWidth::Fill,
             ColumnWidth::Fixed(self.px(FILTER_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(SHOW_DONE_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(HISTORY_WIDTH_PX)),
+            ColumnWidth::Fixed(self.px(LANGUAGE_WIDTH_PX)),
+            ColumnWidth::Fixed(self.px(THEME_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(BUTTON_WIDTH_PX)),
         ]
     }
@@ -354,8 +448,11 @@ impl DocketScreen {
             return;
         };
         let lines = self.history_lines();
-        self.history
-            .probe(&mut self.interaction, (area, &lines), commands);
+        self.history.probe(
+            &mut self.interaction,
+            (area, &lines, self.language),
+            commands,
+        );
     }
 
     fn editor_widths(&self) -> [ColumnWidth; 6] {
@@ -456,6 +553,8 @@ impl DocketScreen {
     fn take_preedit(&mut self, input: &FrameInput) {
         if self.interaction.focus() == Some(SEARCH) {
             self.search = self.search.with_preedit(input.preedit().cloned());
+        } else if self.interaction.focus() == Some(THEME) {
+            self.theme_edit = self.theme_edit.with_preedit(input.preedit().cloned());
         } else if let Some(slot) = self.focused_slot() {
             let edit = self.slot_mut(slot);
             *edit = edit.with_preedit(input.preedit().cloned());
@@ -467,7 +566,7 @@ impl DocketScreen {
         match key {
             KeyIntent::Tab => self.interaction.focus_next(),
             KeyIntent::BackTab => self.interaction.focus_previous(),
-            KeyIntent::Escape if !self.filter.is_open() && !self.state.is_open() => {
+            KeyIntent::Escape if !self.any_options_open() => {
                 self.interaction.blur();
             }
             KeyIntent::Undo => self.undo(),
@@ -497,6 +596,12 @@ impl DocketScreen {
         match self.interaction.focus() {
             Some(SEARCH) => self.search = self.search.applied(key),
             Some(FILTER) => self.filter = self.filter.applied(key),
+            Some(LANGUAGE) => {
+                let before = self.language_select.chosen();
+                self.language_select = self.language_select.applied(key);
+                self.language_changed(before);
+            }
+            Some(THEME) => self.theme_key(key),
             Some(STATE) => {
                 let before = self.state.chosen();
                 self.state = self.state.applied(key);
@@ -622,7 +727,7 @@ impl DocketScreen {
             );
         }
         self.state = SelectState::closed(
-            STATE_OPTIONS.len(),
+            ItemState::ALL.len(),
             item.map_or(0, |found| Self::state_index(found.state())),
         );
     }
@@ -641,7 +746,7 @@ impl DocketScreen {
         }
         if !self.state.is_open() {
             self.state = SelectState::closed(
-                STATE_OPTIONS.len(),
+                ItemState::ALL.len(),
                 item.map_or(0, |found| Self::state_index(found.state())),
             );
         }
@@ -702,13 +807,76 @@ impl DocketScreen {
             .unwrap_or(0)
     }
 
-    /// 検索欄・絞り込み・完了の表示・追加。絞り込みの箱は候補が表の上に乗るので、最後に描く。
+    /// 言語の箱の選びが変わっていれば、言語を変えて設定に残す。
+    fn language_changed(&mut self, before: usize) {
+        let chosen = self.language_select.chosen();
+        if chosen == before {
+            return;
+        }
+        let Some(choice) = LanguageChoice::ALL.get(chosen).copied() else {
+            return;
+        };
+        self.settings = self.settings.clone().with_language(choice);
+        self.language = choice.resolve(self.environment.language());
+        self.save_settings();
+    }
+
+    /// 配色の欄の鍵。Enter で名前を適用（`system` も）、上下で表を巡る、ほかは字の編集。
+    fn theme_key(&mut self, key: KeyIntent) {
+        match key {
+            KeyIntent::Enter => self.apply_theme_text(),
+            KeyIntent::Up => self.set_theme(self.settings.theme().previous()),
+            KeyIntent::Down => self.set_theme(self.settings.theme().next()),
+            KeyIntent::Char(_)
+            | KeyIntent::Move { .. }
+            | KeyIntent::Backspace
+            | KeyIntent::Delete
+            | KeyIntent::SelectAll
+            | KeyIntent::Escape
+            | KeyIntent::Tab
+            | KeyIntent::BackTab
+            | KeyIntent::Undo
+            | KeyIntent::Redo => self.theme_edit = self.theme_edit.applied(key),
+        }
+    }
+
+    /// 欄の名前の配色にする。知らない名前なら変えずに示す（FR-014）。
+    fn apply_theme_text(&mut self) {
+        match ThemeChoice::from_keyword(self.theme_edit.text().trim()) {
+            Some(choice) => self.set_theme(choice),
+            None => self.unknown_theme = true,
+        }
+    }
+
+    /// 配色を変えて設定に残す。欄は正規の名前に揃える。
+    fn set_theme(&mut self, choice: ThemeChoice) {
+        self.unknown_theme = false;
+        self.settings = self.settings.clone().with_theme(choice);
+        self.theme = choice.resolve(self.environment.appearance());
+        self.theme_edit = TextEdit::showing(choice.keyword());
+        self.save_settings();
+    }
+
+    /// 設定を書く。書けなければ示す。
+    fn save_settings(&mut self) {
+        self.settings_failure = self.ports.settings_mut().save(&self.settings).err();
+    }
+
+    /// 検索欄・絞り込み・完了の表示・履歴・言語・配色・追加。箱は候補が表の上に乗るので、最後に描く。
     fn probe_toolbar(
         &mut self,
         toolbar: &[PixelRect],
         commands: &mut Vec<DrawCommand>,
-    ) -> (PixelRect, Response) {
-        let [search_rect, filter_rect, done_rect, history_rect, add_rect] = Self::rects(toolbar);
+    ) -> ((PixelRect, Response), (PixelRect, Response)) {
+        let [
+            search_rect,
+            filter_rect,
+            done_rect,
+            history_rect,
+            language_rect,
+            theme_rect,
+            add_rect,
+        ] = Self::rects(toolbar);
         let search = self.interaction.probe(SEARCH, search_rect, true);
         commands.extend(text_field::text_field(search_rect, &self.search, search));
         let filter = self.interaction.probe(FILTER, filter_rect, true);
@@ -721,7 +889,7 @@ impl DocketScreen {
         }
         commands.extend(checkbox::checkbox(
             done_rect,
-            "Show done",
+            self.word(Word::ShowDone),
             self.show_done,
             done,
         ));
@@ -731,16 +899,22 @@ impl DocketScreen {
         }
         commands.extend(checkbox::checkbox(
             history_rect,
-            "History",
+            self.word(Word::History),
             self.history.is_shown(),
             history,
         ));
+        let language = self.interaction.probe(LANGUAGE, language_rect, true);
+        if language.clicked() {
+            self.language_select = self.language_select.toggled();
+        }
+        let theme = self.interaction.probe(THEME, theme_rect, true);
+        commands.extend(text_field::text_field(theme_rect, &self.theme_edit, theme));
         let add = self.interaction.probe(ADD, add_rect, true);
         if add.clicked() {
             self.add_item();
         }
-        commands.extend(button::button(add_rect, "Add", add));
-        (filter_rect, filter)
+        commands.extend(button::button(add_rect, self.word(Word::Add), add));
+        ((filter_rect, filter), (language_rect, language))
     }
 
     /// 選んだ課題の題名・担当・期限・ラベル・状態・削除。状態の箱は最後に描く。
@@ -773,7 +947,7 @@ impl DocketScreen {
         if delete.clicked() {
             self.delete_item();
         }
-        commands.extend(button::button(delete_rect, "Delete", delete));
+        commands.extend(button::button(delete_rect, self.word(Word::Delete), delete));
         (state_rect, state)
     }
 
@@ -788,7 +962,7 @@ impl DocketScreen {
         if !self.filter.is_open() {
             return;
         }
-        let rects = select_box::option_rects(filter_rect, FILTER_OPTIONS.len());
+        let rects = select_box::option_rects(filter_rect, FILTER_COUNT);
         for (index, rect) in rects.into_iter().enumerate() {
             let id = FILTER_OPTION.indexed(u32::try_from(index).unwrap_or(u32::MAX));
             if self.interaction.probe(id, rect, false).clicked() {
@@ -804,7 +978,7 @@ impl DocketScreen {
             return;
         }
         let before = self.state.chosen();
-        let rects = select_box::option_rects(state_rect, STATE_OPTIONS.len());
+        let rects = select_box::option_rects(state_rect, ItemState::ALL.len());
         for (index, rect) in rects.into_iter().enumerate() {
             let id = STATE_OPTION.indexed(u32::try_from(index).unwrap_or(u32::MAX));
             if self.interaction.probe(id, rect, false).clicked() {
@@ -815,9 +989,26 @@ impl DocketScreen {
         }
     }
 
+    /// 開いた言語の候補。選べば言語を変えて設定に残す。
+    fn probe_language_options(&mut self, language_rect: PixelRect) {
+        if !self.language_select.is_open() {
+            return;
+        }
+        let before = self.language_select.chosen();
+        let rects = select_box::option_rects(language_rect, LanguageChoice::ALL.len());
+        for (index, rect) in rects.into_iter().enumerate() {
+            let id = LANGUAGE_OPTION.indexed(u32::try_from(index).unwrap_or(u32::MAX));
+            if self.interaction.probe(id, rect, false).clicked() {
+                self.language_select = self.language_select.chosen_at(index);
+                self.interaction.focus_on(LANGUAGE);
+                self.language_changed(before);
+            }
+        }
+    }
+
     /// 候補の列が開いているあいだ、表は押せない。
     fn any_options_open(&self) -> bool {
-        self.filter.is_open() || self.state.is_open()
+        self.filter.is_open() || self.state.is_open() || self.language_select.is_open()
     }
 
     /// ヘッダと、見えている行だけ。行はクリックで選ぶ。
@@ -832,11 +1023,16 @@ impl DocketScreen {
             rect: header,
             paint: Paint::Surface,
         });
-        for (cell, heading) in table
-            .cells(header)
-            .into_iter()
-            .zip(["#", "Title", "State", "Assignee", "Due", "Labels"])
-        {
+        let headings = [
+            Word::Number,
+            Word::FieldName(Field::Title),
+            Word::FieldName(Field::State),
+            Word::FieldName(Field::Assignee),
+            Word::FieldName(Field::Due),
+            Word::FieldName(Field::Labels),
+        ]
+        .map(|word| self.word(word));
+        for (cell, heading) in table.cells(header).into_iter().zip(headings) {
             commands.push(Self::cell_text(
                 cell,
                 heading,
@@ -886,7 +1082,7 @@ impl DocketScreen {
         let texts = [
             Self::number_text(item.id()),
             item.title().to_owned(),
-            item.state().label().to_owned(),
+            self.word(Word::StateName(item.state())).to_owned(),
             item.assignee().to_owned(),
             EditSlot::Due.text_of(item),
             EditSlot::Labels.text_of(item),
@@ -926,7 +1122,11 @@ impl DocketScreen {
         let Some(rect) = rect else {
             return;
         };
-        let words: Vec<String> = self.notices().into_iter().map(Notice::describe).collect();
+        let words: Vec<String> = self
+            .notices()
+            .into_iter()
+            .map(|notice| notice.describe(self.language))
+            .collect();
         commands.push(DrawCommand::Fill {
             rect,
             paint: Paint::Surface,
@@ -979,6 +1179,7 @@ mod tests {
     use core::cell::RefCell;
 
     use nene_docket_core::account_id::AccountId;
+    use nene_docket_core::appearance::Appearance;
     use nene_docket_core::button_phase::ButtonPhase;
     use nene_docket_core::logical_clock::LogicalClock;
     use nene_docket_core::op_id::OpId;
@@ -989,8 +1190,9 @@ mod tests {
     use super::*;
     use crate::clock_port::ClockPort;
     use crate::journal_port::JournalPort;
+    use crate::settings_port::SettingsPort;
 
-    const BOUNDS: PixelRect = PixelRect::new(0, 0, 800, 400);
+    const BOUNDS: PixelRect = PixelRect::new(0, 0, 960, 400);
     const ME: AccountId = AccountId::new(1);
     const OTHER: AccountId = AccountId::new(2);
     /// 1 行目の中央。段は 8..36（道具）・44..72（編集）・80..108（ヘッダ）・108 から行。
@@ -998,20 +1200,22 @@ mod tests {
     const SECOND_ROW_Y: u16 = 150;
     const TOOLBAR_Y: u16 = 20;
     const EDITOR_Y: u16 = 58;
-    /// 道具の段: 絞り込み 328..468・完了 476..596・履歴 604..704・追加 712..792。
-    const FILTER_X: u16 = 400;
-    const SHOW_DONE_X: u16 = 530;
-    const HISTORY_X: u16 = 650;
-    const ADD_X: u16 = 750;
-    /// 編集行: 題名 8..222・担当 230..330・期限 338..438・ラベル 446..586・状態 594..704・削除 712..792。
+    /// 道具の段（960 幅）: 検索 8..224・絞り込み 232..372・完了 380..500・履歴 508..608・言語 616..726・配色 734..864・追加 872..952。
+    const FILTER_X: u16 = 300;
+    const SHOW_DONE_X: u16 = 440;
+    const HISTORY_X: u16 = 560;
+    const LANGUAGE_X: u16 = 670;
+    const THEME_X: u16 = 800;
+    const ADD_X: u16 = 910;
+    /// 編集行: 題名 8..382・担当 390..490・期限 498..598・ラベル 606..746・状態 754..864・削除 872..952。
     const TITLE_X: u16 = 100;
-    const STATE_X: u16 = 650;
-    const DELETE_X: u16 = 750;
-    const LABELS_X: u16 = 510;
-    /// スクロールバーの溝（781..792）。
-    const TRACK_X: u16 = 786;
-    const ASSIGNEE_X: u16 = 280;
-    const DUE_X: u16 = 390;
+    const STATE_X: u16 = 810;
+    const DELETE_X: u16 = 910;
+    const LABELS_X: u16 = 680;
+    /// スクロールバーの溝（941..952）。
+    const TRACK_X: u16 = 946;
+    const ASSIGNEE_X: u16 = 440;
+    const DUE_X: u16 = 550;
 
     /// 書き込みを覚え、読み直しで渡す分を積める偽のジャーナル。
     #[derive(Debug, Default)]
@@ -1053,6 +1257,23 @@ mod tests {
     #[derive(Debug)]
     struct FixedClock;
 
+    /// 書いた設定を覚える偽の設定の置き場。
+    #[derive(Debug)]
+    struct FakeSettings {
+        saved: Rc<RefCell<Vec<Settings>>>,
+        fail: bool,
+    }
+
+    impl SettingsPort for FakeSettings {
+        fn save(&mut self, settings: &Settings) -> Result<(), SettingsFailure> {
+            if self.fail {
+                return Err(SettingsFailure::Unwritable);
+            }
+            self.saved.borrow_mut().push(settings.clone());
+            Ok(())
+        }
+    }
+
     impl ClockPort for FixedClock {
         fn now(&self) -> WallClock {
             WallClock::new(1_700_000_000)
@@ -1064,18 +1285,37 @@ mod tests {
         written: Rc<RefCell<Vec<Op>>>,
         pending: Rc<RefCell<Vec<Op>>>,
         synced: Rc<RefCell<usize>>,
+        saved: Rc<RefCell<Vec<Settings>>>,
     }
 
     fn screen_with(journal: FakeJournal) -> (DocketScreen, Spy) {
+        screen_in(journal, Environment::new(None), false)
+    }
+
+    fn screen_in(
+        journal: FakeJournal,
+        environment: Environment,
+        fail_settings: bool,
+    ) -> (DocketScreen, Spy) {
+        let saved = Rc::new(RefCell::new(Vec::new()));
         let spy = Spy {
             written: Rc::clone(&journal.written),
             pending: Rc::clone(&journal.pending),
             synced: Rc::clone(&journal.synced),
+            saved: Rc::clone(&saved),
         };
-        let ports = Ports::new(Box::new(journal), Box::new(FixedClock));
+        let settings_port = FakeSettings {
+            saved,
+            fail: fail_settings,
+        };
+        let ports = Ports::new(
+            Box::new(journal),
+            Box::new(FixedClock),
+            Box::new(settings_port),
+        );
         let account = Account::new(ME, String::from("me"));
         (
-            DocketScreen::open(Environment::new(None), account, ports),
+            DocketScreen::open(environment, account, ports, Settings::initial()),
             spy,
         )
     }
@@ -1271,7 +1511,7 @@ mod tests {
         // 検索欄に字があれば、それが題名になる。
         click(&mut screen, 100, TOOLBAR_Y);
         keys(&mut screen, &chars("Issue"));
-        keys(&mut screen, &[KeyIntent::Tab; 4]);
+        keys(&mut screen, &[KeyIntent::Tab; 6]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(title_of(&screen, ItemId::new(ME, 2)), "Issue");
     }
@@ -1344,11 +1584,11 @@ mod tests {
     #[test]
     fn delete_by_key_needs_the_focus_and_a_selection() {
         let (mut screen, spy) = screen(2);
-        keys(&mut screen, &[KeyIntent::Tab; 11]);
+        keys(&mut screen, &[KeyIntent::Tab; 13]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 0);
         click(&mut screen, 100, FIRST_ROW_Y);
-        keys(&mut screen, &[KeyIntent::Tab; 11]);
+        keys(&mut screen, &[KeyIntent::Tab; 13]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 1);
     }
@@ -1614,12 +1854,12 @@ mod tests {
         let lines: Vec<[String; 3]> = screen
             .history_lines()
             .iter()
-            .map(HistoryLine::columns)
+            .map(|line| line.columns(Language::English))
             .collect();
         assert_eq!(lines.len(), 5);
-        assert_eq!(lines[0][2], "undo: state : Done -> In progress");
+        assert_eq!(lines[0][2], "undo: State : Done -> In progress");
         assert_eq!(lines[0][1], "0000");
-        assert_eq!(lines[1][2], "state : In progress -> Done");
+        assert_eq!(lines[1][2], "State : In progress -> Done");
         assert_eq!(lines[4][2], "created");
         let shown = texts(&idle(&mut screen));
         assert!(shown.iter().any(|text| text == "When"));
@@ -1638,6 +1878,90 @@ mod tests {
         keys(&mut screen, &[KeyIntent::Tab; 4]);
         keys(&mut screen, &[KeyIntent::Char(' ')]);
         assert!(!screen.shows_history());
+    }
+
+    #[test]
+    fn the_language_box_changes_every_word_and_saves_the_choice() {
+        let (mut screen, spy) = screen(2);
+        assert_eq!(screen.language(), Language::English);
+        click(&mut screen, LANGUAGE_X, TOOLBAR_Y);
+        click(&mut screen, LANGUAGE_X, 64);
+        assert_eq!(screen.language(), Language::Japanese);
+        assert_eq!(
+            spy.saved.borrow().last().map(Settings::language),
+            Some(LanguageChoice::Fixed(Language::Japanese))
+        );
+        let frame = idle(&mut screen);
+        let shown = texts(&frame);
+        assert!(shown.iter().any(|text| text == "追加"));
+        assert!(shown.iter().any(|text| text == "題名"));
+        assert!(shown.iter().any(|text| text == "着手中"));
+        keys(&mut screen, &[KeyIntent::Down, KeyIntent::Down]);
+        assert_eq!(screen.language(), Language::SimplifiedChinese);
+        assert_eq!(spy.saved.borrow().len(), 3);
+    }
+
+    #[test]
+    fn system_language_follows_the_environment() {
+        let journal = FakeJournal::default();
+        let environment = Environment::new(None).with_language(Some(Language::Korean));
+        let (mut screen, _) = screen_in(journal, environment, false);
+        assert_eq!(screen.language(), Language::Korean);
+        assert_eq!(screen.notices(), Vec::new());
+        let frame = idle(&mut screen);
+        assert!(texts(&frame).iter().any(|text| text == "추가"));
+    }
+
+    #[test]
+    fn the_theme_field_takes_a_name_cycles_with_arrows_and_refuses_unknown_names() {
+        let (mut screen, spy) = screen(1);
+        assert_eq!(screen.theme().name(), "neutral-light");
+        click(&mut screen, THEME_X, TOOLBAR_Y);
+        keys(&mut screen, &[KeyIntent::SelectAll]);
+        keys(&mut screen, &chars("dracula"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert_eq!(screen.theme().name(), "dracula");
+        assert_eq!(
+            spy.saved.borrow().last().map(|s| s.theme().keyword()),
+            Some("dracula")
+        );
+        keys(&mut screen, &[KeyIntent::Down]);
+        assert_eq!(screen.theme().name(), "one-dark");
+        keys(&mut screen, &[KeyIntent::Up, KeyIntent::Up]);
+        assert_eq!(screen.theme().name(), "monokai");
+    }
+
+    #[test]
+    fn an_unknown_theme_name_is_shown_and_system_goes_back_to_the_default() {
+        let (mut screen, _) = screen(1);
+        click(&mut screen, THEME_X, TOOLBAR_Y);
+        keys(&mut screen, &[KeyIntent::SelectAll]);
+        keys(&mut screen, &chars("no-such"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert_eq!(screen.theme().name(), "neutral-light");
+        assert_eq!(screen.notices(), alloc::vec![Notice::UnknownTheme]);
+        keys(&mut screen, &[KeyIntent::SelectAll]);
+        keys(&mut screen, &chars("system"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert_eq!(screen.theme().name(), "neutral-light");
+        assert!(screen.notices().is_empty());
+        let frame = idle(&mut screen);
+        assert_eq!(frame.theme().name(), "neutral-light");
+        assert_eq!(frame.language(), Language::English);
+    }
+
+    #[test]
+    fn a_dark_system_follows_the_environment_and_an_unwritable_settings_file_is_shown() {
+        let journal = FakeJournal::default();
+        let environment = Environment::new(None).with_appearance(Some(Appearance::Dark));
+        let (mut screen, _) = screen_in(journal, environment, true);
+        assert_eq!(screen.theme().name(), "ubuntu-aubergine");
+        click(&mut screen, THEME_X, TOOLBAR_Y);
+        keys(&mut screen, &[KeyIntent::Down]);
+        assert_eq!(
+            screen.notices(),
+            alloc::vec![Notice::Settings(SettingsFailure::Unwritable)]
+        );
     }
 
     #[test]

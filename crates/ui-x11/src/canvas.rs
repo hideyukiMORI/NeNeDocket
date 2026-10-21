@@ -6,7 +6,7 @@ use cairo::{Context, FontSlant, FontWeight, Format, ImageSurface};
 use nene_docket_application::docket_frame::DocketFrame;
 use nene_docket_core::draw_command::DrawCommand;
 use nene_docket_core::paint::Paint;
-use nene_docket_core::palette;
+use nene_docket_core::palette::Palette;
 use nene_docket_core::pixel_rect::PixelRect;
 use nene_docket_core::text_align::TextAlign;
 use nene_docket_core::text_caret::TextCaret;
@@ -42,8 +42,9 @@ impl Canvas {
             let context = Context::new(&surface)?;
             context.select_font_face(font_family, FontSlant::Normal, FontWeight::Normal);
             context.set_font_size(f64::from(frame.font_px()));
+            let palette = frame.theme().palette();
             for command in frame.commands() {
-                draw(&context, command)?;
+                draw(&context, &palette, command)?;
             }
         }
         surface.flush();
@@ -105,14 +106,14 @@ impl Canvas {
 }
 
 /// 1 つの命令を描く。
-fn draw(context: &Context, command: &DrawCommand) -> Result<(), UiFailure> {
+fn draw(context: &Context, palette: &Palette, command: &DrawCommand) -> Result<(), UiFailure> {
     match command {
         DrawCommand::Fill { rect, paint } => {
-            set_paint(context, *paint);
+            set_paint(context, palette, *paint);
             fill_rect(context, *rect)
         }
         DrawCommand::Stroke { rect, paint } => {
-            set_paint(context, *paint);
+            set_paint(context, palette, *paint);
             stroke_rect(context, *rect)
         }
         DrawCommand::Text {
@@ -121,7 +122,7 @@ fn draw(context: &Context, command: &DrawCommand) -> Result<(), UiFailure> {
             align,
             paint,
             caret,
-        } => draw_text(context, (*rect, *align, *paint), text, *caret),
+        } => draw_text(context, palette, (*rect, *align, *paint), (text, *caret)),
         DrawCommand::Clip(rect) => {
             context.save()?;
             rectangle(context, *rect);
@@ -135,9 +136,9 @@ fn draw(context: &Context, command: &DrawCommand) -> Result<(), UiFailure> {
     }
 }
 
-/// 描く色を意味から決める（core の表・0〜255 を 0〜1 に）。
-fn set_paint(context: &Context, paint: Paint) {
-    let rgb = palette::light(paint);
+/// 描く色を意味から決める（フレームの配色・0〜255 を 0〜1 に）。
+fn set_paint(context: &Context, palette: &Palette, paint: Paint) {
+    let rgb = palette.colour(paint);
     let unit = |channel: u8| f64::from(channel) / 255.0_f64;
     context.set_source_rgb(unit(rgb.red()), unit(rgb.green()), unit(rgb.blue()));
 }
@@ -180,9 +181,9 @@ fn stroke_rect(context: &Context, rect: PixelRect) -> Result<(), UiFailure> {
 /// 矩形の中に 1 行。縦は中央、横は寄せに従う。カーソルがあれば選択を塗り、文字を描き、カーソルの線を置く。
 fn draw_text(
     context: &Context,
+    palette: &Palette,
     (rect, align, paint): (PixelRect, TextAlign, Paint),
-    text: &str,
-    caret: Option<TextCaret>,
+    (text, caret): (&str, Option<TextCaret>),
 ) -> Result<(), UiFailure> {
     let font = context.font_extents()?;
     let advance = context.text_extents(text)?.x_advance();
@@ -197,11 +198,11 @@ fn draw_text(
     if let Some(caret) = caret.filter(|caret| caret.has_selection()) {
         let start = left + prefix_advance(context, text, caret.start())?;
         let end = left + prefix_advance(context, text, caret.end())?;
-        set_paint(context, Paint::Selection);
+        set_paint(context, palette, Paint::Selection);
         context.rectangle(start, top, end - start, font.height());
         context.fill()?;
     }
-    set_paint(context, paint);
+    set_paint(context, palette, paint);
     context.move_to(left, baseline);
     context.show_text(text)?;
     if let Some(caret) = caret {
@@ -221,12 +222,26 @@ fn prefix_advance(context: &Context, text: &str, chars: usize) -> Result<f64, Ui
 #[cfg(test)]
 mod tests {
     use super::*;
+    use nene_docket_core::language::Language;
+    use nene_docket_core::rgb::Rgb;
+    use nene_docket_core::theme::Theme;
+    use nene_docket_core::theme_choice::ThemeChoice;
     use nene_docket_core::ui_scale::UiScale;
 
     const BOUNDS: PixelRect = PixelRect::new(0, 0, 100, 40);
 
+    fn theme() -> Theme {
+        ThemeChoice::System.resolve(None)
+    }
+
+    /// 配色の色を、cairo の画素の並び（青・緑・赤・不透明）で。
+    fn pixel_of(paint: Paint) -> [u8; 4] {
+        let rgb: Rgb = theme().palette().colour(paint);
+        [rgb.blue(), rgb.green(), rgb.red(), 0xff]
+    }
+
     fn render(commands: Vec<DrawCommand>) -> Canvas {
-        let frame = DocketFrame::new(UiScale::Single, commands);
+        let frame = DocketFrame::new((UiScale::Single, Language::English, theme()), commands);
         Canvas::render(&frame, BOUNDS, Format::Rgb24, "sans-serif").unwrap()
     }
 
@@ -246,29 +261,17 @@ mod tests {
                 paint: Paint::Accent,
             },
         ]);
-        assert_eq!(
-            canvas.pixel(10, 10).unwrap(),
-            Some([0x21, 0x21, 0x21, 0xff])
-        );
-        assert_eq!(
-            canvas.pixel(29, 19).unwrap(),
-            Some([0x21, 0x21, 0x21, 0xff])
-        );
+        assert_eq!(canvas.pixel(10, 10).unwrap(), Some(pixel_of(Paint::Ink)));
+        assert_eq!(canvas.pixel(29, 19).unwrap(), Some(pixel_of(Paint::Ink)));
         assert_eq!(
             canvas.pixel(30, 10).unwrap(),
-            Some([0xff, 0xff, 0xff, 0xff])
+            Some(pixel_of(Paint::Surface))
         );
-        assert_eq!(
-            canvas.pixel(40, 10).unwrap(),
-            Some([0xe5, 0x88, 0x1e, 0xff])
-        );
-        assert_eq!(
-            canvas.pixel(59, 19).unwrap(),
-            Some([0xe5, 0x88, 0x1e, 0xff])
-        );
+        assert_eq!(canvas.pixel(40, 10).unwrap(), Some(pixel_of(Paint::Accent)));
+        assert_eq!(canvas.pixel(59, 19).unwrap(), Some(pixel_of(Paint::Accent)));
         assert_eq!(
             canvas.pixel(50, 15).unwrap(),
-            Some([0xff, 0xff, 0xff, 0xff])
+            Some(pixel_of(Paint::Surface))
         );
         assert_eq!(canvas.pixel(100, 0).unwrap(), None);
         assert_eq!((canvas.width(), canvas.height()), (100, 40));
@@ -292,22 +295,16 @@ mod tests {
                 paint: Paint::Accent,
             },
         ]);
-        assert_eq!(
-            canvas.pixel(49, 20).unwrap(),
-            Some([0x21, 0x21, 0x21, 0xff])
-        );
+        assert_eq!(canvas.pixel(49, 20).unwrap(), Some(pixel_of(Paint::Ink)));
         assert_eq!(
             canvas.pixel(50, 20).unwrap(),
-            Some([0xff, 0xff, 0xff, 0xff])
+            Some(pixel_of(Paint::Surface))
         );
-        assert_eq!(
-            canvas.pixel(95, 20).unwrap(),
-            Some([0xe5, 0x88, 0x1e, 0xff])
-        );
+        assert_eq!(canvas.pixel(95, 20).unwrap(), Some(pixel_of(Paint::Accent)));
     }
 
     /// その色の画素の数。
-    fn count(canvas: &mut Canvas, colour: [u8; 3]) -> u32 {
+    fn count(canvas: &mut Canvas, colour: [u8; 4]) -> u32 {
         let pixels = canvas.with_pixels(<[u8]>::to_vec).unwrap();
         pixels
             .chunks(4)
@@ -335,8 +332,8 @@ mod tests {
             },
             text,
         ]);
-        let ink = count(&mut canvas, [0x21, 0x21, 0x21]);
-        let selection = count(&mut canvas, [0xfa, 0xe9, 0xd6]);
+        let ink = count(&mut canvas, pixel_of(Paint::Ink));
+        let selection = count(&mut canvas, pixel_of(Paint::Selection));
         assert!(ink > 20, "{ink}");
         assert!(selection > 20, "{selection}");
     }
@@ -358,7 +355,7 @@ mod tests {
                 },
             ]);
             let left_half_untouched = (0_u16..50).all(|x| {
-                (0_u16..40).all(|y| canvas.pixel(x, y).unwrap() == Some([0xff, 0xff, 0xff, 0xff]))
+                (0_u16..40).all(|y| canvas.pixel(x, y).unwrap() == Some(pixel_of(Paint::Surface)))
             });
             assert!(left_half_untouched, "{align:?}");
         }

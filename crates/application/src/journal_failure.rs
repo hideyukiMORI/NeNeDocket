@@ -1,5 +1,7 @@
 //! ジャーナルのポートの失敗。閉じた集合（ARC-010）。store の失敗はアダプタがここへ写す。
 
+use nene_docket_core::word::Word;
+
 /// 書けない・読めない。どちらも利用者に示す（FR-014）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum JournalFailure {
@@ -10,12 +12,12 @@ pub enum JournalFailure {
 }
 
 impl JournalFailure {
-    /// 利用者に見せる 1 行。
+    /// 利用者に見せる語（表示言語で引く）。
     #[must_use]
-    pub const fn describe(self) -> &'static str {
+    pub const fn word(self) -> Word {
         match self {
-            Self::Unwritable => "journal: cannot write",
-            Self::Unreadable => "journal: cannot read others",
+            Self::Unwritable => Word::CannotWriteJournal,
+            Self::Unreadable => Word::CannotReadJournals,
         }
     }
 }

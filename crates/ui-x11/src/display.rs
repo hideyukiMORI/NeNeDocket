@@ -10,7 +10,6 @@ use x11rb::protocol::xproto::{
 use x11rb::rust_connection::RustConnection;
 
 use crate::atoms::Atoms;
-use crate::font_family;
 use crate::key_input::{self, Modifiers};
 use crate::key_map::KeyMap;
 use crate::ui_failure::UiFailure;
@@ -25,7 +24,6 @@ pub struct Display {
     visual: WindowVisual,
     key_map: KeyMap,
     xft_dpi: Option<u32>,
-    font_family: &'static str,
 }
 
 impl Display {
@@ -45,7 +43,6 @@ impl Display {
         let visual = WindowVisual::root(screen).ok_or(UiFailure::NoUsableVisual)?;
         let key_map = Self::key_map(&connection)?;
         let xft_dpi = Self::xft_dpi(&connection, screen.root)?;
-        let font_family = font_family::choose()?;
         Ok(Self {
             connection,
             screen_index,
@@ -53,7 +50,6 @@ impl Display {
             visual,
             key_map,
             xft_dpi,
-            font_family,
         })
     }
 
@@ -96,12 +92,6 @@ impl Display {
         };
         let keysym = self.key_map.keysym(key.detail, modifiers.shift)?;
         key_input::intent_of(keysym, modifiers)
-    }
-
-    /// 文字を描くフォントの家族。起動時に「日」を描けるものを選んだ（FR-015）。
-    #[must_use]
-    pub const fn font_family(&self) -> &'static str {
-        self.font_family
     }
 
     /// 接続。

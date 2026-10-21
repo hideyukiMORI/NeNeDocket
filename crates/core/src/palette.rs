@@ -1,20 +1,60 @@
-//! 色の意味（`Paint`）を色にする。いまはライトの見えだけ（FR-012 の見えは別の Issue）。
-//! X11 と Windows の画面が同じ表を使うので、見た目の色は 1 か所から出る（ARC-001）。
+//! 台帳の 8 つの色の役割に、配色の色を当てた表。X11 と Windows の画面が同じ表を読む（ARC-001・ADR 0012）。
 
 use crate::paint::Paint;
 use crate::rgb::Rgb;
 
-/// ライトの見えの色。
-#[must_use]
-pub const fn light(paint: Paint) -> Rgb {
-    match paint {
-        Paint::Background => Rgb::new(0xF5, 0xF5, 0xF5),
-        Paint::Surface | Paint::OnAccent => Rgb::new(0xFF, 0xFF, 0xFF),
-        Paint::Border => Rgb::new(0xC0, 0xC0, 0xC0),
-        Paint::Ink => Rgb::new(0x21, 0x21, 0x21),
-        Paint::Muted => Rgb::new(0x75, 0x75, 0x75),
-        Paint::Accent => Rgb::new(0x1E, 0x88, 0xE5),
-        Paint::Selection => Rgb::new(0xD6, 0xE9, 0xFA),
+/// `Paint` ごとの色。
+#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+pub struct Palette {
+    background: Rgb,
+    surface: Rgb,
+    border: Rgb,
+    ink: Rgb,
+    muted: Rgb,
+    accent: Rgb,
+    on_accent: Rgb,
+    selection: Rgb,
+}
+
+impl Palette {
+    /// 8 色から。並びは `Paint` の順。
+    #[must_use]
+    pub const fn new(colours: [Rgb; 8]) -> Self {
+        let [
+            background,
+            surface,
+            border,
+            ink,
+            muted,
+            accent,
+            on_accent,
+            selection,
+        ] = colours;
+        Self {
+            background,
+            surface,
+            border,
+            ink,
+            muted,
+            accent,
+            on_accent,
+            selection,
+        }
+    }
+
+    /// 色の意味から色へ。
+    #[must_use]
+    pub const fn colour(&self, paint: Paint) -> Rgb {
+        match paint {
+            Paint::Background => self.background,
+            Paint::Surface => self.surface,
+            Paint::Border => self.border,
+            Paint::Ink => self.ink,
+            Paint::Muted => self.muted,
+            Paint::Accent => self.accent,
+            Paint::OnAccent => self.on_accent,
+            Paint::Selection => self.selection,
+        }
     }
 }
 
@@ -23,10 +63,30 @@ mod tests {
     use super::*;
 
     #[test]
-    fn every_meaning_has_a_colour_and_surface_matches_on_accent() {
-        assert_eq!(light(Paint::Ink), Rgb::new(0x21, 0x21, 0x21));
-        assert_eq!(light(Paint::Surface), light(Paint::OnAccent));
-        assert_ne!(light(Paint::Background), light(Paint::Surface));
-        assert_eq!(light(Paint::Accent).blue(), 0xE5);
+    fn every_meaning_reads_its_own_colour() {
+        let colours = [
+            Rgb::new(0, 0, 0),
+            Rgb::new(1, 1, 1),
+            Rgb::new(2, 2, 2),
+            Rgb::new(3, 3, 3),
+            Rgb::new(4, 4, 4),
+            Rgb::new(5, 5, 5),
+            Rgb::new(6, 6, 6),
+            Rgb::new(7, 7, 7),
+        ];
+        let palette = Palette::new(colours);
+        let paints = [
+            Paint::Background,
+            Paint::Surface,
+            Paint::Border,
+            Paint::Ink,
+            Paint::Muted,
+            Paint::Accent,
+            Paint::OnAccent,
+            Paint::Selection,
+        ];
+        for (paint, colour) in paints.into_iter().zip(colours) {
+            assert_eq!(palette.colour(paint), colour);
+        }
     }
 }

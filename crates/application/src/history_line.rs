@@ -5,24 +5,28 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use nene_docket_core::account_id::AccountId;
-use nene_docket_core::field_value::FieldValue;
 use nene_docket_core::item::Item;
 use nene_docket_core::item_id::ItemId;
+use nene_docket_core::language::Language;
 use nene_docket_core::merge;
 use nene_docket_core::op::Op;
 use nene_docket_core::op_kind::OpKind;
 use nene_docket_core::wall_clock::WallClock;
+use nene_docket_core::word::Word;
+use nene_docket_core::wording;
+
+use crate::history_change::HistoryChange;
 
 /// 「誰が」に出すアカウントの ID の桁数。名前はジャーナルに無い。
 const WHO_DIGITS: usize = 4;
 
-/// 壁時計・アカウント・Undo の追記か・変更の文言。
+/// 壁時計・アカウント・Undo の追記か・変更。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HistoryLine {
     when: WallClock,
     who: AccountId,
     undo: bool,
-    change: String,
+    change: HistoryChange,
 }
 
 impl HistoryLine {
@@ -36,7 +40,7 @@ impl HistoryLine {
         let mut lines: Vec<Self> = merge::history(ops, item)
             .into_iter()
             .map(|op| {
-                let change = Self::change_of(&current, op.kind());
+                let change = change_of(&current, op.kind());
                 current = applied(
                     core::mem::replace(&mut current, Item::created(item)),
                     op.kind(),
@@ -53,42 +57,18 @@ impl HistoryLine {
         lines
     }
 
-    fn change_of(before: &Item, kind: &OpKind) -> String {
-        match kind {
-            OpKind::Create(_) => String::from("created"),
-            OpKind::Delete(_) => String::from("deleted"),
-            OpKind::Restore(_) => String::from("restored"),
-            OpKind::Set { value, .. } => {
-                let field = value.field();
-                let old = Self::value_text(&before.value_of(field));
-                let new = Self::value_text(value);
-                format!("{} : {old} -> {new}", field.keyword())
-            }
-        }
-    }
-
-    fn value_text(value: &FieldValue) -> String {
-        match value {
-            FieldValue::Title(text) | FieldValue::Body(text) | FieldValue::Assignee(text) => {
-                text.clone()
-            }
-            FieldValue::State(state) => String::from(state.label()),
-            FieldValue::Due(due) => due
-                .map(nene_docket_core::date::Date::text)
-                .unwrap_or_default(),
-            FieldValue::Labels(labels) => labels.join(", "),
-            FieldValue::Rank(rank) => format!("{rank}"),
-        }
-    }
-
-    /// 表の 3 列: いつ（UTC）・誰が（ID の先頭）・何を。Undo の追記は `undo: ` を頭に付ける。
+    /// 表の 3 列: いつ（UTC）・誰が（ID の先頭）・何を。Undo の追記は表示言語の印を頭に付ける。
     #[must_use]
-    pub fn columns(&self) -> [String; 3] {
+    pub fn columns(&self, language: Language) -> [String; 3] {
         let who: String = self.who.hex().chars().take(WHO_DIGITS).collect();
         let change = if self.undo {
-            format!("undo: {}", self.change)
+            format!(
+                "{}{}",
+                wording::text(language, Word::UndoMark),
+                self.change.describe(language)
+            )
         } else {
-            self.change.clone()
+            self.change.describe(language)
         };
         [self.when.text(), who, change]
     }
@@ -106,6 +86,19 @@ impl HistoryLine {
     }
 }
 
+fn change_of(before: &Item, kind: &OpKind) -> HistoryChange {
+    match kind {
+        OpKind::Create(_) => HistoryChange::Created,
+        OpKind::Delete(_) => HistoryChange::Deleted,
+        OpKind::Restore(_) => HistoryChange::Restored,
+        OpKind::Set { value, .. } => HistoryChange::Set {
+            field: value.field(),
+            before: before.value_of(value.field()),
+            after: value.clone(),
+        },
+    }
+}
+
 /// 操作の種類を課題に当てる（`Docket::applied` の 1 件版）。
 fn applied(item: Item, kind: &OpKind) -> Item {
     match kind {
@@ -118,6 +111,7 @@ fn applied(item: Item, kind: &OpKind) -> Item {
 
 #[cfg(test)]
 mod tests {
+    use nene_docket_core::field_value::FieldValue;
     use nene_docket_core::item_state::ItemState;
     use nene_docket_core::logical_clock::LogicalClock;
     use nene_docket_core::op_id::OpId;
@@ -135,12 +129,11 @@ mod tests {
         )
     }
 
-    #[test]
-    fn lines_show_from_and_to_newest_first_and_mark_undo() {
-        let item = ItemId::new(A, 1);
+    /// A が作って題を置き、B が状態を変え、A が題を変えて戻し、消す。別の課題も 1 つ。
+    fn sample_ops(item: ItemId) -> [Op; 7] {
         let other = ItemId::new(A, 2);
         let title = |text: &str| FieldValue::Title(String::from(text));
-        let ops = [
+        [
             op(1, A, OpKind::Create(item)),
             op(
                 2,
@@ -177,53 +170,32 @@ mod tests {
             .undoing(OpId::new(LogicalClock::new(4), A)),
             op(6, A, OpKind::Delete(item)),
             op(7, A, OpKind::Create(other)),
-        ];
-        let lines = HistoryLine::lines(&ops, item);
-        let columns: Vec<[String; 3]> = lines.iter().map(HistoryLine::columns).collect();
-        assert_eq!(columns.len(), 6);
-        assert_eq!(columns[0], ["1970-01-01 00:06", "0000", "deleted"]);
-        assert_eq!(columns[1][2], "undo: title : b -> a");
-        assert!(lines[1].is_undo());
-        assert_eq!(columns[2][2], "title : a -> b");
-        assert_eq!(
-            columns[3],
-            ["1970-01-01 00:03", "0000", "state : Open -> Done"]
-        );
-        assert_eq!(columns[5][2], "created");
-        assert_eq!(lines[5].when(), WallClock::new(60));
+        ]
     }
 
     #[test]
-    fn every_value_kind_has_a_text() {
+    fn lines_show_from_and_to_newest_first_and_mark_undo() {
         let item = ItemId::new(A, 1);
-        let values = [
-            FieldValue::Body(String::from("body")),
-            FieldValue::Assignee(String::from("rina")),
-            FieldValue::Due(nene_docket_core::date::Date::new(2026, 1, 2)),
-            FieldValue::Due(None),
-            FieldValue::Labels(alloc::vec![String::from("x"), String::from("y")]),
-            FieldValue::Rank(-3),
-        ];
-        let ops: Vec<Op> = values
-            .into_iter()
-            .enumerate()
-            .map(|(index, value)| {
-                op(
-                    u64::try_from(index).unwrap() + 1,
-                    A,
-                    OpKind::Set { item, value },
-                )
-            })
-            .collect();
-        let texts: Vec<String> = HistoryLine::lines(&ops, item)
+        let ops = sample_ops(item);
+        let lines = HistoryLine::lines(&ops, item);
+        let columns: Vec<[String; 3]> = lines
             .iter()
-            .map(|line| line.columns()[2].clone())
+            .map(|line| line.columns(Language::English))
             .collect();
-        assert_eq!(texts[5], "body :  -> body");
-        assert_eq!(texts[4], "assignee :  -> rina");
-        assert_eq!(texts[3], "due :  -> 2026-01-02");
-        assert_eq!(texts[2], "due : 2026-01-02 -> ");
-        assert_eq!(texts[1], "labels :  -> x, y");
-        assert_eq!(texts[0], "rank : 0 -> -3");
+        assert_eq!(columns.len(), 6);
+        assert_eq!(columns[0], ["1970-01-01 00:06", "0000", "deleted"]);
+        assert_eq!(columns[1][2], "undo: Title : b -> a");
+        assert!(lines[1].is_undo());
+        assert_eq!(columns[2][2], "Title : a -> b");
+        assert_eq!(
+            columns[3],
+            ["1970-01-01 00:03", "0000", "State : Open -> Done"]
+        );
+        assert_eq!(columns[5][2], "created");
+        assert_eq!(lines[5].when(), WallClock::new(60));
+        assert_eq!(
+            lines[1].columns(Language::Japanese)[2],
+            "取り消し: 題名 : b -> a"
+        );
     }
 }

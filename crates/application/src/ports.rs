@@ -4,18 +4,28 @@ use alloc::boxed::Box;
 
 use crate::clock_port::ClockPort;
 use crate::journal_port::JournalPort;
+use crate::settings_port::SettingsPort;
 
-/// ジャーナルと壁時計。増えたらここに足し、`DocketScreen::open` の引数は増やさない。
+/// ジャーナル・壁時計・設定。増えたらここに足し、`DocketScreen::open` の引数は増やさない。
 pub struct Ports {
     journal: Box<dyn JournalPort>,
     clock: Box<dyn ClockPort>,
+    settings: Box<dyn SettingsPort>,
 }
 
 impl Ports {
     /// 実装を束ねる。
     #[must_use]
-    pub fn new(journal: Box<dyn JournalPort>, clock: Box<dyn ClockPort>) -> Self {
-        Self { journal, clock }
+    pub fn new(
+        journal: Box<dyn JournalPort>,
+        clock: Box<dyn ClockPort>,
+        settings: Box<dyn SettingsPort>,
+    ) -> Self {
+        Self {
+            journal,
+            clock,
+            settings,
+        }
     }
 
     /// ジャーナル（読むだけ）。
@@ -34,10 +44,15 @@ impl Ports {
     pub fn clock(&self) -> &dyn ClockPort {
         self.clock.as_ref()
     }
+
+    /// 設定（書く）。
+    pub fn settings_mut(&mut self) -> &mut dyn SettingsPort {
+        self.settings.as_mut()
+    }
 }
 
 impl core::fmt::Debug for Ports {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter.write_str("Ports { journal, clock }")
+        formatter.write_str("Ports { journal, clock, settings }")
     }
 }

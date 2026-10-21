@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 use nene_docket_core::column_width::ColumnWidth;
 use nene_docket_core::draw_command::DrawCommand;
 use nene_docket_core::interaction::Interaction;
+use nene_docket_core::language::Language;
 use nene_docket_core::paint::Paint;
 use nene_docket_core::pixel_rect::PixelRect;
 use nene_docket_core::response_phase::ResponsePhase;
@@ -15,6 +16,8 @@ use nene_docket_core::table_layout::TableLayout;
 use nene_docket_core::text_align::TextAlign;
 use nene_docket_core::ui_scale::UiScale;
 use nene_docket_core::widget_id::WidgetId;
+use nene_docket_core::word::Word;
+use nene_docket_core::wording;
 
 use crate::history_line::HistoryLine;
 
@@ -73,11 +76,11 @@ impl HistoryPane {
         (total / 5).saturating_mul(2).max(row.saturating_mul(4))
     }
 
-    /// 段を問い合わせて描く。ホイールはポインタがこの段の上にあるときだけ受ける。
+    /// 段を問い合わせて描く。ホイールはポインタがこの段の上にあるときだけ受ける。文言は `language` で。
     pub fn probe(
         &mut self,
         interaction: &mut Interaction,
-        (area, lines): (PixelRect, &[HistoryLine]),
+        (area, lines, language): (PixelRect, &[HistoryLine], Language),
         commands: &mut Vec<DrawCommand>,
     ) {
         let track = PixelRect::new(
@@ -92,8 +95,8 @@ impl HistoryPane {
         self.scroll = self
             .scroll
             .resized(table.content_height(), u32::from(table.body().height()));
-        self.header(&table, commands);
-        self.rows(&table, lines, commands);
+        self.header(&table, language, commands);
+        self.rows(&table, (lines, language), commands);
         self.scroll_bar(interaction, (track, area), commands);
     }
 
@@ -117,8 +120,10 @@ impl HistoryPane {
         ])
     }
 
-    fn header(&self, table: &TableLayout, commands: &mut Vec<DrawCommand>) {
+    fn header(&self, table: &TableLayout, language: Language, commands: &mut Vec<DrawCommand>) {
         let padding = self.px(PADDING_PX);
+        let headings =
+            [Word::When, Word::Who, Word::Change].map(|word| wording::text(language, word));
         let header = table.header();
         commands.push(DrawCommand::Stroke {
             rect: PixelRect::new(header.x(), header.y(), header.width(), 1),
@@ -128,16 +133,17 @@ impl HistoryPane {
             rect: header,
             paint: Paint::Surface,
         });
-        for (cell, heading) in table
-            .cells(header)
-            .into_iter()
-            .zip(["When", "Who", "Change"])
-        {
+        for (cell, heading) in table.cells(header).into_iter().zip(headings) {
             commands.push(Self::cell_text(cell, heading, Paint::Muted, padding));
         }
     }
 
-    fn rows(&self, table: &TableLayout, lines: &[HistoryLine], commands: &mut Vec<DrawCommand>) {
+    fn rows(
+        &self,
+        table: &TableLayout,
+        (lines, language): (&[HistoryLine], Language),
+        commands: &mut Vec<DrawCommand>,
+    ) {
         let padding = self.px(PADDING_PX);
         commands.push(DrawCommand::Clip(table.body()));
         for (index, rect) in table.visible_rows(self.scroll.offset()) {
@@ -149,7 +155,7 @@ impl HistoryPane {
             } else {
                 Paint::Ink
             };
-            for (cell, text) in table.cells(rect).into_iter().zip(line.columns()) {
+            for (cell, text) in table.cells(rect).into_iter().zip(line.columns(language)) {
                 commands.push(Self::cell_text(cell, &text, paint, padding));
             }
         }
