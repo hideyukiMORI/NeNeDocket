@@ -6,22 +6,22 @@
 
 | 語 | 意味 | 型／場所 |
 | --- | --- | --- |
-| 台帳（docket） | 1 つのフォルダ。課題の集合と、それを作ったジャーナルの全部。ローカルでもネットワーク共有でもよい | `Docket`（application が所有）・フォルダ |
+| 台帳（docket） | 1 つのフォルダ。課題の集合と、それを作ったジャーナルの全部。併合した状態も同じ名で呼ぶ | `Docket`（core・課題の集合と作られた順と宛先の無い操作の数）・フォルダ |
 | 画面の状態の所有者 | 検索欄・絞り込み・完了の表示・表の選択とスクロール・判定を 1 つ持ち、1 フレームの入力で次の状態へ置き換える | `DocketScreen`（application）・ADR 0006 |
-| 課題（item） | 台帳の 1 行。題名・本文・状態・担当・期限・ラベル・並び順を持つ | `Item`（core） |
-| 項目（field） | 課題の 1 つの属性。操作は項目単位で勝敗が付く | `Field`（core・閉じた `enum`） |
+| 課題（item） | 台帳の 1 行。題名・本文・状態・担当・期限・ラベル・並び順と、消されているか。併合の派生値 | `Item` / `ItemId`（作ったアカウントと連番）（core） |
+| 項目（field） | 課題の 1 つの属性。操作は項目単位で勝敗が付く | `Field` / `FieldValue`（core・閉じた `enum`） |
 | 状態（state） | 課題の進み具合。閉じた集合 | `ItemState`（core） |
-| 操作（op） | 台帳を変える最小の単位。誰が・いつ（論理時計と壁時計）・どの課題の・どの項目を・何から何へ。不変 | `Op`（core） |
-| 逆の操作 | ある操作を打ち消す操作。Undo はこれを**追記**する | `Op::inverse`（core） |
+| 操作（op） | 台帳を変える最小の単位。ID（論理時計とアカウント）・壁時計・打ち消す操作の ID・種類（作る・置く・消す・戻す）。不変 | `Op` / `OpId` / `OpKind`（core） |
+| 逆の操作 | ある操作を打ち消す操作。Undo はこれを**追記**し、`undoes` に元の ID を持つ。Redo は Undo を打ち消す | `Op::undoing`（core） |
 | ジャーナル（journal） | 1 つのアカウントが書いた操作の列。追記だけ。版を持つ | `journal/<account-id>.v1.log`（store）・ADR 0004 |
 | 自分のジャーナル | このプロセスのアカウントが書くジャーナル。書くのはこれだけ | `OwnJournal`（store） |
 | 読み直し（refresh） | 他人のジャーナルの伸びた分を読んで取り込むこと | `JournalPort::refresh`（application） |
 | 同期（sync） | 自分のジャーナルの追記を記憶装置に確実に書くこと（fsync）。数秒以内 | `JournalPort::sync` |
-| 併合（merge） | 全アカウントのジャーナルから、いまの台帳の状態を作る純関数。同じ入力から同じ出力 | `merge`（core）・ADR 0004 |
+| 併合（merge） | 全アカウントのジャーナルから、いまの台帳の状態を作る純関数。同じ入力から同じ出力。同じ ID の操作は 1 度だけ数える | `merge::merge` → `Docket`（core）・ADR 0004 |
 | 論理時計（clock） | 操作の全順序を決める数。Lamport 時計。壁時計は表示にだけ使う | `LogicalClock`（core） |
 | 壁時計（wall clock） | 人に見せる時刻。順序には使わない | `WallClock`（core・`ClockPort` から値として） |
 | 勝者（winner） | 同じ項目への操作のうち、全順序で最後のもの。負けた値は履歴に残る | `merge` の規則 |
-| 履歴（history） | 課題ごとの操作の列。勝者も敗者も含む | `ItemHistory`（application が併合から作る） |
+| 履歴（history） | 課題ごとの操作の列。勝者も敗者も含む | `merge::history`（core） |
 | Undo の束 | 自分の操作のうち、まだ戻していないものと戻したもの | `UndoStack`（application） |
 | アカウント（account） | 台帳に書く人。ID・名前・（権限が有効なら）鍵 | `Account` / `AccountId`（core） |
 | 鍵（key） | アカウントの署名鍵。権限を有効にした台帳でだけ使う | 別の ADR |

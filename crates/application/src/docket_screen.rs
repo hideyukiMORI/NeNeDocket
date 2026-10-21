@@ -33,8 +33,8 @@ use nene_docket_core::widget_id::WidgetId;
 use crate::docket_frame::DocketFrame;
 use crate::environment::Environment;
 use crate::frame_input::FrameInput;
-use crate::item_state::ItemState;
 use crate::sample_item::SampleItem;
+use nene_docket_core::item_state::ItemState;
 
 /// 部品の ID。表の行は `ROW` に課題の番号を足す。候補は `OPTION` に番号を足す。
 const SEARCH: WidgetId = WidgetId::new(1);
