@@ -32,7 +32,7 @@ Issue #22 までの台帳は「誰でも編集モード」だけで動く。ジ�
 3. **権限。** `permissions.v1.txt`: `version = 1` / `owner = <account>` / `editor = <account>` の行 / `group = <名前>: <account>, …` の行 / `signature = <owner の署名>`。署名は `signature` より前の行をそのまま結んだバイト列への署名。`owner` は `docket.v1.txt` の `owner`（Issue #29 以降に作った台帳は作ったアカウント。それより前の台帳は、最初に権限を触ったアカウント）。`docket.v1.txt` には `owner = <account>` と `permissions = on|off` を足す（版は 1 のまま・知らない鍵は前の読み手が無視する）。持ち主と、`editor` と、どれかの `group` の中の全員が書ける。ファイルが無ければ持ち主だけ。`permissions = off`（か無い）台帳は今まで通り誰でも編集
 4. **検証。** 読み手は行の署名を `keys/` の公開鍵で確かめ、行のアカウントがファイルのアカウントと同じで、書き手が書けることを `permissions.v1.txt` で確かめる。どれかが通らない行は捨て、数を示す。自分の行も同じ規則で読む（自分が編集者でなければ「編集者でない」と示し、追記はするが読み手（自分を含む）は捨てる）。権限を有効にした台帳では版 1 の行（権限より前の履歴）も「署名が無い」として捨てて数える。`keys/` と `permissions.v1.txt` は読み直しのたびに読み直すが、既に読み進めた行は開き直すまで読み直さない（権限を広げたら、広げられた人の前の行は次に開いたときに入る）
 5. **置き場。** 署名と検証の純関数は core（`#![no_std]`・`ed25519-dalek` の `no_std` の機能だけ・`hex` / `SigningKey` / `PublicKey` / `Signature` / `Permissions`）。ファイルの形は application（`account_file` 版 2・`key_record`・`permissions_file`）、鍵の生成は adapters（乱数）、ファイルと検証器は store（`verifier` / `key_file` / `permissions_store` / `administration`）
-6. **持ち主の操作。** 画面には無く、コマンドライン: `nene-docket <フォルダ> --permissions on|off` / `--allow <account>` / `--disallow <account>` / `--group <名前> <account>` / `--ungroup <名前> <account>`（複数可・順に当てる）。持ち主でなければ失敗し、何も書かない。成功すれば黙って終わる（RS-014）
+6. **持ち主の操作。** 画面の参加者の段（Issue #33・有効・無効と編集者）と、コマンドライン（グループも）: `nene-docket <フォルダ> --permissions on|off` / `--allow <account>` / `--disallow <account>` / `--group <名前> <account>` / `--ungroup <名前> <account>`（複数可・順に当てる）。持ち主でなければ失敗し、何も書かない。成功すれば黙って終わる（RS-014）
 7. **依存。** `ed25519-dalek`（`default-features = false`・`alloc` も無し）を core の唯一の外部クレートにする。CNF-013 の許可表に core だけ `ed25519-dalek` を書き、`deny.toml` の `allow` に実測の BSD-3-Clause（ed25519-dalek / curve25519-dalek / subtle）を足す。「core は依存 0」を「core の外部クレートは表に書いたものだけ」に改める（ARC-013 / ADR 0006 の注）
 
 ## 強制
@@ -45,7 +45,7 @@ Issue #22 までの台帳は「誰でも編集モード」だけで動く。ジ�
 
 - 得られるもの: 編集者の名乗りが検証できる。権限を使わない台帳は何も変わらない（FR-003）。履歴の「誰が」に名前が出る（`keys/`）
 - 失うもの: core に外部クレートが入る（実測 17 クレート・Windows の exe は 2.0 MB → 2.4 MB）。行が約 130 バイト増える（1 年分 45 MB → 約 85 MB・第 20 節の実測から）
-- 残る穴: 秘密鍵は設定フォルダの平文（OS の利用者の権限で守る）。鍵の失効・交代の手続きは別の Issue。権限を有効にする前の履歴は、有効にすると捨てられる（無効に戻せば戻る）。権限を変えた後、既に読み進めた行は開き直すまで反映しない。権限を変える画面は無い（コマンドラインだけ）
+- 残る穴: 秘密鍵は設定フォルダの平文（OS の利用者の権限で守る）。鍵の失効・交代の手続きは別の Issue。権限を有効にする前の履歴は、有効にすると捨てられる（無効に戻せば戻る）。権限を変えた後、既に読み進めた行は開き直すまで反映しない。グループは画面から触れない（コマンドラインだけ）
 
 ## 却下した選択肢
 
