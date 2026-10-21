@@ -1,4 +1,4 @@
-//! 台帳に参加したアカウント 1 人（FR-009）。`keys/` の名前と、権限から決まる役。
+//! 台帳に参加したアカウント 1 人（FR-009）。`keys/` の名前と、権限から決まる役と、入っているグループ。
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -11,12 +11,13 @@ use crate::member_role::MemberRole;
 /// ID の先頭を出す桁数。
 const ID_DIGITS: usize = 4;
 
-/// ID・名前・役。
+/// ID・名前・役・グループ（名前の順）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Member {
     id: AccountId,
     name: String,
     role: MemberRole,
+    groups: Vec<String>,
 }
 
 impl Member {
@@ -29,6 +30,7 @@ impl Member {
                 id: *id,
                 name: name.clone(),
                 role: role_of(*id, permissions),
+                groups: groups_of(*id, permissions),
             })
             .collect();
         members.sort_by_key(|member| member.id);
@@ -58,6 +60,23 @@ impl Member {
     pub const fn role(&self) -> MemberRole {
         self.role
     }
+
+    /// 入っているグループの名前（名前の順）。
+    #[must_use]
+    pub fn groups(&self) -> &[String] {
+        &self.groups
+    }
+}
+
+fn groups_of(id: AccountId, permissions: Option<&Permissions>) -> Vec<String> {
+    permissions.map_or_else(Vec::new, |permissions| {
+        permissions
+            .groups()
+            .iter()
+            .filter(|(_, members)| members.contains(&id))
+            .map(|(name, _)| name.clone())
+            .collect()
+    })
 }
 
 fn role_of(id: AccountId, permissions: Option<&Permissions>) -> MemberRole {
@@ -87,8 +106,13 @@ mod tests {
 
     #[test]
     fn roles_follow_the_permissions_and_the_list_is_by_id() {
-        let permissions = Permissions::owner_only(OWNER).allowing(EDITOR);
+        let permissions = Permissions::owner_only(OWNER)
+            .allowing(EDITOR)
+            .grouped("qa", EDITOR)
+            .grouped("dev", EDITOR);
         let members = Member::list(&names(), Some(&permissions));
+        assert_eq!(members[0].groups(), ["dev", "qa"]);
+        assert!(members[1].groups().is_empty());
         let roles: Vec<(&str, MemberRole)> = members
             .iter()
             .map(|member| (member.name(), member.role()))
