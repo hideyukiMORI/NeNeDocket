@@ -36,11 +36,25 @@ impl OwnJournal {
         account: AccountId,
         signing: Option<SigningKey>,
     ) -> Result<(Self, JournalRead), StoreFailure> {
+        Self::open_from(journal_directory, account, signing, 0)
+    }
+
+    /// 同じく開くが、中身は `offset` から読む（スナップショットの後の分だけ・ADR 0015）。
+    ///
+    /// # Errors
+    ///
+    /// フォルダを作れない・開けない・読めない。
+    pub fn open_from(
+        journal_directory: &Path,
+        account: AccountId,
+        signing: Option<SigningKey>,
+        offset: u64,
+    ) -> Result<(Self, JournalRead), StoreFailure> {
         std::fs::create_dir_all(journal_directory)?;
         let version = version_for(signing.is_some());
         let path = journal_directory.join(file_name(account, version));
         let file = OpenOptions::new().append(true).create(true).open(&path)?;
-        let read = journal_file::read_since(&path, 0)?;
+        let read = journal_file::read_since(&path, offset)?;
         let opened = Self {
             path,
             file,
@@ -51,20 +65,30 @@ impl OwnJournal {
         Ok((opened, read))
     }
 
-    /// 操作を 1 行追記する。同期はしない（`sync` で）。
+    /// 操作を 1 行追記し、その行の先頭のバイト位置を返す（索引に入れる・ADR 0015）。同期はしない（`sync` で）。
     ///
     /// # Errors
     ///
     /// 書けない。
-    pub fn append(&mut self, op: &Op) -> Result<(), StoreFailure> {
+    pub fn append(&mut self, op: &Op) -> Result<u64, StoreFailure> {
         let mut line = match &self.signing {
             Some(key) => journal_record::encode_signed(op, key),
             None => journal_record::encode(op),
         };
         line.push('\n');
+        let offset = self.file.metadata()?.len();
         self.file.write_all(line.as_bytes())?;
         self.dirty = true;
-        Ok(())
+        Ok(offset)
+    }
+
+    /// いまのファイルの長さ（全部読み終えた位置・スナップショットに残す）。
+    ///
+    /// # Errors
+    ///
+    /// 長さを読めない。
+    pub fn length(&self) -> Result<u64, StoreFailure> {
+        Ok(self.file.metadata()?.len())
     }
 
     /// 追記を記憶装置に確実に書く。追記が無ければ何もしない。

@@ -30,7 +30,7 @@ crates/adapters-windows（nene-docket-adapters-windows）
     Windows のアダプタ。同じポートを Win32 で実装する。unsafe を書ける 2 クレートの 1 つ（ADR 0002）
 
 crates/store（nene-docket-store）
-    ジャーナル（版 1）の形と置き場。`docket.v1.txt`・`journal/<account>.v1.log`・1 行 1 操作と CRC-32・追記と同期・他人の伸びた分の読み直し。設定ファイルとアカウントのファイルは台帳でなくマシンのものなので、形は application、読み書きは adapters（ADR 0008）。標準ライブラリだけ・外部クレート 0
+    ジャーナル（版 1・2）の形と置き場。`docket.v1.txt`・`journal/<account>.v1.log` / `.v2.log`・1 行 1 操作と CRC-32・追記と同期・他人の伸びた分の読み直し・`keys/`・`permissions.v1.txt`・自分のスナップショット `snapshot/<account>.v1.txt` と索引 `.v1.idx`（ADR 0015）。設定ファイルとアカウントのファイルは台帳でなくマシンのものなので、形は application、読み書きは adapters（ADR 0008）。標準ライブラリだけ・外部クレート 0
 
     アダプタ 2 つと store だけが、現在時刻・乱数・環境・ファイルを読める製品モジュール（ARC-007 / CNF-012）
 

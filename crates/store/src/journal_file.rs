@@ -1,10 +1,10 @@
 //! ジャーナルのファイルを、位置から伸びた分だけ読む。
 
 use std::fs::File;
-use std::io::{BufReader, Read as _, Seek as _, SeekFrom};
+use std::io::{BufRead as _, BufReader, Read as _, Seek as _, SeekFrom};
 use std::path::Path;
 
-use crate::journal_read::JournalRead;
+use crate::journal_read::{Entry, JournalRead};
 use crate::journal_record;
 use crate::store_failure::StoreFailure;
 
@@ -26,6 +26,7 @@ pub fn read_since(path: &Path, offset: u64) -> Result<JournalRead, StoreFailure>
 #[must_use]
 pub fn parse(bytes: &[u8], base: u64) -> JournalRead {
     let mut entries = Vec::new();
+    let mut offsets = Vec::new();
     let mut rejected = Vec::new();
     let mut position = base;
     let mut rest = bytes;
@@ -33,7 +34,10 @@ pub fn parse(bytes: &[u8], base: u64) -> JournalRead {
         let (line, after) = rest.split_at(end);
         let text = String::from_utf8_lossy(line);
         match journal_record::decode(text.trim_end_matches('\r')) {
-            Ok(entry) => entries.push(entry),
+            Ok(entry) => {
+                entries.push(entry);
+                offsets.push(position);
+            }
             Err(failure) => rejected.push((position, failure)),
         }
         position = position
@@ -41,7 +45,53 @@ pub fn parse(bytes: &[u8], base: u64) -> JournalRead {
             .saturating_add(1);
         rest = after.get(1..).unwrap_or(&[]);
     }
-    JournalRead::new(entries, position, !rest.is_empty(), rejected)
+    JournalRead::new((entries, offsets), position, !rest.is_empty(), rejected)
+}
+
+/// 1 行だけを位置から読む（索引から引く・ADR 0015）。位置が行の先頭でない・読めない行なら失敗。
+///
+/// # Errors
+///
+/// ファイルを開けない・読めない・その位置に完全な行が無い・行が読めない。
+pub fn read_line_at(path: &Path, offset: u64) -> Result<Entry, StoreFailure> {
+    let mut file = File::open(path)?;
+    file.seek(SeekFrom::Start(offset))?;
+    let mut line = Vec::new();
+    BufReader::new(file).read_until(b'\n', &mut line)?;
+    if line.last() != Some(&b'\n') {
+        return Err(StoreFailure::BadIndex);
+    }
+    let text = String::from_utf8_lossy(&line);
+    journal_record::decode(text.trim_end_matches(['\n', '\r']))
+        .map_err(|_failure| StoreFailure::BadIndex)
+}
+
+/// 末尾の `bytes` バイトの中の完全な行を読む（新しい操作から順に見るため・ADR 0015）。
+/// 先頭の切れた行は飛ばす（ファイルの先頭から読んだときを除く）。
+///
+/// # Errors
+///
+/// ファイルを開けない・読めない。
+pub fn read_tail(path: &Path, bytes: u64) -> Result<JournalRead, StoreFailure> {
+    let mut file = File::open(path)?;
+    let length = file.metadata()?.len();
+    let start = length.saturating_sub(bytes);
+    file.seek(SeekFrom::Start(start))?;
+    let mut buffer = Vec::new();
+    BufReader::new(file).read_to_end(&mut buffer)?;
+    if start == 0 {
+        return Ok(parse(&buffer, 0));
+    }
+    let Some(first_break) = buffer.iter().position(|&byte| byte == b'\n') else {
+        return Ok(parse(&[], length));
+    };
+    let base = start
+        .saturating_add(u64::try_from(first_break).unwrap_or(0))
+        .saturating_add(1);
+    Ok(parse(
+        buffer.get(first_break.saturating_add(1)..).unwrap_or(&[]),
+        base,
+    ))
 }
 
 #[cfg(test)]

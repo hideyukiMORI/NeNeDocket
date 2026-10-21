@@ -10,6 +10,11 @@ use nene_docket_core::op::Op;
 use nene_docket_core::op_id::OpId;
 use nene_docket_core::op_kind::OpKind;
 
+use crate::undo_state::UndoState;
+
+/// 戻せる素の操作の上限。古いものから忘れる（スナップショットに残す量を抑える・ADR 0015）。
+const LIMIT: usize = 1_000;
+
 /// 生きている素の操作の列と、戻された（素の操作, それを戻した Undo）の列。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct UndoStack {
@@ -29,18 +34,67 @@ impl UndoStack {
         }
     }
 
-    /// 自分の操作を 1 つ（ジャーナルの順に）。
+    /// 自分の操作を 1 つ（ジャーナルの順に）。権限の記録は戻せないので積まない。
     pub fn record(&mut self, op: &Op) {
         if matches!(op.kind(), OpKind::Admin(_)) {
             return;
         }
-        match op.undoes() {
+        self.record_id(op.id(), op.undoes());
+    }
+
+    /// 操作の ID と、打ち消す相手だけから。
+    pub fn record_id(&mut self, id: OpId, undoes: Option<OpId>) {
+        match undoes {
             None => {
-                self.done.push(op.id());
+                self.done.push(id);
                 self.undone.clear();
             }
-            Some(target) => self.record_reversal(op.id(), target),
+            Some(target) => self.record_reversal(id, target),
         }
+        if self.done.len() > LIMIT {
+            let forgotten = self.done.remove(0);
+            self.undo_ops.retain(|_, plain| *plain != forgotten);
+        }
+    }
+
+    /// 中身（スナップショットへ）。
+    #[must_use]
+    pub fn state(&self) -> UndoState {
+        UndoState::new(
+            self.done.clone(),
+            self.undone.clone(),
+            self.undo_ops
+                .iter()
+                .map(|(undo, plain)| (*undo, *plain))
+                .collect(),
+        )
+    }
+
+    /// 中身から（スナップショットから）。
+    #[must_use]
+    pub fn from_state(state: &UndoState) -> Self {
+        Self {
+            undo_ops: state.undo_ops().iter().copied().collect(),
+            done: state.done().to_vec(),
+            undone: state.undone().to_vec(),
+        }
+    }
+
+    /// 束にある全部の操作の ID（素の操作と Undo）。自分の操作の課題を覚えておく相手。
+    #[must_use]
+    pub fn mentioned(&self) -> Vec<OpId> {
+        let mut ids: Vec<OpId> = self.done.clone();
+        for (plain, undo) in &self.undone {
+            ids.push(*plain);
+            ids.push(*undo);
+        }
+        for (undo, plain) in &self.undo_ops {
+            ids.push(*undo);
+            ids.push(*plain);
+        }
+        ids.sort_unstable();
+        ids.dedup();
+        ids
     }
 
     fn record_reversal(&mut self, id: OpId, target: OpId) {

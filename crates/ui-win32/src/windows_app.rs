@@ -81,6 +81,11 @@ impl WindowsApp {
     }
 
     /// 読み直しの合図（`WM_TIMER`）。
+    /// 窓を閉じた後。入力中の欄を確定し、スナップショットを書く（ADR 0015）。
+    pub(crate) fn close(&mut self) {
+        self.screen.close();
+    }
+
     pub(crate) fn refresh(&mut self) {
         self.step(self.pointer.current(), Vec::new(), true);
     }

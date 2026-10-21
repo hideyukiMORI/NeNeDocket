@@ -91,6 +91,7 @@ pub fn run(screen: DocketScreen, refresh_seconds: u64) -> Result<(), Win32Failur
             DispatchMessageW(&raw const message);
         }
     }
+    cell.borrow_mut().close();
     Ok(())
 }
 

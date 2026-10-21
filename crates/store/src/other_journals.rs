@@ -14,6 +14,9 @@ use crate::record_failure::RecordFailure;
 use crate::store_failure::StoreFailure;
 use crate::verifier::{self, Verifier};
 
+/// 読んだ操作と、それがどのジャーナル（アカウントと版）の何バイト目か。
+pub type LocatedOp = ((AccountId, JournalVersion), u64, Op);
+
 /// 自分のアカウントと、他人のジャーナル（アカウントと版）ごとの次に読む位置。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OtherJournals {
@@ -35,6 +38,26 @@ impl OtherJournals {
         }
     }
 
+    /// スナップショットの読み位置から（ADR 0015）。
+    #[must_use]
+    pub const fn from_offsets(
+        own: AccountId,
+        offsets: BTreeMap<(AccountId, JournalVersion), u64>,
+    ) -> Self {
+        Self {
+            own,
+            offsets,
+            rejected: Vec::new(),
+            unverified: Vec::new(),
+        }
+    }
+
+    /// 読み終えた位置（アカウント・版ごと）。
+    #[must_use]
+    pub const fn offsets(&self) -> &BTreeMap<(AccountId, JournalVersion), u64> {
+        &self.offsets
+    }
+
     /// 他人のジャーナルの伸びた分を読み、新しい操作を返す。書きかけの末尾は次回に回る。
     /// 壊れた行は覚えて `rejected` で、検証（`verifier` があるとき）の通らない行は `unverified` で見せる。
     ///
@@ -46,6 +69,23 @@ impl OtherJournals {
         folder: &JournalFolder,
         verifier: Option<&Verifier>,
     ) -> Result<Vec<Op>, StoreFailure> {
+        Ok(self
+            .refresh_located(folder, verifier)?
+            .into_iter()
+            .map(|(_, _, op)| op)
+            .collect())
+    }
+
+    /// 同じく読むが、各操作がどのジャーナルの何バイト目かも返す（索引に入れる・ADR 0015）。
+    ///
+    /// # Errors
+    ///
+    /// フォルダを読めない・ジャーナルを開けない。
+    pub fn refresh_located(
+        &mut self,
+        folder: &JournalFolder,
+        verifier: Option<&Verifier>,
+    ) -> Result<Vec<LocatedOp>, StoreFailure> {
         let mut fresh = Vec::new();
         for (account, version, path) in folder.journals()? {
             if account == self.own {
@@ -59,9 +99,9 @@ impl OtherJournals {
                     .iter()
                     .map(|(position, failure)| (account, *position, *failure)),
             );
-            for entry in read.into_entries() {
+            for (position, entry) in read.into_located_entries() {
                 match verifier::admit(verifier, account, entry) {
-                    Ok(op) => fresh.push(op),
+                    Ok(op) => fresh.push(((account, version), position, op)),
                     Err(failure) => self.unverified.push((account, failure)),
                 }
             }

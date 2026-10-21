@@ -833,7 +833,29 @@ Xvfb（`:101`・`scratchpad/audit.sh`）: alice が台帳を作り、bob が参�
 | `make conformance` | 違反なし（227 ファイル） |
 | `make coverage` | core ＋ application の region 98.83%（閾値 90） |
 
-## 38. 再現
+## 38. Issue #61 の段階 2 — アカウントごとのスナップショットと索引（2026-10-21）
+
+同じコンテナ。`Ledger` は操作の列を持たず、台帳・時計・Undo の束（最新 1,000 回）・Undo の相手の課題だけを持つ。履歴・Undo の逆の値・選び直しは `JournalPort::ops_of`（課題ごとの索引からジャーナルの行を 1 本ずつ読む）、台帳全体の時系列は `recent_ops`（各ジャーナルの末尾から・新しい 1,000 件）、監査は `all_ops`。全順序で前の操作が後から届けば、その課題だけを全操作から作り直す（`Docket::replaced`）。store は自分の `snapshot/<account>.v1.txt`（状態・読み位置・`permissions.v1.txt` の署名の印・Undo の束）と `.v1.idx`（32 バイト固定長の索引・記憶の上では 8 バイトに詰める）を、読み直し 100 回ごとと窓を閉じたときに一時名 → rename で書く。権限が変わった・ジャーナルが縮んだ・形が読めないスナップショットは捨てて全部読む。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 375 件（application 100・store 51） |
+| `make conformance` | 違反なし（234 ファイル・CNF-003 で `Resumed` と `Reading` を別ファイルに分けた） |
+| `make coverage` | core ＋ application の region 98.15%（閾値 90） |
+
+bench（scratchpad の `year.rs`・release・3 アカウント・別プロセスで 2 回目を測る）:
+
+| 規模 | 初回（全部読む・索引を作る）| 2 回目（スナップショットから） | 履歴 1 件 | 新しい 1,000 件 | 1 フレーム | 検索 1 字 | RSS（2 回目） | スナップショット |
+| --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| 10 万件・100 万操作 | 4.1 s | 0.5〜0.6 s | 0.1〜0.2 ms | 8〜11 ms | 2.0 ms | 35 ms | 146〜150 MB | 18 MB ＋ 32 MB（0.9 s） |
+| 10 万件・300 万操作 | 13.4 s | **0.8〜0.9 s** | 0.2〜0.3 ms | 7〜8 ms | 1.6 ms | 24〜30 ms | **174〜178 MB** | 18 MB ＋ 96 MB（0.5 s） |
+
+目標（起動 3 秒・1 フレーム 16 ms・検索 100 ms）は 2 回目から中。メモリ 150 MB は 178 MB で未達（ADR 0015 の残る穴）。段階 1 の前（第 37 節）は 300 万操作で起動 8.5〜10 秒・703 MB だった。
+
+Xvfb（`:102`・`scratchpad/snapshot.sh`）: 読み直し 1 秒の設定で alice が 2 件足し、100 回目の読み直しで `snapshot/<alice>.v1.txt`（810 バイト・`clock = 4`・`sequence = 3`）と `.idx`（128 バイト・4 件）が書かれた。その後 3 件目を足してプロセスを殺し（窓を閉じる経路は WM の無い Xvfb では通らない）、開き直すと 3 件とも出て（3 件目はスナップショットの後の自分の行から）、履歴の段は索引から引いた 2 行（[01-resumed](screenshots/2026-10-21-snapshot-01-resumed.png)）、Ctrl+Z は 3 件目の題名を戻した（前の回の自分の操作が Undo の束に積まれている・[02-undo](screenshots/2026-10-21-snapshot-02-undo.png)）。
+
+## 39. 再現
 
 ```bash
 make prove

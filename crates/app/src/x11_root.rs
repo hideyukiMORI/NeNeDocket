@@ -21,7 +21,7 @@ use nene_docket_ui_x11::event_loop;
 use std::path::Path;
 
 use nene_docket_application::account::Account;
-use nene_docket_application::journal_port::JournalPort as _;
+use nene_docket_application::ledger_opening;
 use nene_docket_core::admin_command::AdminCommand;
 use nene_docket_core::language::Language;
 
@@ -67,6 +67,7 @@ pub(crate) fn run(arguments: &Arguments) -> Result<(), LaunchFailure> {
     )?;
     event_loop::run(&display, &mut window, &mut screen)?;
     drop(ticker);
+    screen.close();
     Ok(())
 }
 
@@ -88,22 +89,26 @@ fn record_administration(
     reason = "RS-014: 端末への出力は合成ルートだけが行う"
 )]
 fn print_audit(folder: &Path, account: &Account, language: Language) -> Result<(), LaunchFailure> {
-    let (ledger, ports) = open_ledger(folder, account)?;
+    let (_ledger, ports) = open_ledger(folder, account)?;
+    let ops = ports.journal().all_ops()?;
     print!(
         "{}",
-        audit_report::text(ledger.ops(), &ports.journal().names(), language)
+        audit_report::text(&ops, &ports.journal().names(), language)
     );
     Ok(())
 }
 
-/// 台帳を開いて全部の操作を読み、台帳の状態とポートを返す（画面は開かない）。
+/// 台帳を開いて台帳の状態とポートを返す（画面は開かない）。スナップショットがあればそれを使う（ADR 0015）。
 fn open_ledger(folder: &Path, account: &Account) -> Result<(Ledger, Ports), LaunchFailure> {
     let mut journal = FileJournal::open(folder, &Arguments::docket_name(folder), account)?;
-    let ops = journal.refresh()?;
+    let (ledger, failure) = ledger_opening::open(&mut journal, account.clone());
+    if let Some(failure) = failure {
+        return Err(failure.into());
+    }
     let ports = Ports::new(
         Box::new(journal),
         Box::new(SystemClock),
         Box::new(SettingsStore::in_config_directory()?),
     );
-    Ok((Ledger::open(account.clone(), ops), ports))
+    Ok((ledger, ports))
 }

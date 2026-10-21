@@ -27,6 +27,28 @@ impl Docket {
         }
     }
 
+    /// 作られた順の課題と、宛先の無い操作の数から（スナップショットから戻す・ADR 0015）。
+    #[must_use]
+    pub fn from_parts(items: Vec<Item>, orphans: usize) -> Self {
+        let mut docket = Self::empty();
+        docket.orphans = orphans;
+        for item in items {
+            docket = docket.replaced(item);
+        }
+        docket
+    }
+
+    /// 課題 1 件を置き換えた台帳。無ければ作られた順の末尾に足す。
+    /// 全順序で前の操作が後から届いたとき、その課題の操作だけから作り直して置く（ADR 0015 の 2）。
+    #[must_use]
+    pub fn replaced(mut self, item: Item) -> Self {
+        let id = item.id();
+        if self.items.insert(id, item).is_none() {
+            self.creation_order.push(id);
+        }
+        self
+    }
+
     /// 操作を 1 つ適用した台帳。`merge` が全順序に並べた後で呼ぶ。
     /// 作られていない課題への操作は、黙って落とさず「宛先の無い操作」として数える（FR-014 の元）。
     #[must_use]

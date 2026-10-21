@@ -62,6 +62,7 @@ use crate::history_pane::HistoryPane;
 use crate::item_number;
 use crate::journal_failure::JournalFailure;
 use crate::ledger::Ledger;
+use crate::ledger_opening;
 use crate::member::Member;
 use crate::members_action::MembersAction;
 use crate::members_pane::MembersPane;
@@ -118,6 +119,10 @@ const LANGUAGE_WIDTH_PX: u16 = 110;
 const THEME_WIDTH_PX: u16 = 130;
 const BUTTON_WIDTH_PX: u16 = 80;
 const SCROLL_WIDTH_PX: u16 = 12;
+/// 台帳全体の時系列（課題を選んでいないとき）に出す操作の上限（ADR 0014 / 0015）。
+const RECENT_LIMIT: usize = 1_000;
+/// 読み直しの何回ごとにスナップショットを書くか（3 秒の刻みで 5 分）。
+const CHECKPOINT_EVERY: u64 = 100;
 /// 表のヘッダの列の境の、つまめる幅。
 const GRIP_PX: u16 = 6;
 /// 編集行の状態の箱。
@@ -169,6 +174,12 @@ pub struct DocketScreen {
     /// 10 万件を毎フレーム絞り込むと 1 フレームが 20 ms を超えるので、鍵が変わったときだけ作り直す（FR-017）。
     visible_cache: Vec<ItemId>,
     visible_key: Option<(u64, String, usize, bool)>,
+    /// 履歴の段の行のキャッシュと、その鍵（台帳の世代・選んだ課題）。行はジャーナルから引くので毎フレームは読まない（ADR 0015）。
+    history_cache: Vec<HistoryLine>,
+    history_key: Option<(u64, Option<ItemId>)>,
+    /// 読み直しの回数と、最後にスナップショットを書いたときの世代（一定の回数ごとに書く・ADR 0015）。
+    refreshes: u64,
+    checkpointed: u64,
     ports: Ports,
     /// 台帳の `keys/` にある名前（履歴の「誰が」）。読み直しのたびに取り直す。
     names: Vec<(AccountId, String)>,
@@ -194,10 +205,7 @@ impl DocketScreen {
         mut ports: Ports,
         settings: Settings,
     ) -> Self {
-        let (ops, read_failure) = match ports.journal_mut().refresh() {
-            Ok(ops) => (ops, None),
-            Err(failure) => (Vec::new(), Some(failure)),
-        };
+        let (ledger, read_failure) = ledger_opening::open(ports.journal_mut(), account);
         let language = settings.language().resolve(environment.language());
         let theme = settings.theme().resolve(environment.appearance());
         let names = ports.journal().names();
@@ -223,9 +231,13 @@ impl DocketScreen {
             overwrote: None,
             state: SelectState::closed(ItemState::ALL.len(), 0),
             history: HistoryPane::hidden(environment.scale()),
-            ledger: Ledger::open(account, ops),
+            ledger,
             visible_cache: Vec::new(),
             visible_key: None,
+            history_cache: Vec::new(),
+            history_key: None,
+            refreshes: 0,
+            checkpointed: 0,
             ports,
             names,
             write_failure: None,
@@ -261,7 +273,8 @@ impl DocketScreen {
         let (table_area, notice_rect) = self.split_notice(layout.remaining());
         let whole_area = table_area;
         let (table_area, [body_area, members_area, history_area]) = self.split_panes(table_area);
-        self.preview = self.history_preview(history_area, input);
+        let history_lines = self.cached_history_lines();
+        self.preview = self.history_preview(history_area, input, &history_lines);
         let visible = self.cached_visible_ids();
         let table = self.table_layout(table_area, visible.len());
         let track = Self::track_of(table_area, self.px(SCROLL_WIDTH_PX));
@@ -290,7 +303,7 @@ impl DocketScreen {
         );
         self.probe_body(body_area, &mut commands);
         self.probe_members(members_area, &mut commands);
-        self.probe_history(history_area, &mut commands);
+        self.probe_history(history_area, &history_lines, &mut commands);
         self.probe_filter_options(filter_rect);
         self.probe_state_options(state_rect);
         self.probe_language_options(language_rect);
@@ -443,13 +456,53 @@ impl DocketScreen {
         self.body.edit().text()
     }
 
-    /// 選んだ課題の履歴。新しいものが先。選んでいなければ台帳全体の時系列（監査・ADR 0014）。
+    /// 選んだ課題の履歴。新しいものが先。選んでいなければ台帳全体の時系列（監査・ADR 0014・新しい 1,000 件まで）。
+    /// 操作はジャーナルから引く（ADR 0015）。読めなければ空で、失敗は通知に出る。
     #[must_use]
     pub fn history_lines(&self) -> Vec<HistoryLine> {
-        match self.selected {
-            Some(id) => HistoryLine::lines(self.ledger.ops(), id, &self.names),
-            None => HistoryLine::all(self.ledger.ops(), &self.names),
+        self.read_history_lines().unwrap_or_default()
+    }
+
+    fn read_history_lines(&self) -> Result<Vec<HistoryLine>, JournalFailure> {
+        let journal = self.ports.journal();
+        Ok(match self.selected {
+            Some(id) => HistoryLine::lines(&journal.ops_of(id)?, id, &self.names),
+            None => HistoryLine::all(&journal.recent_ops(RECENT_LIMIT)?, &self.names),
+        })
+    }
+
+    /// 鍵（台帳の世代・選んだ課題）が前のフレームと同じならキャッシュを返す。
+    fn cached_history_lines(&mut self) -> Vec<HistoryLine> {
+        if !self.history.is_shown() {
+            return Vec::new();
         }
+        let key = (self.ledger.generation(), self.selected);
+        if self.history_key != Some(key) {
+            match self.read_history_lines() {
+                Ok(lines) => self.history_cache = lines,
+                Err(failure) => {
+                    self.history_cache = Vec::new();
+                    self.read_failure = Some(failure);
+                }
+            }
+            self.history_key = Some(key);
+        }
+        self.history_cache.clone()
+    }
+
+    /// 窓を閉じるとき。入力中の欄を確定し、スナップショットを書く（ADR 0015）。
+    pub fn close(&mut self) {
+        self.commit_unfocused_slots();
+        self.checkpoint();
+    }
+
+    /// スナップショットを書く。書けなければ示す（FR-014）。
+    fn checkpoint(&mut self) {
+        let snapshot = self.ledger.snapshot();
+        if let Err(failure) = self.ports.journal_mut().checkpoint(&snapshot) {
+            self.write_failure = Some(failure);
+        }
+        self.checkpointed = self.ledger.generation();
     }
 
     /// 利用者に示す降格（FR-014）。無ければ空。
@@ -618,13 +671,17 @@ impl DocketScreen {
     }
 
     /// ポインタの下の履歴の行の、その時点の課題（FR-006）。段が無い・行の上に無ければ `None`。
-    fn history_preview(&self, area: Option<PixelRect>, input: &FrameInput) -> Option<Item> {
+    fn history_preview(
+        &self,
+        area: Option<PixelRect>,
+        input: &FrameInput,
+        lines: &[HistoryLine],
+    ) -> Option<Item> {
         let area = area?;
         let point = input
             .pointer()
             .position()
             .filter(|point| area.contains(*point))?;
-        let lines = self.history_lines();
         let index = self.history.line_at(area, lines.len(), point)?;
         lines.get(index).and_then(|line| line.snapshot().cloned())
     }
@@ -788,14 +845,18 @@ impl DocketScreen {
         );
     }
 
-    fn probe_history(&mut self, area: Option<PixelRect>, commands: &mut Vec<DrawCommand>) {
+    fn probe_history(
+        &mut self,
+        area: Option<PixelRect>,
+        lines: &[HistoryLine],
+        commands: &mut Vec<DrawCommand>,
+    ) {
         let Some(area) = area else {
             return;
         };
-        let lines = self.history_lines();
         let clicked = self.history.probe(
             &mut self.interaction,
-            (area, &lines, self.language),
+            (area, lines, self.language),
             commands,
         );
         if let Some(line) = clicked.and_then(|index| lines.get(index)) {
@@ -1178,33 +1239,48 @@ impl DocketScreen {
     /// Undo は利用者が明示した戻しなので、入力中の欄も戻った値に合わせる（残すと、フォーカスが外れた瞬間に戻す前の値を追記してしまう）。
     fn undo(&mut self) {
         let now = self.ports.clock().now();
-        if let Some(op) = self.ledger.compose_undo(now) {
-            self.write(&op);
-            self.reload_editor(true);
+        match self.ledger.compose_undo(now, self.ports.journal()) {
+            Ok(Some(op)) => {
+                self.write(&op);
+                self.reload_editor(true);
+            }
+            Ok(None) => {}
+            Err(failure) => self.read_failure = Some(failure),
         }
     }
 
     fn redo(&mut self) {
         let now = self.ports.clock().now();
-        if let Some(op) = self.ledger.compose_redo(now) {
-            self.write(&op);
-            self.reload_editor(true);
+        match self.ledger.compose_redo(now, self.ports.journal()) {
+            Ok(Some(op)) => {
+                self.write(&op);
+                self.reload_editor(true);
+            }
+            Ok(None) => {}
+            Err(failure) => self.read_failure = Some(failure),
         }
     }
 
     /// 他人のジャーナルの伸びた分を取り込み、編集欄を合わせる（刻みの合図）。入力中の欄は触らない。
+    /// 一定の回数ごとに、台帳が変わっていればスナップショットを書く（ADR 0015）。
     fn refresh(&mut self) {
         self.absorb_others();
         self.reload_editor(false);
+        self.refreshes = self.refreshes.saturating_add(1);
+        if self.refreshes.is_multiple_of(CHECKPOINT_EVERY)
+            && self.checkpointed != self.ledger.generation()
+        {
+            self.checkpoint();
+        }
     }
 
     /// 他人のジャーナルの伸びた分を取り込む。編集欄は触らない。
     fn absorb_others(&mut self) {
         match self.ports.journal_mut().refresh() {
             Ok(fresh) => {
-                self.read_failure = None;
+                self.read_failure = self.ledger.absorb(fresh, self.ports.journal()).err();
                 self.names = self.ports.journal().names();
-                self.ledger.absorb(fresh);
+                self.history_key = None;
             }
             Err(failure) => self.read_failure = Some(failure),
         }
@@ -1794,6 +1870,7 @@ mod tests {
     use super::*;
     use crate::clock_port::ClockPort;
     use crate::journal_port::JournalPort;
+    use crate::ledger_snapshot::LedgerSnapshot;
     use crate::settings_port::SettingsPort;
 
     const BOUNDS: PixelRect = PixelRect::new(0, 0, 1060, 400);
@@ -1828,7 +1905,10 @@ mod tests {
     struct FakeJournal {
         written: Rc<RefCell<Vec<Op>>>,
         pending: Rc<RefCell<Vec<Op>>>,
+        /// 渡した操作と書かれた操作の全部（課題ごとに引く相手）。
+        seen: Rc<RefCell<Vec<Op>>>,
         synced: Rc<RefCell<usize>>,
+        checkpoints: Rc<RefCell<Vec<LedgerSnapshot>>>,
         fail_write: bool,
         fail_read: bool,
         rejected: usize,
@@ -1841,7 +1921,9 @@ mod tests {
             Self {
                 written: Rc::default(),
                 pending: Rc::default(),
+                seen: Rc::default(),
                 synced: Rc::default(),
+                checkpoints: Rc::default(),
                 fail_write: false,
                 fail_read: false,
                 rejected: 0,
@@ -1857,6 +1939,7 @@ mod tests {
                 return Err(JournalFailure::Unwritable);
             }
             self.written.borrow_mut().push(op.clone());
+            self.seen.borrow_mut().push(op.clone());
             Ok(())
         }
 
@@ -1869,7 +1952,48 @@ mod tests {
             if self.fail_read {
                 return Err(JournalFailure::Unreadable);
             }
-            Ok(core::mem::take(&mut *self.pending.borrow_mut()))
+            let fresh = core::mem::take(&mut *self.pending.borrow_mut());
+            self.seen.borrow_mut().extend(fresh.iter().cloned());
+            Ok(fresh)
+        }
+
+        fn snapshot(&mut self) -> Option<LedgerSnapshot> {
+            None
+        }
+
+        fn ops_of(&self, item: ItemId) -> Result<Vec<Op>, JournalFailure> {
+            if self.fail_read {
+                return Err(JournalFailure::Unreadable);
+            }
+            Ok(self
+                .seen
+                .borrow()
+                .iter()
+                .filter(|op| op.kind().item() == Some(item))
+                .cloned()
+                .collect())
+        }
+
+        fn recent_ops(&self, limit: usize) -> Result<Vec<Op>, JournalFailure> {
+            if self.fail_read {
+                return Err(JournalFailure::Unreadable);
+            }
+            let mut all = self.seen.borrow().clone();
+            all.sort_by_key(Op::id);
+            let skip = all.len().saturating_sub(limit);
+            Ok(all.into_iter().skip(skip).collect())
+        }
+
+        fn all_ops(&self) -> Result<Vec<Op>, JournalFailure> {
+            Ok(self.seen.borrow().clone())
+        }
+
+        fn checkpoint(&mut self, snapshot: &LedgerSnapshot) -> Result<(), JournalFailure> {
+            if self.fail_write {
+                return Err(JournalFailure::Unwritable);
+            }
+            self.checkpoints.borrow_mut().push(snapshot.clone());
+            Ok(())
         }
 
         fn rejected_lines(&self) -> usize {
@@ -2469,14 +2593,14 @@ mod tests {
     }
 
     /// 履歴を出し、1 行目を選んで状態を Done にし、Undo する。
-    fn screen_with_history() -> DocketScreen {
-        let (mut screen, _) = screen(3);
+    fn screen_with_history() -> (DocketScreen, Spy) {
+        let (mut screen, spy) = screen(3);
         click(&mut screen, HISTORY_X, TOOLBAR_Y);
         click(&mut screen, 100, FIRST_ROW_Y);
         click(&mut screen, STATE_X, EDITOR_Y);
         click(&mut screen, STATE_X, 142);
         keys(&mut screen, &[KeyIntent::Undo]);
-        screen
+        (screen, spy)
     }
 
     #[test]
@@ -2575,7 +2699,7 @@ mod tests {
 
     #[test]
     fn the_history_pane_lists_the_selected_items_ops_newest_first() {
-        let mut screen = screen_with_history();
+        let (mut screen, _) = screen_with_history();
         let lines: Vec<[String; 3]> = screen
             .history_lines()
             .iter()
@@ -2597,23 +2721,23 @@ mod tests {
 
     #[test]
     fn clicking_a_history_line_re_picks_its_value_as_a_new_op() {
-        let mut screen = screen_with_history();
+        let (mut screen, spy) = screen_with_history();
         let item = ItemId::new(OTHER, 1);
         // 履歴（新しい順）: undo の行（Done -> In progress）・In progress -> Done・…
-        let before = screen.ledger().ops().len();
+        let before = spy.written.borrow().len();
         click(&mut screen, 100, SECOND_HISTORY_Y);
-        assert_eq!(screen.ledger().ops().len(), before + 1);
+        assert_eq!(spy.written.borrow().len(), before + 1);
         assert_eq!(
             screen.ledger().docket().item(item).map(Item::state),
             Some(ItemState::Done)
         );
         // いまと同じ値の行を押しても何も追記しない。
         click(&mut screen, 100, FIRST_HISTORY_Y);
-        assert_eq!(screen.ledger().ops().len(), before + 1);
+        assert_eq!(spy.written.borrow().len(), before + 1);
         // 「作成」の行は何もしない（一番下。スクロールして押す代わりに直接）。
         let created = screen.history_lines().last().cloned().unwrap();
         screen.repick(created.change().clone());
-        assert_eq!(screen.ledger().ops().len(), before + 1);
+        assert_eq!(spy.written.borrow().len(), before + 1);
     }
 
     #[test]
@@ -2648,7 +2772,7 @@ mod tests {
 
     #[test]
     fn hovering_a_history_line_shows_the_item_as_it_was_then() {
-        let mut screen = screen_with_history();
+        let (mut screen, _) = screen_with_history();
         // いまは In progress（Done を Undo した）。2 行目は「In progress -> Done」で、その直後は Done。
         let now = texts(&idle(&mut screen));
         assert!(now.iter().any(|text| text == "In progress"));
@@ -2673,7 +2797,7 @@ mod tests {
 
     #[test]
     fn the_wheel_over_the_history_pane_leaves_the_table_and_the_key_hides_it() {
-        let mut screen = screen_with_history();
+        let (mut screen, _) = screen_with_history();
         screen.step(&FrameInput::new(
             BOUNDS,
             PointerInput::new(Some(PixelPoint::new(100, 380)), ButtonPhase::Idle, 1),

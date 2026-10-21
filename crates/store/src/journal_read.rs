@@ -12,6 +12,8 @@ pub type Entry = (Op, Option<Signature>);
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JournalRead {
     entries: Vec<Entry>,
+    /// 各行の先頭のバイト位置（`entries` と同じ並び・索引に使う・ADR 0015）。
+    offsets: Vec<u64>,
     next_offset: u64,
     partial_tail: bool,
     rejected: Vec<(u64, RecordFailure)>,
@@ -20,14 +22,15 @@ pub struct JournalRead {
 impl JournalRead {
     /// 値から作る。
     #[must_use]
-    pub const fn new(
-        entries: Vec<Entry>,
+    pub fn new(
+        (entries, offsets): (Vec<Entry>, Vec<u64>),
         next_offset: u64,
         partial_tail: bool,
         rejected: Vec<(u64, RecordFailure)>,
     ) -> Self {
         Self {
             entries,
+            offsets,
             next_offset,
             partial_tail,
             rejected,
@@ -50,6 +53,12 @@ impl JournalRead {
     #[must_use]
     pub fn into_entries(self) -> Vec<Entry> {
         self.entries
+    }
+
+    /// 行と、その先頭のバイト位置を取り出す。
+    #[must_use]
+    pub fn into_located_entries(self) -> Vec<(u64, Entry)> {
+        self.offsets.into_iter().zip(self.entries).collect()
     }
 
     /// 次に読み始めるバイト位置（最後の完全な行の直後）。
