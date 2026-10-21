@@ -411,6 +411,12 @@ impl DocketScreen {
         })
     }
 
+    /// UI の倍率（FR-016）。窓の初期の大きさにも掛ける（Issue #93）。
+    #[must_use]
+    pub const fn scale(&self) -> UiScale {
+        self.scale
+    }
+
     /// 表示言語。
     #[must_use]
     pub const fn language(&self) -> Language {
