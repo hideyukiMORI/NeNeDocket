@@ -19,6 +19,8 @@ pub mod docket_screen;
 pub mod edit_slot;
 pub mod environment;
 pub mod frame_input;
+pub mod history_line;
+pub mod history_pane;
 pub mod journal_failure;
 pub mod journal_port;
 pub mod ledger;
