@@ -672,7 +672,7 @@ application に設定の版 2・`SettingsPort`・`Environment` の言語と明�
 | `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
 | `make test` | 330 件 |
 | `make conformance` | 違反なし（216 ファイル） |
-| `make coverage` | core ＋ application regions  |
+| `make coverage` | core ＋ application regions 98.67% |
 | Xvfb（`:91`・`LANG=ja_JP.UTF-8`） | 題名を 2 度変えた課題で、履歴の「作成」の行にポインタを置くと表の行が `← f4a8-1`・題名なし・未着手になり、離すと戻る（[02-hover](screenshots/2026-10-21-preview-02-hover.png)） |
 
 テストが要求すること: 履歴の 2 行目（In progress -> Done）の上のフレームで表が `Done` と `←` を出し、離したフレームで `In progress` に戻り、`preview` が消えること。各行の `snapshot` が直後の課題（題名・状態・削除）であること。
