@@ -1,6 +1,6 @@
 # いまのタスク — NeNe Docket
 
-> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #47 まで）。
+> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #48 まで）。
 
 ## 状態
 
@@ -56,6 +56,6 @@
 - `Add` は `create` だけを追記し、担当は空のまま（編集行で変える）。アカウントの名前は `USER` で、画面から変えられない（ADR 0008）
 - 読み直しの刻みは X の `ClientMessage` で、Windows では別の経路になる（ADR 0008）。間隔は設定の `refresh_seconds`（Issue #16）
 - 設定の列の幅と順は Issue #41 / #43（ヘッダの境と見出しのドラッグ）、見えは Issue #27 で入った。段の高さは変えられない
-- X11 では OS の明暗を観測できない（`system` はライト）。GNOME の `color-scheme` などを読む経路は別の Issue。利用者のテーマファイル（nene-nib の `.v1.theme`）もまだ
+- X11 の OS の明暗は GTK の慣習（`GTK_THEME` と `gtk-3.0/settings.ini`）から読む（Issue #48）。GNOME の `color-scheme`（dconf）は読まない。利用者のテーマファイル（nene-nib の `.v1.theme`）はまだ
 - 翻訳（6 言語 × 31 語）と導出した配色の見た目は施主の確認待ち
 - 履歴の「いつ」は UTC（時差を知るアダプタが無い）、「誰が」は `keys/` の名前（無ければ ID の先頭 4 桁）。過去の時点の再現はポインタを置いている間の表示だけ（Issue #39）。台帳をその時点へ戻すのは履歴の行を押して 1 項目ずつ（Issue #35）
