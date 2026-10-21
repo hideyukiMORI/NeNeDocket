@@ -48,7 +48,7 @@
 | FR-021 | 課題にファイルを添付できる | ✅ Issue #62・[ADR 0016](docs/adr/0016-attachments-copied-into-the-docket.md)。台帳フォルダの `attachments/<課題>/<連番>-<名前>` に写し、`attach`（名前・大きさ・SHA-256）/ `detach` を追記。写しは消さず、改変は印で示す。入力は添付の段のパスの欄・`--attach`・ドラッグ＆ドロップ（Issue #65: X11 は XDND の `text/uri-list`、Windows は `WM_DROPFILES`。表の行ならその課題、添付の段なら選んでいる課題） |
 | FR-022 | 添付を見られる: テキスト・CSV（Shift_JIS も）・PNG・JPEG は内蔵のビューワー、それ以外は OS の既定のアプリで開く。PDF は内蔵を試す | 🟡 テキスト・CSV / TSV と OS のアプリは Issue #63・[ADR 0017](docs/adr/0017-attachment-viewers-and-external-open.md)（`encoding_rs`・`xdg-open` / `ShellExecuteW`・256 KiB で先頭だけ）。PNG / JPEG は Issue #64・[ADR 0018](docs/adr/0018-image-viewer-png-jpeg.md)（`crates/media`・`png` / `jpeg-decoder`・2,048 画素に縮めて持ち、ホイールで拡大・ドラッグで移動）。PDF は OS の既定のビューワー（Issue #66 で `hayro` を試し、[ADR 0019](docs/adr/0019-pdf-viewer-hayro-rejected-for-now.md) で今は却下: 描けて速いが 75 クレート・版の重複・104 秒のビルド） |
 | FR-020 | 誰が・いつ・何をしたかが全部残り、読める（監査） | 課題の編集はジャーナル（ADR 0004・署名は ADR 0010）、権限の変更も同じジャーナルに `admin` の行（ADR 0014・Issue #56）。履歴の段で課題を選んでいないときに台帳全体の時系列、`--audit` でテキスト。読んだ記録は残さない（共有フォルダを直接読む人は残せないので） |
-| FR-018 | 窓は OS の通常の窓。枠・タイトルバー・最小化・最大化は OS に任せる | nene-ruler と違い、飾りなしにはしない。部品だけを自前で描く |
+| FR-018 | 窓は枠なし。帯（共有ビューのタブ・表示の切り替え・窓の操作）は自前で描き、Snap・影・最小化と最大化のアニメーションは OS のまま | 施主 2026-10-22・[ADR 0022](docs/adr/0022-adopted-look-frameless-window.md)（Nib・Folio と同じ作り）。旧: OS の通常の窓。X11 は WM 次第で Snap と影が効かないことがある。🔴 未実装（planned） |
 
 ## 2. 決め打ちしない項目
 

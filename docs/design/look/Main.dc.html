@@ -1,0 +1,265 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>NeNe Docket 主画面</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 100%; height: 900px; display: flex; flex-direction: column; overflow: hidden; font-family: 'Noto Sans JP', system-ui, sans-serif; font-size: 13px; background: {{c.bg}}; color: {{c.text}}">
+
+<!-- タイトルバー（40）: ビューのタブ・台帳の名前・窓の操作 -->
+<div style="height: 40px; flex: none; display: flex; align-items: flex-end; background: {{c.band}}; padding-left: 8px">
+<div style="height: 40px; display: flex; align-items: center; gap: 8px; padding: 0 12px 0 6px">
+<svg width="18" height="18" viewBox="0 0 18 18" aria-hidden="true"><rect x="2.5" y="2.5" width="13" height="13" rx="3" fill="none" stroke="#E95420" stroke-width="1.6"></rect><path d="M5.5 7h7M5.5 10h7M5.5 13h4" stroke="#E95420" stroke-width="1.6" stroke-linecap="round"></path></svg>
+</div>
+<sc-for list="{{tabs}}" as="tab" hint-placeholder-count="3">
+<div style="height: 32px; min-width: 120px; box-sizing: border-box; padding: 0 12px 0 14px; margin-right: 2px; display: flex; align-items: center; gap: 10px; border-radius: 6px 6px 0 0; background: {{tab.bg}}; color: {{tab.fg}}; box-shadow: {{tab.line}}">
+<span style="font-size: 12.5px; font-weight: {{tab.weight}}; white-space: nowrap">{{tab.name}}</span>
+<span style="font-size: 11px; color: {{c.muted}}; font-family: 'JetBrains Mono', monospace">{{tab.count}}</span>
+</div>
+</sc-for>
+<button aria-label="ビューを足す" style="height: 32px; width: 32px; border: 0; background: transparent; color: {{c.muted}}; display: flex; align-items: center; justify-content: center; align-self: center; margin-bottom: 4px"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M7 2v10M2 7h10" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg></button>
+<div style="flex: 1; height: 40px; display: flex; align-items: center; justify-content: center; color: {{c.muted}}; font-size: 12px; gap: 8px">
+<span>総務部 業務改善プロジェクト 課題管理表</span>
+</div>
+<div role="group" aria-label="表示" style="display: flex; height: 40px; align-self: flex-start; align-items: stretch; margin-right: 6px">
+<sc-for list="{{panes}}" as="v" hint-placeholder-count="3">
+<button style="height: 40px; padding: 0 14px; border: 0; font: inherit; font-size: 12.5px; background: {{v.bg}}; color: {{v.fg}}; box-shadow: {{v.line}}">{{v.name}}</button>
+</sc-for>
+</div>
+<button aria-label="ヘルプ" style="width: 36px; height: 40px; border: 0; background: transparent; color: {{c.muted}}; display: flex; align-items: center; justify-content: center; align-self: flex-start"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="currentColor" stroke-width="1.3"></circle><path d="M6.2 6.3a1.9 1.9 0 1 1 2.6 1.8c-.5.2-.8.6-.8 1.1v.4" fill="none" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path><circle cx="8" cy="11.6" r="0.8" fill="currentColor"></circle></svg></button>
+<button aria-label="台帳の設定" style="width: 36px; height: 40px; border: 0; background: transparent; color: {{c.muted}}; display: flex; align-items: center; justify-content: center; align-self: flex-start; margin-right: 8px"><svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="2.4" fill="none" stroke="currentColor" stroke-width="1.3"></circle><path d="M8 1.5v2M8 12.5v2M1.5 8h2M12.5 8h2M3.4 3.4l1.4 1.4M11.2 11.2l1.4 1.4M3.4 12.6l1.4-1.4M11.2 4.8l1.4-1.4" stroke="currentColor" stroke-width="1.3" stroke-linecap="round"></path></svg></button>
+<div style="display: flex; height: 40px; align-self: flex-start">
+<button aria-label="最小化" style="width: 46px; height: 40px; border: 0; background: transparent; color: {{c.muted}}; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 5h10" stroke="currentColor" stroke-width="1"></path></svg></button>
+<button aria-label="最大化" style="width: 46px; height: 40px; border: 0; background: transparent; color: {{c.muted}}; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><rect x="0.5" y="0.5" width="9" height="9" fill="none" stroke="currentColor" stroke-width="1"></rect></svg></button>
+<button aria-label="閉じる" style="width: 46px; height: 40px; border: 0; background: transparent; color: {{c.muted}}; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M0 0l10 10M10 0L0 10" stroke="currentColor" stroke-width="1"></path></svg></button>
+</div>
+</div>
+
+<!-- 道具の行（48）: 検索・絞り込みの札・列・追加 -->
+<div style="height: 52px; flex: none; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid {{c.line}}">
+<label style="display: flex; align-items: center; gap: 8px; width: 300px; height: 32px; box-sizing: border-box; padding: 0 10px; border-radius: 6px; background: {{c.field}}; border: 1px solid {{c.border}}; color: {{c.muted}}">
+<svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><circle cx="6" cy="6" r="4.5" fill="none" stroke="currentColor" stroke-width="1.4"></circle><path d="M9.5 9.5L13 13" stroke="currentColor" stroke-width="1.4" stroke-linecap="round"></path></svg>
+<input aria-label="課題を検索" placeholder="題名・本文・対応策を検索" style="flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: {{c.text}}; font: inherit; font-size: 12.5px">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: {{c.muted}}">Ctrl+F</span>
+</label>
+<sc-for list="{{chips}}" as="chip" hint-placeholder-count="4">
+<button style="height: 28px; padding: 0 10px; border-radius: 14px; font: inherit; font-size: 12px; display: flex; align-items: center; gap: 6px; background: {{chip.bg}}; color: {{chip.fg}}; border: 1px solid {{chip.bd}}">{{chip.label}}<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; opacity: 0.85">{{chip.count}}</span></button>
+</sc-for>
+<div style="flex: 1"></div>
+<button style="height: 32px; padding: 0 12px; border-radius: 6px; font: inherit; font-size: 12.5px; display: flex; align-items: center; gap: 6px; background: transparent; color: {{c.text}}; border: 1px solid {{c.border}}"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M2 2h10v10H2zM5.5 2v10M9 2v10" fill="none" stroke="currentColor" stroke-width="1.2"></path></svg>項目</button>
+<button style="height: 32px; padding: 0 12px; border-radius: 6px; font: inherit; font-size: 12.5px; display: flex; align-items: center; gap: 6px; background: transparent; color: {{c.text}}; border: 1px solid {{c.border}}"><svg width="14" height="14" viewBox="0 0 14 14" aria-hidden="true"><path d="M3 2h8v4H3zM2 6h10v5H9.5v2h-5v-2H2z" fill="none" stroke="currentColor" stroke-width="1.2" stroke-linejoin="round"></path></svg>印刷</button>
+<button style="height: 32px; padding: 0 14px; border-radius: 6px; font: inherit; font-size: 12.5px; font-weight: 500; display: flex; align-items: center; gap: 6px; background: #E95420; color: #FFFFFF; border: 0"><svg width="12" height="12" viewBox="0 0 12 12" aria-hidden="true"><path d="M6 1v10M1 6h10" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"></path></svg>課題を追加<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; opacity: 0.8">Ctrl+N</span></button>
+</div>
+
+<!-- 定例の帯（定例のとき） -->
+<sc-if value="{{meeting}}" hint-placeholder-val="{{ false }}">
+<div style="height: 40px; flex: none; display: flex; align-items: center; gap: 14px; padding: 0 16px; background: {{c.accentSoft}}; border-bottom: 1px solid {{c.line}}">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="8" cy="8" r="6.5" fill="none" stroke="#E95420" stroke-width="1.4"></circle><path d="M8 4.5V8l2.5 1.5" stroke="#E95420" stroke-width="1.4" stroke-linecap="round" fill="none"></path></svg>
+<span style="font-weight: 500">前回の定例（10/15 10:00・森）から 12 か所の変更</span>
+<span style="color: {{c.muted}}">新規 3 · 完了 2 · 期限を過ぎた 2 · 担当の変更 1</span>
+<div style="flex: 1"></div>
+<button style="height: 28px; padding: 0 10px; border-radius: 6px; font: inherit; font-size: 12px; background: transparent; color: {{c.text}}; border: 1px solid {{c.border}}">変わった行だけ</button>
+<button style="height: 28px; padding: 0 10px; border-radius: 6px; font: inherit; font-size: 12px; background: transparent; color: {{c.text}}; border: 1px solid {{c.border}}">今日を基準にする</button>
+</div>
+</sc-if>
+
+<!-- 本体: 表 ＋ 詳細のペイン -->
+<div style="flex: 1; min-height: 0; display: flex">
+
+<div style="flex: 1; min-width: 0; overflow: auto">
+<div style="min-width: 900px">
+<div style="height: 34px; display: grid; grid-template-columns: {{grid}}; align-items: center; padding: 0 16px; column-gap: 12px; position: sticky; top: 0; background: {{c.bg}}; border-bottom: 1px solid {{c.line}}; color: {{c.muted}}; font-size: 11.5px; font-weight: 500">
+<span>No</span><span>起票日</span><span>分類</span><span>課題</span><span>担当</span><span>期限</span><span>優先度</span><span>状態</span><span>完了日</span>
+</div>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="10">
+<div style="min-height: {{rowH}}; display: grid; grid-template-columns: {{grid}}; align-items: center; padding: 0 16px; column-gap: 12px; border-bottom: 1px solid {{c.line}}; background: {{r.bg}}; color: {{r.fg}}">
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: {{c.muted}}; display: flex; align-items: center; gap: 6px"><span style="width: 6px; height: 6px; border-radius: 3px; background: {{r.mark}}"></span>{{r.no}}</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: {{c.muted}}">{{r.date}}</span>
+<span style="font-size: 12px; color: {{c.muted}}">{{r.cat}}</span>
+<span style="min-width: 0; padding: 8px 0; display: flex; flex-direction: column; gap: 2px">
+<span style="font-weight: {{r.weight}}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; text-decoration: {{r.strike}}">{{r.title}}</span>
+<sc-if value="{{showSub}}" hint-placeholder-val="{{ true }}"><span style="font-size: 11.5px; color: {{c.muted}}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{r.sub}}</span></sc-if>
+</span>
+<span style="font-size: 12.5px">{{r.who}}</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: {{r.dueFg}}; font-weight: {{r.dueWeight}}">{{r.due}}</span>
+<span style="font-size: 12px; color: {{r.prioFg}}; font-weight: {{r.prioWeight}}">{{r.prio}}</span>
+<span><span style="display: inline-flex; align-items: center; gap: 6px; height: 22px; padding: 0 9px; border-radius: 11px; font-size: 11.5px; background: {{r.pillBg}}; color: {{r.pillFg}}; border: 1px solid {{r.pillBd}}"><span style="width: 6px; height: 6px; border-radius: 3px; background: {{r.pillDot}}"></span>{{r.state}}</span></span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11.5px; color: {{c.muted}}">{{r.done}}</span>
+</div>
+</sc-for>
+</div>
+</div>
+
+<!-- 詳細のペイン（既定 380・境をドラッグで 300〜640） -->
+<div aria-label="詳細のペインの幅を変える" style="width: 7px; flex: none; margin-right: -4px; position: relative; z-index: 1; display: flex; align-items: center; justify-content: center; cursor: col-resize; background: transparent"><span style="width: 3px; height: 32px; border-radius: 2px; background: {{c.border}}; display: block"></span></div>
+<div style="width: 380px; flex: none; display: flex; flex-direction: column; background: {{c.pane}}; border-left: 1px solid {{c.line}}; min-height: 0">
+<div style="padding: 16px 20px 12px; display: flex; flex-direction: column; gap: 10px; border-bottom: 1px solid {{c.line}}">
+<div style="display: flex; align-items: center; gap: 8px; color: {{c.muted}}; font-size: 11.5px">
+<span style="font-family: 'JetBrains Mono', monospace">森-2</span><span>·</span><span>IT</span><div style="flex: 1"></div>
+<button aria-label="詳細を閉じる" style="width: 24px; height: 24px; border: 0; background: transparent; color: {{c.muted}}; display: flex; align-items: center; justify-content: center"><svg width="10" height="10" viewBox="0 0 10 10" aria-hidden="true"><path d="M1 1l8 8M9 1L1 9" stroke="currentColor" stroke-width="1.3"></path></svg></button>
+</div>
+<div style="font-size: 17px; font-weight: 700; line-height: 1.45">共有フォルダの権限が人によって違う</div>
+<div style="display: flex; gap: 4px; flex-wrap: wrap">
+<sc-for list="{{states}}" as="s" hint-placeholder-count="6">
+<button style="height: 26px; padding: 0 9px; border-radius: 13px; font: inherit; font-size: 11.5px; background: {{s.bg}}; color: {{s.fg}}; border: 1px solid {{s.bd}}">{{s.name}}</button>
+</sc-for>
+</div>
+</div>
+<div style="flex: 1; min-height: 0; overflow: auto; padding: 14px 20px; display: flex; flex-direction: column; gap: 16px">
+<div style="display: grid; grid-template-columns: 76px minmax(0, 1fr); row-gap: 9px; column-gap: 12px; font-size: 12.5px">
+<sc-for list="{{props}}" as="p" hint-placeholder-count="7">
+<span style="color: {{c.muted}}; display: flex; align-items: center; gap: 4px">{{p.k}}</span>
+<span style="color: {{p.fg}}; font-family: {{p.font}}">{{p.v}}</span>
+</sc-for>
+</div>
+<sc-for list="{{texts}}" as="t" hint-placeholder-count="3">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="font-size: 11.5px; color: {{c.muted}}; font-weight: 500">{{t.k}}</span>
+<div style="font-size: 12.5px; line-height: 1.7; padding: 9px 11px; border-radius: 6px; background: {{c.field}}; border: 1px solid {{c.border}}; white-space: pre-line">{{t.v}}</div>
+</div>
+</sc-for>
+<div style="display: flex; flex-direction: column; gap: 8px">
+<span style="font-size: 11.5px; color: {{c.muted}}; font-weight: 500">履歴</span>
+<sc-for list="{{history}}" as="h" hint-placeholder-count="3">
+<div style="display: grid; grid-template-columns: 74px 36px minmax(0, 1fr); column-gap: 8px; font-size: 11.5px; color: {{c.muted}}">
+<span style="font-family: 'JetBrains Mono', monospace">{{h.when}}</span><span>{{h.who}}</span><span style="color: {{c.text}}">{{h.what}}</span>
+</div>
+</sc-for>
+</div>
+</div>
+</div>
+
+</div>
+
+<!-- ステータスバー（28） -->
+<div style="height: 28px; flex: none; display: flex; align-items: center; gap: 16px; padding: 0 12px; background: {{c.status}}; color: {{c.muted}}; font-size: 11.5px">
+<span style="display: flex; align-items: center; gap: 6px"><span style="width: 7px; height: 7px; border-radius: 4px; background: {{c.synced}}"></span>3 秒前に同期</span>
+<span style="font-family: 'JetBrains Mono', monospace">\\LinkStation\share\業務改善</span>
+<div style="flex: 1"></div>
+<span>全 124 件 · 未完了 37 · 期限超過 <span style="color: #E95420; font-weight: 700">5</span></span>
+<span><span style="color: {{c.text}}">Ctrl+P</span> 課題へ移動</span>
+<span><span style="color: {{c.text}}">F1</span> ヘルプ</span>
+<span>森（編集者）</span>
+<span>日本語</span>
+</div>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"theme":{"editor":"enum","options":["dark","light"],"default":"dark"},"mode":{"editor":"enum","options":["normal","meeting"],"default":"normal"},"lines":{"editor":"enum","options":["1","2"],"default":"2"},"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const theme = this.props.theme ?? 'dark';
+    const meeting = (this.props.mode ?? 'normal') === 'meeting';
+    const lines = this.props.lines ?? '2';
+    const dark = {
+      bg: '#300A24', band: '#1E0516', status: '#26071D', pane: '#2A0820', line: '#43183A', field: '#3B1430', border: '#5A2A4C',
+      text: '#EEEEEC', muted: '#B8A9B3', accentText: '#F6B49A', accentSoft: 'rgba(233,84,32,0.16)', select: '#4A1E3D',
+      toggle: '#4A1E3D', check: '#D7C4E5', checkBg: 'rgba(215,196,229,0.12)', done: '#B8A9B3', synced: '#7CC4A0'
+    };
+    const light = {
+      bg: '#F4F5F7', band: '#E1E4E9', status: '#E9EBEF', pane: '#FFFFFF', line: '#E1E4E9', field: '#FFFFFF', border: '#D5D9E0',
+      text: '#1B1F24', muted: '#5C6570', accentText: '#B23A0F', accentSoft: 'rgba(233,84,32,0.10)', select: '#FBE3D9',
+      toggle: '#DFE3E8', check: '#5E2750', checkBg: 'rgba(94,39,80,0.08)', done: '#5C6570', synced: '#2F7D57'
+    };
+    const c = theme === 'light' ? light : dark;
+    const tabDefs = [
+      { name: '全件', count: '124', active: !meeting },
+      { name: '定例 10/22', count: '37', active: meeting },
+      { name: '自分の担当', count: '9', active: false }
+    ];
+    const tabs = tabDefs.map((t) => ({
+      name: t.name, count: t.count,
+      bg: t.active ? c.bg : 'transparent', fg: t.active ? c.text : c.muted,
+      weight: t.active ? 500 : 400, line: t.active ? 'inset 0 -2px 0 #E95420' : 'none'
+    }));
+    const panes = ['表', '両方', '詳細'].map((n) => ({
+      name: n, bg: n === '両方' ? c.bg : 'transparent', fg: n === '両方' ? c.text : c.muted,
+      line: n === '両方' ? 'inset 0 -2px 0 #E95420' : 'none'
+    }));
+    const chipDefs = [
+      { label: '未完了', count: '37', on: true }, { label: '期限超過', count: '5', on: false },
+      { label: '担当: 自分', count: '9', on: false }, { label: '分類: すべて', count: '', on: false }
+    ];
+    const chips = chipDefs.map((x) => ({
+      label: x.label, count: x.count,
+      bg: x.on ? c.accentSoft : 'transparent', fg: x.on ? c.accentText : c.text, bd: x.on ? 'rgba(233,84,32,0.55)' : c.border
+    }));
+    const pill = {
+      '未着手': { bg: 'transparent', fg: c.muted, bd: c.border, dot: c.muted },
+      '対応中': { bg: c.accentSoft, fg: c.accentText, bd: 'rgba(233,84,32,0.45)', dot: '#E95420' },
+      '確認中': { bg: c.checkBg, fg: c.check, bd: 'transparent', dot: c.check },
+      '保留': { bg: 'transparent', fg: c.muted, bd: c.border, dot: 'transparent' },
+      '完了': { bg: 'transparent', fg: c.done, bd: 'transparent', dot: c.synced }
+    };
+    const data = [
+      ['森-1', '10/01', '業務', '経費精算の承認が月末に集中する', '対応策: 週次の締めに分け、承認者を 2 名にする', '田中', '10/18', true, '高', '対応中', '', true],
+      ['森-2', '10/01', 'IT', '共有フォルダの権限が人によって違う', '原因: 退職者の権限が残っている', '森', '10/25', false, '中', '確認中', '', false],
+      ['森-3', '10/03', '業務', '請求書の差し戻しが多い', '対応策: 記入例をテンプレートに足す', '佐藤', '10/20', true, '高', '未着手', '', true],
+      ['佐藤-1', '10/05', '総務', '会議室の予約が重なる', '対応策: 予約表を 1 本にまとめた', '佐藤', '10/12', false, '中', '完了', '10/11', false],
+      ['田中-1', '10/07', 'IT', 'VPN が夕方に遅くなる', '原因: 回線の契約帯域が足りない', '森', '10/31', false, '中', '対応中', '', true],
+      ['森-4', '10/08', '業務', '新人向けの手順書が古い', '対応策: 画面の録画で手順を作り直す', '田中', '11/05', false, '低', '対応中', '', false],
+      ['田中-2', '10/10', '総務', '備品の発注が二重になる', '原因: 発注の台帳が部署ごとに別', '佐藤', '11/08', false, '中', '保留', '', false],
+      ['森-5', '10/12', 'IT', 'プリンタのトナー切れに気づけない', '対応策: 残量の通知をメールに設定した', '森', '10/16', false, '低', '完了', '10/15', true],
+      ['佐藤-2', '10/14', '業務', '取引先マスタに重複がある', '原因: 入力時の名寄せの規則が無い', '森', '11/10', false, '高', '未着手', '', false],
+      ['森-6', '10/18', '総務', 'テレワーク申請の様式が 2 種類ある', '対応策: 様式 A にそろえる', '田中', '10/30', false, '中', '確認中', '', true],
+      ['田中-3', '10/20', 'IT', '古い PC の入れ替え計画', '原因: 保守が切れた PC が 12 台', '佐藤', '12/15', false, '中', '未着手', '', false]
+    ];
+    const rows = data.map((d, i) => {
+      const done = d[9] === '完了';
+      const selected = i === 1;
+      const p = pill[d[9]];
+      const over = d[7];
+      return {
+        no: d[0], date: d[1], cat: d[2], title: d[3], sub: d[4], who: d[5], done: d[10],
+        due: over ? '⚠ ' + d[6] : d[6], dueFg: over ? c.accentText : (done ? c.muted : c.text), dueWeight: over ? 700 : 400,
+        prio: d[8], prioFg: d[8] === '高' ? c.accentText : (d[8] === '低' ? c.muted : c.text), prioWeight: d[8] === '高' ? 700 : 400,
+        state: d[9], pillBg: p.bg, pillFg: p.fg, pillBd: p.bd, pillDot: p.dot,
+        bg: selected ? c.select : 'transparent', fg: done ? c.done : c.text,
+        weight: done ? 400 : 500, strike: 'none',
+        mark: meeting && d[11] ? '#E95420' : 'transparent'
+      };
+    });
+    const states = ['未着手', '対応中', '確認中', '保留', '完了', '中止'].map((n) => ({
+      name: n,
+      bg: n === '確認中' ? c.check : 'transparent', fg: n === '確認中' ? c.bg : c.muted, bd: n === '確認中' ? c.check : c.border
+    }));
+    const mono = "'JetBrains Mono', monospace";
+    const props = [
+      { k: '担当', v: '森', fg: c.text, font: 'inherit' },
+      { k: '期限', v: '2026-10-25（あと 3 日）', fg: c.text, font: 'inherit' },
+      { k: '優先度', v: '中', fg: c.text, font: 'inherit' },
+      { k: '分類', v: 'IT', fg: c.text, font: 'inherit' },
+      { k: '確認者', v: '田中', fg: c.text, font: 'inherit' },
+      { k: '起票', v: '10/01 · 森（自動）', fg: c.muted, font: 'inherit' },
+      { k: '完了日', v: '—', fg: c.muted, font: mono }
+    ];
+    const texts = [
+      { k: '課題の詳細', v: '同じ部署でも、共有フォルダの「経理」を開ける人と開けない人がいる。' },
+      { k: '原因', v: '退職者・異動者の権限が残ったまま、新しい人には個別に足している。' },
+      { k: '対応策', v: '部署ごとのグループに付け替え、個人の権限を外す。\n10/24 に情シスと読み合わせ。' }
+    ];
+    const history = [
+      { when: '10/21 16:40', who: '森', what: '状態: 対応中 → 確認中' },
+      { when: '10/18 09:12', who: '田中', what: '対応策を書いた' },
+      { when: '10/01 10:03', who: '森', what: '起票' }
+    ];
+    return {
+      c, tabs, panes, chips, rows, states, props, texts, history, meeting,
+      showSub: lines === '2', rowH: lines === '2' ? '54px' : '36px',
+      grid: '72px 52px 48px minmax(240px, 1fr) 52px 76px 44px 92px 48px'
+    };
+  }
+}
+</script>
+</body>
+</html>
