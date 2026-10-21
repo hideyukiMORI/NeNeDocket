@@ -625,7 +625,31 @@ application に設定の版 2・`SettingsPort`・`Environment` の言語と明�
 
 🔴 **正直に:** 権限の変更は、既に読み進めた行には開き直すまで効かない（ADR 0010 の 4）。グループは画面から触れない（コマンドラインだけ）。段にスクロールは無い。1 回目の実行は bob が先に台帳を作って持ち主になり（手順の誤り）、2 回目は通知の行で段が上がってチェックの代わりに carol の行を押した（手順の誤り・3 回目で記録）。
 
-## 25. 再現
+## 25. Issue #35 — 履歴から選び直す・上書きの通知（FR-008・2026-10-21）
+
+同じコンテナ。application: `HistoryLine::change`、`HistoryPane` の行（ID 4000〜）を押すと `Set` の行の値を新しい `Set` として追記（いまと同じ値・作成・削除・復元の行は何もしない）。編集欄を読み込んだ時点の課題（`base`）を持ち、確定のとき他人がその後に変えていれば `Notice::Overwrote`（`Word::Overwrote`・6 言語）。Undo / Redo のテスト（他人の操作が間に入っても自分の分だけ戻す・本文とラベルも戻る・新しい操作で Redo が消える）。
+
+### 25.1 ゲート
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 327 件 |
+| `make conformance` | 違反なし（216 ファイル） |
+| `make coverage` | core ＋ application regions 99.00% |
+
+### 25.2 Xvfb（`:93`・2 アカウント・QLT-013）
+
+| 手順 | 見えたもの | PNG |
+| --- | --- | --- |
+| alice が `Original` を作る。bob が題名の欄に `By bob` を打ちかける（確定しない） | | |
+| alice が `By alice` にして確定し Esc | bob の欄は打ちかけのまま | |
+| bob が Enter | 題名は `By bob`（最後の書き手）。bob に `overwrote a change by someone else; pick again from the history` | |
+| alice が履歴を出し `Title :  -> Original` の行を押す | 新しい `Set`（時計 5）が追記され題名は `Original`。bob にも届く | [04-alice-repicked](screenshots/2026-10-21-conflict-04-alice-repicked.png) |
+
+🔴 **正直に:** 1 回目は alice の欄がフォーカスを持ったままで、履歴のチェックを押した瞬間に欄の確定が走り（Issue #11 からの振る舞い）、alice 側にも上書きの通知が出た。FR-008 の規則どおりだが、選び直しは確かめられず、Esc を足した 2 回目で記録した。FR-006 の「過去のどの時点の状態も再現」はまだ（履歴の行を押して 1 項目ずつ戻すだけ）。
+
+## 26. 再現
 
 ```bash
 make prove

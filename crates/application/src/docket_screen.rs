@@ -53,6 +53,7 @@ use crate::docket_frame::DocketFrame;
 use crate::edit_slot::EditSlot;
 use crate::environment::Environment;
 use crate::frame_input::FrameInput;
+use crate::history_change::HistoryChange;
 use crate::history_line::HistoryLine;
 use crate::history_pane::HistoryPane;
 use crate::journal_failure::JournalFailure;
@@ -137,7 +138,11 @@ pub struct DocketScreen {
     labels: TextEdit,
     body: BodyPane,
     members: MembersPane,
+    /// 編集欄を読み込んだ時点の課題。確定のとき、他人がその後に変えていれば上書きと分かる（FR-008）。
+    base: Option<Item>,
     bad_due: bool,
+    /// 他人が変えた後に上書きした欄（FR-008）。別の行を選ぶまで示す。
+    overwrote: Option<EditSlot>,
     state: SelectState,
     history: HistoryPane,
     ledger: Ledger,
@@ -187,7 +192,9 @@ impl DocketScreen {
             labels: TextEdit::empty(),
             body: BodyPane::hidden(),
             members: MembersPane::hidden(environment.scale()),
+            base: None,
             bad_due: false,
+            overwrote: None,
             state: SelectState::closed(ItemState::ALL.len(), 0),
             history: HistoryPane::hidden(environment.scale()),
             ledger: Ledger::open(account, ops),
@@ -427,6 +434,9 @@ impl DocketScreen {
         if self.bad_due {
             notices.push(Notice::NotADate);
         }
+        if self.overwrote.is_some() {
+            notices.push(Notice::Overwrote);
+        }
         notices.extend(self.settings_failure.map(Notice::Settings));
         if self.unknown_theme {
             notices.push(Notice::UnknownTheme);
@@ -603,11 +613,14 @@ impl DocketScreen {
             return;
         };
         let lines = self.history_lines();
-        self.history.probe(
+        let clicked = self.history.probe(
             &mut self.interaction,
             (area, &lines, self.language),
             commands,
         );
+        if let Some(line) = clicked.and_then(|index| lines.get(index)) {
+            self.repick(line.change().clone());
+        }
     }
 
     fn editor_widths(&self) -> [ColumnWidth; 6] {
@@ -892,12 +905,32 @@ impl DocketScreen {
         }
     }
 
+    /// 履歴の行の値を選び直す（FR-008）。`Set` の行で、いまの値と違えば新しい `Set` を追記する。
+    fn repick(&mut self, change: HistoryChange) {
+        let HistoryChange::Set { field, after, .. } = change else {
+            return;
+        };
+        let Some(item) = self.selected_item() else {
+            return;
+        };
+        if item.value_of(field) == after {
+            return;
+        }
+        self.compose(OpKind::Set {
+            item: item.id(),
+            value: after,
+        });
+        self.reload_editor(true);
+    }
+
     /// 行を選ぶ。編集中の欄はその前に確定する。
     fn select(&mut self, id: ItemId) {
         self.commit_unfocused_slots();
         self.selected = Some(id);
         self.bad_due = false;
+        self.overwrote = None;
         let item = self.selected_item();
+        self.base.clone_from(&item);
         for slot in EditSlot::ALL {
             *self.slot_mut(slot) = TextEdit::showing(
                 &item
@@ -921,6 +954,7 @@ impl DocketScreen {
                         .as_ref()
                         .map_or_else(String::new, |found| slot.text_of(found)),
                 );
+                self.rebase(slot, item.as_ref());
             }
         }
         if !self.state.is_open() {
@@ -954,15 +988,31 @@ impl DocketScreen {
             self.bad_due = false;
         }
         if item.value_of(slot.field()) != value {
+            let changed_by_others = self
+                .base
+                .as_ref()
+                .is_some_and(|base| base.value_of(slot.field()) != item.value_of(slot.field()));
+            if changed_by_others {
+                self.overwrote = Some(slot);
+            }
             self.compose(OpKind::Set {
                 item: item.id(),
                 value,
             });
-            // 欄を正規の形（`a, b`・`2026-12-31`）に揃える。
+            // 欄を正規の形（`a, b`・`2026-12-31`）に揃え、読み込んだ時点の値も自分の値にする。
             if let Some(updated) = self.selected_item() {
                 *self.slot_mut(slot) = TextEdit::showing(&slot.text_of(&updated));
+                self.rebase(slot, Some(&updated));
             }
         }
+    }
+
+    /// 欄を読み込んだ時点の値を、いまの値に合わせる（その欄は読み込み直した）。
+    fn rebase(&mut self, slot: EditSlot, item: Option<&Item>) {
+        self.base = match (self.base.take(), item) {
+            (Some(base), Some(current)) => Some(base.with(current.value_of(slot.field()))),
+            (_, current) => current.cloned(),
+        };
     }
 
     /// 状態の箱の選びが変わっていれば `Set` を作る。
@@ -2135,6 +2185,61 @@ mod tests {
         let shown = texts(&idle(&mut screen));
         assert!(shown.iter().any(|text| text == "When"));
         assert!(shown.iter().any(|text| text == "created"));
+    }
+
+    /// 履歴の段（1060×400・残り 80..391 の 2/5 = 124）: 段は 268..391、ヘッダ 268..292、行は 292 から 24 ずつ。
+    const FIRST_HISTORY_Y: u16 = 304;
+    const SECOND_HISTORY_Y: u16 = 328;
+
+    #[test]
+    fn clicking_a_history_line_re_picks_its_value_as_a_new_op() {
+        let mut screen = screen_with_history();
+        let item = ItemId::new(OTHER, 1);
+        // 履歴（新しい順）: undo の行（Done -> In progress）・In progress -> Done・…
+        let before = screen.ledger().ops().len();
+        click(&mut screen, 100, SECOND_HISTORY_Y);
+        assert_eq!(screen.ledger().ops().len(), before + 1);
+        assert_eq!(
+            screen.ledger().docket().item(item).map(Item::state),
+            Some(ItemState::Done)
+        );
+        // いまと同じ値の行を押しても何も追記しない。
+        click(&mut screen, 100, FIRST_HISTORY_Y);
+        assert_eq!(screen.ledger().ops().len(), before + 1);
+        // 「作成」の行は何もしない（一番下。スクロールして押す代わりに直接）。
+        let created = screen.history_lines().last().cloned().unwrap();
+        screen.repick(created.change().clone());
+        assert_eq!(screen.ledger().ops().len(), before + 1);
+    }
+
+    #[test]
+    fn overwriting_a_change_that_arrived_while_editing_is_shown() {
+        let (mut screen, spy) = screen(2);
+        let item = ItemId::new(OTHER, 1);
+        click(&mut screen, 100, FIRST_ROW_Y);
+        click(&mut screen, TITLE_X, EDITOR_Y);
+        keys(&mut screen, &[KeyIntent::SelectAll]);
+        keys(&mut screen, &chars("mine"));
+        // 他人が同じ題名を変えた分が届く。
+        spy.pending.borrow_mut().push(other_op(
+            50,
+            OpKind::Set {
+                item,
+                value: FieldValue::Title(String::from("theirs")),
+            },
+        ));
+        screen.step(&FrameInput::new(BOUNDS, PointerInput::absent()).with_refresh());
+        assert!(screen.notices().is_empty());
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert_eq!(title_of(&screen, item), "mine");
+        assert_eq!(screen.notices(), alloc::vec![Notice::Overwrote]);
+        // 別の行を選ぶと消える。自分だけが変えた欄では出ない。
+        click(&mut screen, 100, SECOND_ROW_Y);
+        assert!(screen.notices().is_empty());
+        click(&mut screen, TITLE_X, EDITOR_Y);
+        keys(&mut screen, &chars("!"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert!(screen.notices().is_empty());
     }
 
     #[test]

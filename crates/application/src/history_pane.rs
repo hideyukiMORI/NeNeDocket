@@ -21,8 +21,10 @@ use nene_docket_core::wording;
 
 use crate::history_line::HistoryLine;
 
-/// 履歴のスクロールバーの ID。画面の他の部品（1〜10・12・100〜・200〜・1000〜）と重ならない。
+/// 履歴のスクロールバーの ID。画面の他の部品（1〜10・12〜19・100〜・200〜・300〜・1000〜・3000〜）と重ならない。
 const HISTORY_SCROLL: WidgetId = WidgetId::new(11);
+/// 履歴の行の ID。見えている順の番号を足す。押すとその値を選び直す（FR-008）。
+const HISTORY_ROW: WidgetId = WidgetId::new(4_000);
 
 /// 1x の寸法。
 const ROW_PX: u16 = 24;
@@ -77,12 +79,13 @@ impl HistoryPane {
     }
 
     /// 段を問い合わせて描く。ホイールはポインタがこの段の上にあるときだけ受ける。文言は `language` で。
+    /// 押した行があればその添字を返す（選び直し・FR-008）。
     pub fn probe(
         &mut self,
         interaction: &mut Interaction,
         (area, lines, language): (PixelRect, &[HistoryLine], Language),
         commands: &mut Vec<DrawCommand>,
-    ) {
+    ) -> Option<usize> {
         let track = PixelRect::new(
             area.right()
                 .saturating_sub(self.px(SCROLL_WIDTH_PX))
@@ -96,8 +99,9 @@ impl HistoryPane {
             .scroll
             .resized(table.content_height(), u32::from(table.body().height()));
         self.header(&table, language, commands);
-        self.rows(&table, (lines, language), commands);
+        let clicked = self.rows(interaction, (&table, lines, language), commands);
         self.scroll_bar(interaction, (track, area), commands);
+        clicked
     }
 
     /// 1x の寸法に倍率を掛ける。
@@ -138,18 +142,33 @@ impl HistoryPane {
         }
     }
 
+    /// 行を描き、押した行の添字を返す。ポインタの下の行は面の色で示す。
     fn rows(
         &self,
-        table: &TableLayout,
-        (lines, language): (&[HistoryLine], Language),
+        interaction: &mut Interaction,
+        (table, lines, language): (&TableLayout, &[HistoryLine], Language),
         commands: &mut Vec<DrawCommand>,
-    ) {
+    ) -> Option<usize> {
         let padding = self.px(PADDING_PX);
+        let mut clicked = None;
         commands.push(DrawCommand::Clip(table.body()));
         for (index, rect) in table.visible_rows(self.scroll.offset()) {
-            let Some(line) = usize::try_from(index).ok().and_then(|i| lines.get(i)) else {
+            let Some((position, line)) = usize::try_from(index)
+                .ok()
+                .and_then(|i| lines.get(i).map(|line| (i, line)))
+            else {
                 continue;
             };
+            let response = interaction.probe(HISTORY_ROW.indexed(index), rect, false);
+            if response.clicked() {
+                clicked = Some(position);
+            }
+            if response.phase() != ResponsePhase::Idle {
+                commands.push(DrawCommand::Fill {
+                    rect,
+                    paint: Paint::Surface,
+                });
+            }
             let paint = if line.is_undo() {
                 Paint::Muted
             } else {
@@ -160,6 +179,7 @@ impl HistoryPane {
             }
         }
         commands.push(DrawCommand::Unclip);
+        clicked
     }
 
     fn scroll_bar(

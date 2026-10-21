@@ -247,6 +247,71 @@ mod tests {
     }
 
     #[test]
+    fn undo_skips_others_ops_and_restores_every_kind_of_field() {
+        let mut ledger = ledger();
+        let item = ledger.fresh_item_id();
+        ledger.compose(WallClock::new(0), OpKind::Create(item));
+        ledger.compose(
+            WallClock::new(0),
+            OpKind::Set {
+                item,
+                value: FieldValue::Labels(alloc::vec![String::from("a")]),
+            },
+        );
+        ledger.compose(
+            WallClock::new(0),
+            OpKind::Set {
+                item,
+                value: FieldValue::Body(String::from("two\nlines")),
+            },
+        );
+        // 他人が間に題名を変える。自分の Undo はそれを飛ばす。
+        ledger.absorb(alloc::vec![Op::new(
+            OpId::new(LogicalClock::new(10), OTHER),
+            WallClock::new(0),
+            OpKind::Set {
+                item,
+                value: FieldValue::Title(String::from("theirs")),
+            },
+        )]);
+        assert!(ledger.compose_undo(WallClock::new(0)).is_some());
+        let after_one = ledger.docket().item(item).cloned().unwrap();
+        assert_eq!(after_one.body(), "");
+        assert_eq!(after_one.title(), "theirs");
+        assert!(ledger.compose_undo(WallClock::new(0)).is_some());
+        let after_two = ledger.docket().item(item).cloned().unwrap();
+        assert!(after_two.labels().is_empty());
+        assert_eq!(after_two.title(), "theirs");
+    }
+
+    #[test]
+    fn redo_revives_the_op_and_a_fresh_op_clears_redo() {
+        let mut ledger = ledger();
+        let item = ledger.fresh_item_id();
+        ledger.compose(WallClock::new(0), OpKind::Create(item));
+        ledger.compose(
+            WallClock::new(0),
+            OpKind::Set {
+                item,
+                value: FieldValue::Labels(alloc::vec![String::from("a")]),
+            },
+        );
+        assert!(ledger.compose_undo(WallClock::new(0)).is_some());
+        assert!(ledger.compose_redo(WallClock::new(0)).is_some());
+        assert_eq!(
+            ledger
+                .docket()
+                .item(item)
+                .map(|found| found.labels().to_vec()),
+            Some(alloc::vec![String::from("a")])
+        );
+        // 新しい操作をすると Redo は消える。
+        set_title(&mut ledger, item, "fresh");
+        assert!(!ledger.can_redo());
+        assert!(ledger.can_undo());
+    }
+
+    #[test]
     fn reopening_from_the_ops_restores_clock_sequence_and_undo() {
         let mut first = ledger();
         let item = first.fresh_item_id();
