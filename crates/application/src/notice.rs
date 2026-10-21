@@ -21,6 +21,8 @@ pub enum Notice {
     RejectedLines(usize),
     /// 期限の欄が日付の形（`YYYY-MM-DD`）でない。追記していない。
     NotADate,
+    /// グループ名に `:` があり、権限に書かなかった（FR-010）。
+    BadGroupName,
     /// 設定を書けない。
     Settings(SettingsFailure),
     /// 配色の欄の名前が組み込みに無い。変えていない。
@@ -45,6 +47,7 @@ impl Notice {
             Self::Orphans(count) => format!("{}: {count}", word(Word::OrphanOperations)),
             Self::RejectedLines(count) => format!("{}: {count}", word(Word::RejectedLines)),
             Self::NotADate => String::from(word(Word::NotADate)),
+            Self::BadGroupName => String::from(word(Word::BadGroupName)),
             Self::Settings(SettingsFailure::Unwritable) => {
                 String::from(word(Word::CannotWriteSettings))
             }
@@ -70,6 +73,7 @@ mod tests {
             Notice::Orphans(2),
             Notice::RejectedLines(1),
             Notice::NotADate,
+            Notice::BadGroupName,
             Notice::Settings(SettingsFailure::Unwritable),
             Notice::UnknownTheme,
             Notice::UnverifiedLines(3),

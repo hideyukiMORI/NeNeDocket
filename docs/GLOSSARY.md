@@ -9,7 +9,7 @@
 | 台帳（docket） | 1 つのフォルダ。課題の集合と、それを作ったジャーナルの全部。併合した状態も同じ名で呼ぶ | `Docket`（core・課題の集合と作られた順と宛先の無い操作の数）・フォルダ |
 | 画面の状態の所有者 | 検索欄・絞り込み・完了の表示・表の選択とスクロール・判定を 1 つ持ち、1 フレームの入力で次の状態へ置き換える | `DocketScreen`（application）・ADR 0006 |
 | 本文の段（body pane） | 選んだ課題の本文を出す複数行の欄。表の下。道具の段の「本文」で出す。フォーカスが外れたら `Set` を追記 | `BodyPane`（application）・`text_area`（core） |
-| 参加者の段（members pane） | 台帳に参加したアカウント（`keys/`）の名前・ID・役。持ち主は「権限」と行の押下で権限を変える | `MembersPane` / `Member` / `MemberRole`（application）・FR-009 / FR-010 |
+| 参加者の段（members pane） | 台帳に参加したアカウント（`keys/`）の名前・ID・役。持ち主は「権限」で有効・無効を切り替え、行を押して選ぶと編集行（「編集者」のチェック・グループの欄）が出る | `MembersPane` / `Member` / `MemberRole`（application）・FR-009 / FR-010 |
 | 課題（item） | 台帳の 1 行。題名・本文・状態・担当・期限・ラベル・並び順と、消されているか。併合の派生値 | `Item` / `ItemId`（作ったアカウントと連番）（core） |
 | 項目（field） | 課題の 1 つの属性。操作は項目単位で勝敗が付く | `Field` / `FieldValue`（core・閉じた `enum`） |
 | 状態（state） | 課題の進み具合。閉じた集合 | `ItemState`（core） |

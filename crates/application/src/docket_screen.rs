@@ -88,7 +88,7 @@ const THEME: WidgetId = WidgetId::new(15);
 /// 16 は本文の段の欄（`body_pane`）。
 const BODY_TOGGLE: WidgetId = WidgetId::new(17);
 const MEMBERS_TOGGLE: WidgetId = WidgetId::new(18);
-/// 19 は参加者の段の「権限」のチェック、21 はそのスクロールバー（`members_pane`）。20 は本文のスクロールバー（`body_pane`）。
+/// 19 は参加者の段の「権限」のチェック、21 はそのスクロールバー、22・23 は編集行の「編集者」とグループの欄（`members_pane`）。20 は本文のスクロールバー（`body_pane`）。
 const FILTER_OPTION: WidgetId = WidgetId::new(100);
 const STATE_OPTION: WidgetId = WidgetId::new(200);
 const LANGUAGE_OPTION: WidgetId = WidgetId::new(300);
@@ -452,6 +452,9 @@ impl DocketScreen {
         if self.bad_due {
             notices.push(Notice::NotADate);
         }
+        if self.members.has_bad_groups() {
+            notices.push(Notice::BadGroupName);
+        }
         if self.overwrote.is_some() {
             notices.push(Notice::Overwrote);
         }
@@ -596,13 +599,13 @@ impl DocketScreen {
         let members = self.members();
         let owner = self.ports.journal().owner() == Some(self.ledger.account().id());
         let enabled = self.ports.journal().permissions().is_some();
-        let (drawn, action) = self.members.probe(
+        let (drawn, actions) = self.members.probe(
             &mut self.interaction,
             (area, &members, self.language),
             (owner, enabled),
         );
         commands.extend(drawn);
-        if let Some(action) = action {
+        for action in actions {
             self.administer(action, enabled);
         }
     }
@@ -616,16 +619,42 @@ impl DocketScreen {
                     .ports
                     .journal()
                     .permissions()
-                    .is_some_and(|permissions| permissions.may_edit(id));
+                    .is_some_and(|permissions| permissions.editors().contains(&id));
                 alloc::vec![if editor {
                     AdminCommand::Disallow(id)
                 } else {
                     AdminCommand::Allow(id)
                 }]
             }
+            MembersAction::SetGroups(id, wanted) => self.group_commands(id, &wanted),
         };
+        if commands.is_empty() {
+            return;
+        }
         self.admin_failure = self.ports.journal_mut().administer(&commands).err();
         self.names = self.ports.journal().names();
+    }
+
+    /// その人のいまのグループと望む集合の差分を `Group` / `Ungroup` に。
+    fn group_commands(&self, id: AccountId, wanted: &[String]) -> Vec<AdminCommand> {
+        let current: Vec<String> = self
+            .members()
+            .into_iter()
+            .find(|member| member.id() == id)
+            .map(|member| member.groups().to_vec())
+            .unwrap_or_default();
+        let mut commands: Vec<AdminCommand> = wanted
+            .iter()
+            .filter(|name| !current.contains(name))
+            .map(|name| AdminCommand::Group(name.clone(), id))
+            .collect();
+        commands.extend(
+            current
+                .iter()
+                .filter(|name| !wanted.contains(name))
+                .map(|name| AdminCommand::Ungroup(name.clone(), id)),
+        );
+        commands
     }
 
     /// 本文の段。複数行の欄 1 つ。
@@ -881,6 +910,8 @@ impl DocketScreen {
             self.search = self.search.with_preedit(input.preedit().cloned());
         } else if self.interaction.focus() == Some(THEME) {
             self.theme_edit = self.theme_edit.with_preedit(input.preedit().cloned());
+        } else if self.interaction.focus() == Some(MembersPane::groups_id()) {
+            self.members.set_preedit(input.preedit().cloned());
         } else if let Some(slot) = self.focused_slot() {
             let edit = self.slot_mut(slot);
             *edit = edit.with_preedit(input.preedit().cloned());
@@ -923,6 +954,12 @@ impl DocketScreen {
                 self.language_changed(before);
             }
             Some(THEME) => self.theme_key(key),
+            Some(id) if id == MembersPane::groups_id() => {
+                if let Some(action) = self.members.groups_key(key) {
+                    let enabled = self.ports.journal().permissions().is_some();
+                    self.administer(action, enabled);
+                }
+            }
             Some(STATE) => {
                 let before = self.state.chosen();
                 self.state = self.state.applied(key);
@@ -958,11 +995,20 @@ impl DocketScreen {
             HISTORY_TOGGLE if pressed => self.history.toggle(),
             BODY_TOGGLE if pressed => self.body.toggle(),
             MEMBERS_TOGGLE if pressed => self.members.toggle(),
+            id if pressed && id == MembersPane::editor_id() => self.press_member_editor(),
             ADD if key == KeyIntent::Enter => self.add_item(),
             DELETE if key == KeyIntent::Enter => self.delete_item(),
             _ => return false,
         }
         true
+    }
+
+    /// 参加者の編集行の「編集者」を鍵で押した。
+    fn press_member_editor(&mut self) {
+        if let Some(action) = self.members.editor_key() {
+            let enabled = self.ports.journal().permissions().is_some();
+            self.administer(action, enabled);
+        }
     }
 
     /// フォーカスが無いときの上下はスクロール。
@@ -2630,9 +2676,13 @@ mod tests {
     }
 
     /// 参加者の段（1060×400・残り 80..391 の 2/5 = 124）: 段は 268..391、ヘッダ 268..292、行は 292 から 24 ずつ。
+    /// 持ち主でない人を選ぶと編集行（268..292）が上に入り、ヘッダと行は 28 下がる。
     const MEMBERS_HEADER_Y: u16 = 280;
-    const FIRST_MEMBER_Y: u16 = 304;
     const SECOND_MEMBER_Y: u16 = 328;
+    const EDIT_ROW_Y: u16 = 280;
+    const EDITOR_X: u16 = 60;
+    const GROUPS_X: u16 = 500;
+    const SHIFTED_FIRST_MEMBER_Y: u16 = 332;
 
     #[test]
     fn the_members_pane_lists_accounts_and_the_owner_changes_permissions() {
@@ -2660,6 +2710,11 @@ mod tests {
         assert!(!screen.shows_members());
     }
 
+    /// 「Editor」の文字の数（役の欄と、編集行のチェック）。
+    fn editor_texts(frame: &DocketFrame) -> usize {
+        texts(frame).iter().filter(|text| *text == "Editor").count()
+    }
+
     #[test]
     fn the_owner_turns_permissions_on_and_toggles_editors_from_the_pane() {
         let (mut screen, _) = screen(2);
@@ -2668,21 +2723,96 @@ mod tests {
         click(&mut screen, 1000, MEMBERS_HEADER_Y);
         let roles: Vec<MemberRole> = screen.members().iter().map(Member::role).collect();
         assert_eq!(roles, [MemberRole::Owner, MemberRole::Viewer]);
-        // 他人の行を押す → 編集者。もう一度 → 閲覧のみ。
+        // 他人の行を押すと選ばれ、編集行が出る。「編集者」を押す → 編集者。もう一度 → 閲覧のみ。
         click(&mut screen, 100, SECOND_MEMBER_Y);
-        assert_eq!(screen.members()[1].role(), MemberRole::Editor);
-        click(&mut screen, 100, SECOND_MEMBER_Y);
+        assert_eq!(screen.members.selected(), Some(OTHER));
         assert_eq!(screen.members()[1].role(), MemberRole::Viewer);
-        click(&mut screen, 100, FIRST_MEMBER_Y);
+        assert_eq!(editor_texts(&idle(&mut screen)), 1);
+        click(&mut screen, EDITOR_X, EDIT_ROW_Y);
+        assert_eq!(screen.members()[1].role(), MemberRole::Editor);
+        click(&mut screen, EDITOR_X, EDIT_ROW_Y);
+        assert_eq!(screen.members()[1].role(), MemberRole::Viewer);
+        // 鍵でも押せる（Tab で編集行のチェックへ）。
+        keys(&mut screen, &[KeyIntent::Char(' ')]);
+        assert_eq!(screen.members()[1].role(), MemberRole::Editor);
+    }
+
+    #[test]
+    fn selecting_the_owner_hides_the_edit_row_and_turning_permissions_off_clears_the_selection() {
+        let (mut screen, _) = screen(2);
+        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, 100, SECOND_MEMBER_Y);
+        click(&mut screen, EDITOR_X, EDIT_ROW_Y);
+        assert_eq!(screen.members()[1].role(), MemberRole::Editor);
+        // 持ち主の行を選ぶと編集行は出ない。
+        click(&mut screen, 100, SHIFTED_FIRST_MEMBER_Y);
+        assert_eq!(screen.members.selected(), Some(ME));
         assert_eq!(screen.members()[0].role(), MemberRole::Owner);
+        // 役の「編集者」の 1 つだけで、チェックの文字は無い。
+        assert_eq!(editor_texts(&idle(&mut screen)), 1);
         assert!(screen.notices().is_empty());
         click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        idle(&mut screen);
+        assert_eq!(screen.members.selected(), None);
         assert!(
             screen
                 .members()
                 .iter()
                 .all(|m| m.role() == MemberRole::Anyone)
         );
+    }
+
+    #[test]
+    fn the_owner_edits_groups_from_the_pane_with_enter_or_by_leaving_the_field() {
+        let (mut screen, _) = screen(2);
+        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, 100, SECOND_MEMBER_Y);
+        click(&mut screen, GROUPS_X, EDIT_ROW_Y);
+        assert_eq!(screen.interaction.focus(), Some(MembersPane::groups_id()));
+        keys(&mut screen, &chars("qa, dev"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert_eq!(screen.members()[1].groups(), ["dev", "qa"]);
+        assert_eq!(screen.members()[1].role(), MemberRole::Editor);
+        // グループだけで書ける人は「編集者」のチェックが空で、押すと一覧にも入る。
+        assert!(!screen.members()[1].is_listed_editor());
+        click(&mut screen, EDITOR_X, EDIT_ROW_Y);
+        assert!(screen.members()[1].is_listed_editor());
+        click(&mut screen, GROUPS_X, EDIT_ROW_Y);
+        assert!(
+            texts(&idle(&mut screen))
+                .iter()
+                .any(|text| text == "Editor (dev, qa)")
+        );
+    }
+
+    #[test]
+    fn the_groups_field_commits_when_left_refuses_a_colon_and_commits_before_reselecting() {
+        let (mut screen, _) = screen(2);
+        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, 100, SECOND_MEMBER_Y);
+        click(&mut screen, GROUPS_X, EDIT_ROW_Y);
+        keys(&mut screen, &chars("qa, dev"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        // 欄を離れても確定する。`:` を含む名前は書かずに示す。
+        keys(&mut screen, &[KeyIntent::SelectAll]);
+        keys(&mut screen, &chars("qa"));
+        click(&mut screen, 100, 150);
+        assert_eq!(screen.members()[1].groups(), ["qa"]);
+        click(&mut screen, GROUPS_X, EDIT_ROW_Y);
+        keys(&mut screen, &[KeyIntent::SelectAll]);
+        keys(&mut screen, &chars("a:b"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert_eq!(screen.notices(), alloc::vec![Notice::BadGroupName]);
+        assert_eq!(screen.members()[1].groups(), ["qa"]);
+        // 書きかけのまま別の行を押すと先に確定する。
+        keys(&mut screen, &[KeyIntent::SelectAll]);
+        keys(&mut screen, &chars("ops"));
+        click(&mut screen, 100, SHIFTED_FIRST_MEMBER_Y);
+        assert_eq!(screen.members()[1].groups(), ["ops"]);
+        assert!(screen.notices().is_empty());
     }
 
     #[test]

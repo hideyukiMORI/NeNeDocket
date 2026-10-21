@@ -1,32 +1,44 @@
-//! 参加者の段（FR-009）。表の下に、台帳に参加したアカウントの名前・ID・役（グループがあれば `役 (qa, dev)`）。持ち主は行を押して編集者を切り替え、「権限」で有効・無効を切り替える（FR-010）。
+//! 参加者の段（FR-009）。表の下に、台帳に参加したアカウントの名前・ID・役（グループがあれば `役 (qa, dev)`）。
+//! 持ち主は「権限」で有効・無効を切り替え、行を押して選ぶと段の上に編集行（「編集者」のチェックとグループの欄・`,` 区切り）が出る（FR-010）。
 
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use nene_docket_core::account_id::AccountId;
 use nene_docket_core::checkbox;
 use nene_docket_core::column_width::ColumnWidth;
 use nene_docket_core::draw_command::DrawCommand;
 use nene_docket_core::interaction::Interaction;
+use nene_docket_core::key_intent::KeyIntent;
 use nene_docket_core::language::Language;
+use nene_docket_core::layout::Layout;
 use nene_docket_core::paint::Paint;
 use nene_docket_core::pixel_rect::PixelRect;
+use nene_docket_core::preedit::Preedit;
 use nene_docket_core::response_phase::ResponsePhase;
 use nene_docket_core::scroll_bar;
 use nene_docket_core::scroll_state::ScrollState;
 use nene_docket_core::table_layout::TableLayout;
 use nene_docket_core::text_align::TextAlign;
+use nene_docket_core::text_edit::TextEdit;
+use nene_docket_core::text_field;
 use nene_docket_core::ui_scale::UiScale;
 use nene_docket_core::widget_id::WidgetId;
 use nene_docket_core::word::Word;
 use nene_docket_core::wording;
 
 use crate::member::Member;
+use crate::member_role::MemberRole;
 use crate::members_action::MembersAction;
 
 /// 「権限」のチェックの ID。画面の他の部品（1〜18・20・100〜・200〜・300〜・1000〜・4000〜）と重ならない。
 const PERMISSIONS_TOGGLE: WidgetId = WidgetId::new(19);
 /// 参加者のスクロールバーの ID。
 const MEMBERS_SCROLL: WidgetId = WidgetId::new(21);
+/// 編集行の「編集者」のチェックの ID。
+const MEMBER_EDITOR: WidgetId = WidgetId::new(22);
+/// 編集行のグループの欄の ID。
+const MEMBER_GROUPS: WidgetId = WidgetId::new(23);
 /// 参加者の行の ID。見えている順の番号を足す。
 const MEMBER_ROW: WidgetId = WidgetId::new(3_000);
 
@@ -37,25 +49,39 @@ const ROLE_WIDTH_PX: u16 = 150;
 const PERMISSIONS_WIDTH_PX: u16 = 120;
 const PADDING_PX: u16 = 8;
 const SCROLL_WIDTH_PX: u16 = 12;
+const EDITOR_WIDTH_PX: u16 = 120;
+const GAP_PX: u16 = 4;
+/// グループの区切り。名前に `:` は使えない（`permissions.v1.txt` の形）。
+const GROUP_SEPARATOR: char = ',';
+const FORBIDDEN_IN_GROUP: char = ':';
 /// ホイール 1 刻みで送る行数。
 const WHEEL_ROWS: i32 = 3;
 
-/// 出すかどうかとスクロールと倍率。
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
+/// 出すかどうかとスクロールと倍率と、選んだ行とそのグループの欄。
+#[derive(Debug, Clone, PartialEq, Eq)]
 pub struct MembersPane {
     shown: bool,
     scroll: ScrollState,
     scale: UiScale,
+    selected: Option<AccountId>,
+    groups: TextEdit,
+    /// グループの欄を読み込んだ時点の文字列。違えば利用者が変えた。
+    groups_base: String,
+    bad_groups: bool,
 }
 
 impl MembersPane {
     /// 隠れている。
     #[must_use]
-    pub const fn hidden(scale: UiScale) -> Self {
+    pub fn hidden(scale: UiScale) -> Self {
         Self {
             shown: false,
             scroll: ScrollState::top(0, 0),
             scale,
+            selected: None,
+            groups: TextEdit::empty(),
+            groups_base: String::new(),
+            bad_groups: false,
         }
     }
 
@@ -76,42 +102,150 @@ impl MembersPane {
         self.shown
     }
 
-    /// 段を問い合わせ、描画命令と求めを返す。`owner` なら行を押せ、ヘッダの右に「権限」のチェック（`enabled`）が出る。
+    /// 選んだ行のアカウント。
+    #[must_use]
+    pub const fn selected(&self) -> Option<AccountId> {
+        self.selected
+    }
+
+    /// グループの欄に `:` を含む名前がある（追記しない・FR-014 で示す）。
+    #[must_use]
+    pub const fn has_bad_groups(&self) -> bool {
+        self.bad_groups
+    }
+
+    /// 「権限」のチェックの ID（鍵で押すとき）。
+    #[must_use]
+    pub const fn permissions_toggle() -> WidgetId {
+        PERMISSIONS_TOGGLE
+    }
+
+    /// 編集行の「編集者」のチェックの ID。
+    #[must_use]
+    pub const fn editor_id() -> WidgetId {
+        MEMBER_EDITOR
+    }
+
+    /// 編集行のグループの欄の ID。
+    #[must_use]
+    pub const fn groups_id() -> WidgetId {
+        MEMBER_GROUPS
+    }
+
+    /// グループの欄の鍵。Enter で確定（選んだ行のグループをその集合にする求め）。
+    pub fn groups_key(&mut self, key: KeyIntent) -> Option<MembersAction> {
+        if key == KeyIntent::Enter {
+            let action = self.groups_action();
+            self.groups_base = String::from(self.groups.text());
+            return action;
+        }
+        self.groups = self.groups.applied(key);
+        None
+    }
+
+    /// 編集行の「編集者」を鍵で押した。
+    #[must_use]
+    pub fn editor_key(&self) -> Option<MembersAction> {
+        self.selected.map(MembersAction::ToggleEditor)
+    }
+
+    /// 確定前の文字列をグループの欄へ。
+    pub fn set_preedit(&mut self, preedit: Option<Preedit>) {
+        self.groups = self.groups.with_preedit(preedit);
+    }
+
+    /// 欄の文字列を集合にした求め。`:` を含む名前があれば示して `None`。
+    fn groups_action(&mut self) -> Option<MembersAction> {
+        let selected = self.selected?;
+        let names: Vec<String> = self
+            .groups
+            .text()
+            .split(GROUP_SEPARATOR)
+            .map(str::trim)
+            .filter(|name| !name.is_empty())
+            .map(String::from)
+            .collect();
+        self.bad_groups = names.iter().any(|name| name.contains(FORBIDDEN_IN_GROUP));
+        if self.bad_groups {
+            return None;
+        }
+        Some(MembersAction::SetGroups(selected, names))
+    }
+
+    /// 段を問い合わせ、描画命令と求めを返す。`owner` なら行を押して選べ、ヘッダの右に「権限」のチェック（`enabled`）が出る。
+    /// 持ち主でない人を選んでいれば、段の上に編集行（「編集者」のチェックとグループの欄）が出る。
     #[must_use]
     pub fn probe(
         &mut self,
         interaction: &mut Interaction,
         (area, members, language): (PixelRect, &[Member], Language),
         (owner, enabled): (bool, bool),
-    ) -> (Vec<DrawCommand>, Option<MembersAction>) {
+    ) -> (Vec<DrawCommand>, Vec<MembersAction>) {
+        let mut commands = Vec::new();
+        let mut actions = Vec::new();
+        let editing = self.editing(members, owner && enabled);
+        let mut layout = Layout::inside(area, self.px(GAP_PX));
+        if let Some(member) = editing {
+            let row = layout.row(
+                self.px(ROW_PX),
+                &[
+                    ColumnWidth::Fixed(self.px(EDITOR_WIDTH_PX)),
+                    ColumnWidth::Fill,
+                ],
+            );
+            actions.extend(self.edit_row(interaction, (&row, &member, language), &mut commands));
+        }
+        let table_area = layout.remaining();
         let track = PixelRect::new(
-            area.right()
+            table_area
+                .right()
                 .saturating_sub(self.px(SCROLL_WIDTH_PX))
                 .saturating_add(1),
-            area.y(),
+            table_area.y(),
             self.px(SCROLL_WIDTH_PX),
-            area.height(),
+            table_area.height(),
         );
-        let table = self.table(area, members.len());
+        let table = self.table(table_area, members.len());
         self.scroll = self
             .scroll
             .resized(table.content_height(), u32::from(table.body().height()));
-        let mut commands = Vec::new();
-        let mut action = self.header(
+        actions.extend(self.header(
             interaction,
             (&table, language, (owner, enabled)),
             &mut commands,
-        );
+        ));
+        actions.extend(self.rows(
+            interaction,
+            (&table, members, language, owner && enabled),
+            &mut commands,
+        ));
+        self.scroll_bar(interaction, (track, table_area), &mut commands);
+        (commands, actions)
+    }
+
+    /// 見えている行。`administering` なら押して選べる。選んだ行は強調。
+    fn rows(
+        &mut self,
+        interaction: &mut Interaction,
+        (table, members, language, administering): (&TableLayout, &[Member], Language, bool),
+        commands: &mut Vec<DrawCommand>,
+    ) -> Vec<MembersAction> {
+        let mut actions = Vec::new();
         commands.push(DrawCommand::Clip(table.body()));
         for (index, rect) in table.visible_rows(self.scroll.offset()) {
             let Some(member) = usize::try_from(index).ok().and_then(|i| members.get(i)) else {
                 continue;
             };
             let response = interaction.probe(MEMBER_ROW.indexed(index), rect, false);
-            if owner && enabled && response.clicked() {
-                action = Some(MembersAction::ToggleEditor(member.id()));
+            if administering && response.clicked() {
+                actions.extend(self.select(member));
             }
-            if owner && enabled && response.phase() != ResponsePhase::Idle {
+            if self.selected == Some(member.id()) {
+                commands.push(DrawCommand::Fill {
+                    rect,
+                    paint: Paint::Selection,
+                });
+            } else if administering && response.phase() != ResponsePhase::Idle {
                 commands.push(DrawCommand::Fill {
                     rect,
                     paint: Paint::Surface,
@@ -132,8 +266,72 @@ impl MembersPane {
             }
         }
         commands.push(DrawCommand::Unclip);
-        self.scroll_bar(interaction, (track, area), &mut commands);
-        (commands, action)
+        actions
+    }
+
+    /// 編集行を出す相手。持ち主が権限を有効にしていて、持ち主でない人を選んでいるとき。権限が無効か選んだ人が居なくなれば選びを外す。
+    fn editing(&mut self, members: &[Member], administering: bool) -> Option<Member> {
+        let found = self
+            .selected
+            .filter(|_| administering)
+            .and_then(|id| members.iter().find(|member| member.id() == id))
+            .cloned();
+        if found.is_none() {
+            self.selected = None;
+        }
+        found.filter(|member| member.role() != MemberRole::Owner)
+    }
+
+    /// 行を押した。グループの欄に書きかけがあれば先に確定し、その行を選んで欄を読み込む。
+    fn select(&mut self, member: &Member) -> Vec<MembersAction> {
+        let mut actions = Vec::new();
+        if self.groups.text() != self.groups_base {
+            actions.extend(self.groups_action());
+        }
+        self.selected = Some(member.id());
+        self.load_groups(member);
+        actions
+    }
+
+    fn load_groups(&mut self, member: &Member) {
+        let text = member.groups().join(", ");
+        self.groups = TextEdit::showing(&text);
+        self.groups_base = text;
+        self.bad_groups = false;
+    }
+
+    /// 編集行: 「編集者」のチェックとグループの欄。欄はフォーカスを失ったときに確定し、違わなければいまの値に合わせる。
+    fn edit_row(
+        &mut self,
+        interaction: &mut Interaction,
+        (row, member, language): (&[PixelRect], &Member, Language),
+        commands: &mut Vec<DrawCommand>,
+    ) -> Vec<MembersAction> {
+        let mut actions = Vec::new();
+        let (Some(editor_rect), Some(groups_rect)) = (row.first(), row.get(1)) else {
+            return actions;
+        };
+        let editor = interaction.probe(MEMBER_EDITOR, *editor_rect, true);
+        commands.extend(checkbox::checkbox(
+            *editor_rect,
+            wording::text(language, Word::Editor),
+            member.is_listed_editor(),
+            editor,
+        ));
+        if editor.clicked() {
+            actions.push(MembersAction::ToggleEditor(member.id()));
+        }
+        let groups = interaction.probe(MEMBER_GROUPS, *groups_rect, true);
+        if !groups.focused() {
+            if self.groups.text() == self.groups_base {
+                self.load_groups(member);
+            } else {
+                actions.extend(self.groups_action());
+                self.load_groups(member);
+            }
+        }
+        commands.extend(text_field::text_field(*groups_rect, &self.groups, groups));
+        actions
     }
 
     /// つまみのドラッグとホイール（ポインタが段の上にあるときだけ）。
@@ -164,11 +362,11 @@ impl MembersPane {
         commands.extend(scroll_bar::scroll_bar(track, self.scroll, response));
     }
 
-    const fn px(self, base: u16) -> u16 {
+    const fn px(&self, base: u16) -> u16 {
         self.scale.px(base)
     }
 
-    fn table(self, area: PixelRect, count: usize) -> TableLayout {
+    fn table(&self, area: PixelRect, count: usize) -> TableLayout {
         let bounds = PixelRect::new(
             area.x(),
             area.y(),
@@ -186,7 +384,7 @@ impl MembersPane {
 
     /// ヘッダ: 名前・ID・役と、持ち主には 4 列目に「権限」のチェック。
     fn header(
-        self,
+        &self,
         interaction: &mut Interaction,
         (table, language, owner_access): (&TableLayout, Language, (bool, bool)),
         commands: &mut Vec<DrawCommand>,
@@ -240,11 +438,6 @@ impl MembersPane {
             paint,
             caret: None,
         }
-    }
-    /// 「権限」のチェックの ID（鍵で押すとき）。
-    #[must_use]
-    pub const fn permissions_toggle() -> WidgetId {
-        PERMISSIONS_TOGGLE
     }
 }
 
