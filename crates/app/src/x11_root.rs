@@ -72,7 +72,7 @@ pub(crate) fn run(arguments: &Arguments) -> Result<(), LaunchFailure> {
         .with_language(locale::read())
         .with_appearance(appearance::read());
     let mut screen = DocketScreen::open(environment, account, ports, settings.clone());
-    let mut window = DocketWindow::open(&display)?;
+    let mut window = DocketWindow::open(&display, screen.scale())?;
     let ticker = RefreshTicker::start(
         window.window(),
         atoms::REFRESH_NAME,

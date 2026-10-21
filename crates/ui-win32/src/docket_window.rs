@@ -9,7 +9,7 @@ use core::ffi::c_void;
 use core::ptr;
 
 use nene_docket_application::docket_screen::DocketScreen;
-use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
+use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, RECT, WPARAM};
 use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT, ScreenToClient};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{
@@ -26,16 +26,18 @@ use windows::Win32::UI::Shell::{
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DispatchMessageW, GWLP_USERDATA,
     GetMessageW, GetWindowLongPtrW, IDC_ARROW, KillTimer, LoadCursorW, MSG, PostQuitMessage,
-    RegisterClassExW, SW_SHOW, SetTimer, SetWindowLongPtrW, ShowWindow, TranslateMessage,
-    WINDOW_EX_STYLE, WM_CHAR, WM_DESTROY, WM_DROPFILES, WM_ERASEBKGND, WM_IME_COMPOSITION,
-    WM_IME_ENDCOMPOSITION, WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_PAINT, WM_SIZE, WM_TIMER,
-    WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
+    RegisterClassExW, SPI_GETWORKAREA, SW_SHOW, SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS, SetTimer,
+    SetWindowLongPtrW, ShowWindow, SystemParametersInfoW, TranslateMessage, WINDOW_EX_STYLE,
+    WM_CHAR, WM_DESTROY, WM_DROPFILES, WM_ERASEBKGND, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION,
+    WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
+    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_PAINT, WM_SIZE, WM_TIMER, WNDCLASSEXW,
+    WS_OVERLAPPEDWINDOW,
 };
 use windows::core::{PCWSTR, w};
 
 use nene_docket_core::pixel_point::PixelPoint;
 use nene_docket_core::preedit::Preedit;
+use nene_docket_core::ui_scale::UiScale;
 
 use crate::ime;
 use crate::key_input::{self, Modifiers};
@@ -45,9 +47,9 @@ use crate::windows_app::WindowsApp;
 /// 窓の類の名と題。
 const CLASS: PCWSTR = w!("NeNeDocket");
 const TITLE: PCWSTR = w!("NeNe Docket");
-/// 最初の窓の大きさ（X11 版と同じ）。
-const INITIAL_WIDTH: i32 = 1120;
-const INITIAL_HEIGHT: i32 = 600;
+/// 最初の窓の大きさ（1x・X11 版と同じ）。倍率を掛け、作業領域に収めて使う（Issue #93）。
+const INITIAL_WIDTH: u16 = 1120;
+const INITIAL_HEIGHT: u16 = 600;
 /// `WM_MOUSELEAVE`。windows クレートでは Controls の機能にあるので、値だけをここに置く（winuser.h の 0x02A3）。
 const WM_MOUSELEAVE: u32 = 0x02A3;
 /// 読み直しのタイマーの番号。
@@ -81,8 +83,9 @@ pub fn declare_dpi_awareness() {
 )]
 pub fn run(screen: DocketScreen, refresh_seconds: u64) -> Result<(), Win32Failure> {
     register_class()?;
+    let size = initial_size(screen.scale());
     let cell: AppCell = RefCell::new(WindowsApp::new(screen, HWND(ptr::null_mut())));
-    let created = create(&raw const cell)?;
+    let created = create(&raw const cell, size)?;
     cell.borrow_mut().attach(created);
     accept_drops(created);
     let interval = u32::try_from(refresh_seconds.saturating_mul(MILLIS_PER_SECOND))
@@ -128,12 +131,48 @@ fn register_class() -> Result<(), Win32Failure> {
     Ok(())
 }
 
+/// 窓の初期の大きさ（物理画素）。1x の大きさに倍率を掛け、主モニタの作業領域に収める（FR-016・Issue #93）。
+fn initial_size(scale: UiScale) -> (i32, i32) {
+    let (limit_width, limit_height) = work_area();
+    (
+        i32::from(scale.fit(INITIAL_WIDTH, limit_width)),
+        i32::from(scale.fit(INITIAL_HEIGHT, limit_height)),
+    )
+}
+
+/// 主モニタの作業領域（タスクバーを除く）の幅と高さ。per-monitor v2 の宣言の後なので物理画素。
+/// 読めなければ制限しない（`u16::MAX`）。
+#[expect(
+    unsafe_code,
+    reason = "RS-010: Win32 の SystemParametersInfoW で作業領域を読む（ADR 0002 の 4）"
+)]
+fn work_area() -> (u16, u16) {
+    let mut area = RECT::default();
+    // SAFETY: area はこの関数の局所の RECT で、呼び出しの間だけ書かれる。
+    let read = unsafe {
+        SystemParametersInfoW(
+            SPI_GETWORKAREA,
+            0,
+            Some((&raw mut area).cast::<c_void>()),
+            SYSTEM_PARAMETERS_INFO_UPDATE_FLAGS(0),
+        )
+    };
+    read.ok().map_or((u16::MAX, u16::MAX), |()| {
+        (span(area.left, area.right), span(area.top, area.bottom))
+    })
+}
+
+/// 端から端までの長さ。負や `u16` を超える長さは制限しない（`u16::MAX`）。
+fn span(start: i32, end: i32) -> u16 {
+    u16::try_from(end.saturating_sub(start)).unwrap_or(u16::MAX)
+}
+
 /// 通常の窓を作る。作成の引数に状態のポインタを渡し、`WM_NCCREATE` で窓に結ぶ。
 #[expect(
     unsafe_code,
     reason = "RS-010: Win32 の CreateWindowExW を呼ぶ（ADR 0002 の 4）"
 )]
-fn create(cell: *const AppCell) -> Result<HWND, Win32Failure> {
+fn create(cell: *const AppCell, (width, height): (i32, i32)) -> Result<HWND, Win32Failure> {
     // SAFETY: 自分のモジュールのハンドルを読むだけ。
     let instance = unsafe { GetModuleHandleW(None) }?;
     // SAFETY: cell は run の局所の状態で、窓より長く生きる。
@@ -145,8 +184,8 @@ fn create(cell: *const AppCell) -> Result<HWND, Win32Failure> {
             WS_OVERLAPPEDWINDOW,
             CW_USEDEFAULT,
             CW_USEDEFAULT,
-            INITIAL_WIDTH,
-            INITIAL_HEIGHT,
+            width,
+            height,
             None,
             None,
             Some(instance.into()),
