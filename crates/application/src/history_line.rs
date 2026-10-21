@@ -20,13 +20,14 @@ use crate::history_change::HistoryChange;
 /// 名前が分からないときに「誰が」に出すアカウントの ID の桁数。
 const WHO_DIGITS: usize = 4;
 
-/// 壁時計・誰が（`keys/` の名前、無ければ ID の先頭）・Undo の追記か・変更。
+/// 壁時計・誰が（`keys/` の名前、無ければ ID の先頭）・Undo の追記か・変更・その直後の課題（再現・FR-006）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HistoryLine {
     when: WallClock,
     who: String,
     undo: bool,
     change: HistoryChange,
+    snapshot: Item,
 }
 
 impl HistoryLine {
@@ -51,6 +52,7 @@ impl HistoryLine {
                     who: who_of(op.id().account(), names),
                     undo: op.undoes().is_some(),
                     change,
+                    snapshot: current.clone(),
                 }
             })
             .collect();
@@ -90,6 +92,12 @@ impl HistoryLine {
     #[must_use]
     pub const fn change(&self) -> &HistoryChange {
         &self.change
+    }
+
+    /// この操作の直後の課題（その時点の再現・FR-006）。
+    #[must_use]
+    pub const fn snapshot(&self) -> &Item {
+        &self.snapshot
     }
 }
 
@@ -221,6 +229,17 @@ mod tests {
             HistoryChange::Set { after, .. } if *after == FieldValue::Title(String::from("b"))
         ));
         assert_eq!(lines[5].when(), WallClock::new(60));
+    }
+
+    #[test]
+    fn each_line_carries_the_item_as_it_was_right_after() {
+        let item = ItemId::new(A, 1);
+        let ops = sample_ops(item);
+        let lines = HistoryLine::lines(&ops, item, &[]);
+        assert_eq!(lines[5].snapshot().title(), "");
+        assert_eq!(lines[3].snapshot().state(), ItemState::Done);
+        assert_eq!(lines[2].snapshot().title(), "b");
+        assert!(lines[0].snapshot().is_deleted());
         assert_eq!(
             lines[1].columns(Language::Japanese)[2],
             "取り消し: 題名 : b -> a"

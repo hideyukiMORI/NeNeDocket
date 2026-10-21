@@ -1,6 +1,6 @@
 # いまのタスク — NeNe Docket
 
-> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #36 まで）。
+> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #39 まで）。
 
 ## 状態
 
@@ -24,6 +24,7 @@
 | 本文（複数行の欄・FR-001） | ✅ Issue #31。core の `text_area`、道具の段の「本文」、表の下の段（履歴と同時なら 1/4 ずつ）。検索は本文にも。Xvfb で 2 プロセス（gate-proofs 第 23 節）。スクロールバーは Issue #36（第 26 節） |
 | 参加者の段と画面からの権限（FR-009 / FR-010） | ✅ Issue #33。名前・ID・役。持ち主は「権限」のチェックと行の押下で編集者を切り替える。グループはコマンドラインだけ（gate-proofs 第 24 節） |
 | 履歴から選び直す・上書きの通知（FR-008） | ✅ Issue #35。履歴の `Set` の行を押すとその値を新しい `Set` で追記。欄を読み込んだ後に他人が変えた値を上書きすると通知（gate-proofs 第 25 節） |
+| 過去の時点の再現（FR-006 後半） | ✅ Issue #39。履歴の行の上にポインタを置くと、表の選んだ行と本文の段がその時点の値になる（gate-proofs 第 27 節） |
 | 課題の履歴の段（FR-006） | ✅ Issue #18。いつ（UTC）・誰が（ID の先頭 4 桁）・何を・何から何へ。Undo の行は控えめな色（gate-proofs 第 17 節） |
 | adapters-windows / ui-win32（Windows の窓・ADR 0009） | 🟡 Issue #22。`x86_64-pc-windows-gnu` の clippy 0 件・exe 1.9 MB。**Windows では未実行**（施主の Windows で確かめる・gate-proofs 第 19 節） |
 | IME の方式（FR-015） | ❌ ADR 未。コンテナには IM サーバ（fcitx / ibus）が無く XIM を測れない。施主の WSLg で測る |
@@ -35,7 +36,7 @@
 ## 次に行うこと
 
 1. **PR #3（Issue #1 / #2 / #4）を merge する。** 枝は harness の `claude/cloud-session-qus6l5` で、CI の `make ci` は GIT-002 で落ちている（gate-proofs 第 10 節）。ruleset が無いので merge はできる。施主が squash の件名を PR のタイトル（GIT-003 の形）で付けて merge する。ruleset（main の保護・squash-only・`check` を必須）を設定したら gate-proofs に記録し、GIT-002 / GIT-004 を active に
-2. 鍵の失効・交代の手続き（ADR 0010 の残る穴）。グループを画面から。段の高さの調整。過去の時点の再現（FR-006 後半）
+2. 鍵の失効・交代の手続き（ADR 0010 の残る穴）。グループを画面から。段の高さの調整。列の幅と順（FR-012）
 3. **IME の実測は施主の WSLg で**: fcitx5 か ibus を入れ、`XMODIFIERS=@im=fcitx` で XIM の preedit が x11rb の窓に届く経路（XIM プロトコルの自前実装か、IM サーバの D-Bus か）を決める ADR
 4. スナップショットの ADR は、1 年分の併合が 1 秒を超えてから（いまは 0.7 秒）
 5. 環境の setup script（環境の設定）に DEVELOPMENT_WORKFLOW 第 9 節の行を置く。リポジトリ側のフック（`.claude/hooks/session-start.sh`）には `mingw-w64` を足した（Issue #24）
@@ -57,4 +58,4 @@
 - 設定の「列の幅と順」はまだ無い（列幅を変える経路ができてから）。見えは Issue #27 で入った
 - X11 では OS の明暗を観測できない（`system` はライト）。GNOME の `color-scheme` などを読む経路は別の Issue。利用者のテーマファイル（nene-nib の `.v1.theme`）もまだ
 - 翻訳（6 言語 × 31 語）と導出した配色の見た目は施主の確認待ち
-- 履歴の「いつ」は UTC（時差を知るアダプタが無い）、「誰が」は `keys/` の名前（無ければ ID の先頭 4 桁）。過去の時点の状態の再現（FR-006 後半）はまだ（履歴の行を押して 1 項目ずつ選び直せるだけ・Issue #35）
+- 履歴の「いつ」は UTC（時差を知るアダプタが無い）、「誰が」は `keys/` の名前（無ければ ID の先頭 4 桁）。過去の時点の再現はポインタを置いている間の表示だけ（Issue #39）。台帳をその時点へ戻すのは履歴の行を押して 1 項目ずつ（Issue #35）
