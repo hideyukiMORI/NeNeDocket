@@ -65,6 +65,8 @@ const fn japanese(word: Word) -> &'static str {
         Word::Permissions => "権限",
         Word::CannotWritePermissions => "権限を書けません",
         Word::Overwrote => "他の人の変更を上書きしました。履歴で選び直せます",
+        Word::Groups => "グループ",
+        Word::BadGroupName => "グループ名に「:」は使えません",
     }
 }
 
@@ -114,6 +116,8 @@ const fn english(word: Word) -> &'static str {
         Word::Permissions => "Permissions",
         Word::CannotWritePermissions => "permissions: cannot write",
         Word::Overwrote => "overwrote a change by someone else; pick again from the history",
+        Word::Groups => "Groups",
+        Word::BadGroupName => "a group name cannot contain \":\"",
     }
 }
 
@@ -162,6 +166,8 @@ const fn simplified_chinese(word: Word) -> &'static str {
         Word::Permissions => "权限",
         Word::CannotWritePermissions => "无法写入权限",
         Word::Overwrote => "覆盖了他人的改动，可在历史中重新选择",
+        Word::Groups => "组",
+        Word::BadGroupName => "组名不能包含“:”",
     }
 }
 
@@ -210,6 +216,8 @@ const fn traditional_chinese(word: Word) -> &'static str {
         Word::Permissions => "權限",
         Word::CannotWritePermissions => "無法寫入權限",
         Word::Overwrote => "覆蓋了他人的改動，可在歷史中重新選擇",
+        Word::Groups => "群組",
+        Word::BadGroupName => "群組名稱不能包含「:」",
     }
 }
 
@@ -258,6 +266,8 @@ const fn korean(word: Word) -> &'static str {
         Word::Permissions => "권한",
         Word::CannotWritePermissions => "권한을 쓸 수 없습니다",
         Word::Overwrote => "다른 사람의 변경을 덮어썼습니다. 기록에서 다시 선택할 수 있습니다",
+        Word::Groups => "그룹",
+        Word::BadGroupName => "그룹 이름에 \":\"를 쓸 수 없습니다",
     }
 }
 
@@ -307,6 +317,8 @@ const fn spanish(word: Word) -> &'static str {
         Word::Permissions => "Permisos",
         Word::CannotWritePermissions => "permisos: no se puede escribir",
         Word::Overwrote => "se sobrescribió un cambio ajeno; elija de nuevo en el historial",
+        Word::Groups => "Grupos",
+        Word::BadGroupName => "un nombre de grupo no puede contener \":\"",
     }
 }
 
@@ -315,7 +327,7 @@ mod tests {
     use super::*;
 
     /// 全部の語（`Word` の閉じた集合を 1 か所で列挙する。増えたらここも増える）。
-    const WORDS: [Word; 44] = [
+    const WORDS: [Word; 46] = [
         Word::All,
         Word::StateName(ItemState::Open),
         Word::StateName(ItemState::InProgress),
@@ -360,6 +372,8 @@ mod tests {
         Word::Permissions,
         Word::CannotWritePermissions,
         Word::Overwrote,
+        Word::Groups,
+        Word::BadGroupName,
     ];
 
     #[test]

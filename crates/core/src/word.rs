@@ -78,4 +78,8 @@ pub enum Word {
     CannotWritePermissions,
     /// 他人の変更を上書きした（履歴で選び直せる・FR-008）。
     Overwrote,
+    /// 参加者の編集行の「グループ」（`,` 区切り）。
+    Groups,
+    /// グループ名に `:` は使えない。
+    BadGroupName,
 }

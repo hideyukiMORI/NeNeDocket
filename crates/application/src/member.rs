@@ -12,12 +12,13 @@ use crate::member_role::MemberRole;
 /// ID の先頭を出す桁数。
 const ID_DIGITS: usize = 4;
 
-/// ID・名前・役・グループ（名前の順）。
+/// ID・名前・役・編集者の一覧にいるか・グループ（名前の順）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Member {
     id: AccountId,
     name: String,
     role: MemberRole,
+    listed: bool,
     groups: Vec<String>,
 }
 
@@ -34,6 +35,7 @@ impl Member {
                 id: *id,
                 name: name.clone(),
                 role: role_of(*id, permissions),
+                listed: permissions.is_some_and(|permissions| permissions.editors().contains(id)),
                 groups: groups_of(*id, permissions),
             })
             .collect();
@@ -63,6 +65,12 @@ impl Member {
     #[must_use]
     pub const fn role(&self) -> MemberRole {
         self.role
+    }
+
+    /// 編集者の一覧にいるか（グループだけで書ける人は偽）。編集行の「編集者」のチェック。
+    #[must_use]
+    pub const fn is_listed_editor(&self) -> bool {
+        self.listed
     }
 
     /// 入っているグループの名前（名前の順）。
@@ -116,6 +124,8 @@ mod tests {
             .grouped("dev", EDITOR);
         let members = Member::list(&names(), Some(&permissions));
         assert_eq!(members[0].groups(), ["dev", "qa"]);
+        assert!(members[0].is_listed_editor());
+        assert!(!members[1].is_listed_editor());
         assert!(members[1].groups().is_empty());
         let roles: Vec<(&str, MemberRole)> = members
             .iter()

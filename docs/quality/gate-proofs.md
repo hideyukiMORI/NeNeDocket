@@ -757,7 +757,21 @@ Xvfb（`:97`）で 1 度流した（`scratchpad/handover.sh`）:
 
 権限を有効にする前の alice の版 1 の 2 行は、これまで通り捨てて数える（`lines failing signature or permission: 2`・ADR 0010）。
 
-## 33. 再現
+## 33. Issue #53 — 参加者の段からグループを変える（2026-10-21）
+
+同じコンテナ。参加者の段に「選んだ行」が入った。持ち主が権限を有効にしていて、持ち主でない人の行を押すと、段の上に編集行（「編集者」のチェックとグループの欄・`,` 区切り）が出る。行の押下は Issue #33 の「編集者の切り替え」から「選ぶ」に変わり、編集者の切り替えは編集行のチェックになった（押すたびに編集者が切り替わる行では、グループを変えるためだけに選べない）。チェックは編集者の一覧にいるかを示す（グループだけで書ける人は空で、役は「編集者 (qa)」のまま）。欄は Enter か、フォーカスを失ったときに確定し、いまのグループとの差分を `Group` / `Ungroup` にする。`:` を含む名前は書かずに示す（`BadGroupName`）。書きかけのまま別の行を押すと先に確定する。権限を無効にすると選びは外れる。部品の ID は 22（編集者）・23（グループ）。文言は 6 言語に `Groups` / `BadGroupName` を足した。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 352 件（application 85） |
+| `make conformance` | 違反なし（221 ファイル） |
+| `make coverage` | core ＋ application の region 98.77%（閾値 90） |
+| `make deny` | 回していない（依存の変更なし） |
+
+Xvfb（`:98`・`scratchpad/groups.sh`）: alice が台帳を作り bob が参加、alice が参加者の段で「権限」を押し、bob の行を押すと編集行が出た。グループ欄に `qa, dev` と打って Enter → `permissions.v1.txt` に `group = dev: …` / `group = qa: …`、役は `Editor (dev, qa)`、欄は正規の形 `dev, qa` に揃う（[01-typed](screenshots/2026-10-21-groups-01-typed.png)）。「編集者」のチェックを押すと `editor = …` の行が足された（[02-editor](screenshots/2026-10-21-groups-02-editor.png)）。行は ID の順なので、手順は 2 つの ID を比べて行を選ぶ。
+
+## 34. 再現
 
 ```bash
 make prove
