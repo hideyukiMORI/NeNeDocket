@@ -31,6 +31,8 @@
 | 持ち主（owner） | 台帳を作ったアカウント。権限を有効にし、編集者とグループを決め、`permissions.v1.txt` に署名する | `docket.v1.txt` の `owner`・`administration`（store） |
 | グループ（group） | アカウントの集合。中の全員が書ける | `Permissions::groups`（core）・FR-010 |
 | 権限の記録（admin record） | 権限の変更（有効・無効・編集者・グループ・引き継ぎ・持ち主）をジャーナルに追記した行。台帳の状態は変えず、履歴と `--audit` に出る。戻せない | `OpKind::Admin` / `AdminCommand`（core）・`administration_log`（application）・ADR 0014 |
+| スナップショット（snapshot） | 自分のアカウントのための派生ファイル `snapshot/<account>.v1.txt`（併合した台帳・各ジャーナルの読み位置・論理時計・Undo の束）と `.v1.idx`（課題ごとの索引）。起動時に戻し、伸びた分だけ読む。消しても正しさは変わらない | `LedgerSnapshot`（application）・`snapshot_file` / `FileJournal::checkpoint`（store）・ADR 0015 |
+| 索引（index） | 課題 → その課題に触れた操作がどのジャーナルの何バイト目か。履歴・Undo の逆の値・選び直しはこれでジャーナルの行を 1 本ずつ読む | `snapshot_file::Index`（store）・`JournalPort::ops_of`・ADR 0015 |
 | 監査（audit） | 台帳全体の時系列（課題の編集 ＋ 権限の記録）を、いつ・誰が・何を、で読むこと。履歴の段で課題を選んでいないとき、または `nene-docket <フォルダ> --audit` | `HistoryLine::all` / `audit_report`（application）・FR-020 |
 | 引き継ぎ（succession） | 新しい ID が古い ID を引き継ぐと持ち主が書いた行。新しい ID は古い ID の編集者・グループを受け継ぎ、読み手は古い ID の履歴を新しい名前で出す。鍵を失くした人のため | `Permissions::successions` / `resolved` / `succeeding`（core）・`succeeds =` 行・`--succeed`・編集行の「引き継ぎ先」・ADR 0013 |
 | 持ち主の交代（handover） | 今の持ち主が `--owner` で持ち主を替える。直後の `permissions.v1.txt` は前の持ち主の鍵で署名され `handover` の行を持ち、新しい持ち主が開くと署名し直す | `administration::apply` / `adopt`（store）・`PermissionsReading::handover`（application）・ADR 0013 |

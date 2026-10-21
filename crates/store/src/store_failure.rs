@@ -26,6 +26,10 @@ pub enum StoreFailure {
     NotTheOwner,
     /// 台帳にある自分の公開鍵が手元の鍵と違うので、署名しても誰にも通らない。
     KeyMismatch,
+    /// 索引が指す位置に完全な行が無い（ADR 0015）。
+    BadIndex,
+    /// スナップショットが読めない形（ADR 0015）。捨てて全部読む。
+    BadSnapshot,
 }
 
 impl fmt::Display for StoreFailure {
@@ -49,6 +53,8 @@ impl fmt::Display for StoreFailure {
             Self::KeyMismatch => {
                 formatter.write_str("the public key in keys/ differs from this account's key")
             }
+            Self::BadIndex => formatter.write_str("the snapshot index points at no journal line"),
+            Self::BadSnapshot => formatter.write_str("the snapshot is not readable"),
         }
     }
 }

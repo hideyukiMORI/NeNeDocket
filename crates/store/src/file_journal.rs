@@ -1,28 +1,43 @@
 //! application の `JournalPort` の実装。自分のジャーナルへの追記・同期と、他人のジャーナルの読み直しを 1 つに束ねる。
 //! 権限を有効にした台帳では版 2 に署名して書き、読む行（自分の分も）は検証器に通す（ADR 0010）。
+//! 自分のスナップショット（状態・読み位置・課題ごとの索引）を読んで起動を速くし、履歴はジャーナルから索引で引く（ADR 0015）。
 
-use std::path::Path;
+use std::collections::BTreeMap;
+use std::path::{Path, PathBuf};
 
 use nene_docket_application::account::Account;
 use nene_docket_application::admission_report::AdmissionReport;
 use nene_docket_application::journal_failure::JournalFailure;
 use nene_docket_application::journal_port::JournalPort;
 use nene_docket_application::key_record::KeyRecord;
+use nene_docket_application::ledger_snapshot::LedgerSnapshot;
 use nene_docket_core::account_id::AccountId;
 use nene_docket_core::admin_command::AdminCommand;
+use nene_docket_core::item_id::ItemId;
 use nene_docket_core::op::Op;
 use nene_docket_core::permissions::Permissions;
 
 use crate::administration;
+use crate::journal_file;
 use crate::journal_folder::JournalFolder;
 use crate::journal_version::JournalVersion;
 use crate::key_file;
 use crate::other_journals::OtherJournals;
 use crate::own_journal::{self, OwnJournal};
+use crate::permissions_store;
+use crate::resumed_snapshot::{Resumed, journal_number, remember};
+use crate::snapshot_file::{self, Index, StoredSnapshot};
 use crate::store_failure::StoreFailure;
 use crate::verifier::{self, Verifier};
 
-/// 台帳のフォルダ・自分のジャーナル・他人の読み位置・起動時に読んだ自分の操作（最初の `refresh` で渡す）・鍵と検証器。
+/// ジャーナルの名（アカウントと版）。索引はこの列の番号で指す。
+type JournalName = (AccountId, JournalVersion);
+
+/// 新しい操作を末尾から読むときに、1 ファイルあたり読むバイト数の上限の目安（1 行 200 バイト強）。
+const TAIL_BYTES_PER_OP: u64 = 256;
+
+/// 台帳のフォルダ・自分のジャーナル・他人の読み位置・起動時に読んだ自分の操作（最初の `refresh` で渡す）・鍵と検証器・
+/// 起動時に読めたスナップショット・課題ごとの索引（ジャーナルの番号と位置）。
 #[derive(Debug)]
 pub struct FileJournal {
     folder: JournalFolder,
@@ -35,10 +50,15 @@ pub struct FileJournal {
     keys: Vec<KeyRecord>,
     verifier: Option<Verifier>,
     key_mismatch: bool,
+    resumed: Option<LedgerSnapshot>,
+    resumed_from_snapshot: bool,
+    journals: Vec<JournalName>,
+    index: Index,
 }
 
 impl FileJournal {
     /// フォルダを開く（無ければ `name` で作る）。自分の鍵を `keys/` に置き、権限が有効なら検証器を読み、
+    /// 自分のスナップショットがあれば（権限が変わっておらず、ジャーナルが縮んでいなければ）戻し、
     /// 自分のジャーナルを読む（壊れた末尾は捨てて数え、検証の通らない行も数える）。
     ///
     /// # Errors
@@ -54,17 +74,36 @@ impl FileJournal {
         let (keys, verifier) =
             verifier::load_if_enabled(root, folder.docket().owner().filter(|_| enabled))?;
         let signing = verifier.as_ref().map(|_| account.key().clone());
-        let (own, read) = OwnJournal::open(&folder.journal_directory(), account.id(), signing)?;
-        let own_rejected = read.rejected().len();
-        let mut own_unverified = 0_usize;
+        let own_version = if signing.is_some() {
+            JournalVersion::Two
+        } else {
+            JournalVersion::One
+        };
+        let mark = permissions_mark(root)?;
+        let stored = Self::usable_snapshot(&folder, account.id(), mark.as_deref())?;
+        let resumed = Resumed::from_stored(stored.as_ref(), account.id());
+        let (own, read) = OwnJournal::open_from(
+            &folder.journal_directory(),
+            account.id(),
+            signing,
+            resumed.offset_of((account.id(), own_version)),
+        )?;
+        let (mut own_rejected, mut own_unverified) = resumed.own_counts();
+        own_rejected = own_rejected.saturating_add(read.rejected().len());
+        let (mut journals, other_offsets, mut index) = resumed.into_parts();
+        let others = OtherJournals::from_offsets(account.id(), other_offsets);
+        let own_journal = journal_number(&mut journals, (account.id(), own_version));
         let mut pending = Vec::new();
-        for entry in read.into_entries() {
+        for (position, entry) in read.into_located_entries() {
             match verifier::admit(verifier.as_ref(), account.id(), entry) {
-                Ok(op) => pending.push(op),
+                Ok(op) => {
+                    remember(&mut index, &op, own_journal, position);
+                    pending.push(op);
+                }
                 Err(_failure) => own_unverified = own_unverified.saturating_add(1),
             }
         }
-        if verifier.is_some() {
+        if verifier.is_some() && stored.is_none() {
             own_unverified =
                 own_unverified.saturating_add(Self::count_unsigned_own(&folder, account.id())?);
         }
@@ -72,14 +111,50 @@ impl FileJournal {
             folder,
             account: account.clone(),
             own,
-            others: OtherJournals::fresh(account.id()),
+            others,
             pending,
             own_rejected,
             own_unverified,
             keys,
             verifier,
             key_mismatch,
+            resumed_from_snapshot: stored.is_some(),
+            resumed: stored.map(StoredSnapshot::into_ledger),
+            journals,
+            index,
         })
+    }
+
+    /// 自分のスナップショットが使えれば読む。無い・壊れている（捨てる）・権限が変わった・ジャーナルが縮んだ・知らないジャーナル名なら `None`。
+    fn usable_snapshot(
+        folder: &JournalFolder,
+        account: AccountId,
+        permissions: Option<&str>,
+    ) -> Result<Option<StoredSnapshot>, StoreFailure> {
+        let stored = match snapshot_file::read(folder.root(), account) {
+            Ok(stored) => stored,
+            Err(StoreFailure::BadSnapshot) => None,
+            Err(failure) => return Err(failure),
+        };
+        let Some(stored) = stored else {
+            return Ok(None);
+        };
+        if stored.permissions() != permissions {
+            return Ok(None);
+        }
+        let directory = folder.journal_directory();
+        for ((other, version), offset) in stored.journals() {
+            let path = directory.join(own_journal::file_name(*other, *version));
+            let length = match std::fs::metadata(&path) {
+                Ok(metadata) => metadata.len(),
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => 0,
+                Err(error) => return Err(StoreFailure::Io(error)),
+            };
+            if *offset > length {
+                return Ok(None);
+            }
+        }
+        Ok(Some(stored))
     }
 
     /// 権限を有効にした台帳に残る、自分の版 1 のジャーナルの行数。読まないが、捨てたものとして数える（FR-014）。
@@ -93,7 +168,7 @@ impl FileJournal {
         if !path.exists() {
             return Ok(0);
         }
-        Ok(crate::journal_file::read_since(&path, 0)?.entries().len())
+        Ok(journal_file::read_since(&path, 0)?.entries().len())
     }
 
     /// 台帳のフォルダ。
@@ -106,6 +181,18 @@ impl FileJournal {
     #[must_use]
     pub const fn is_signed(&self) -> bool {
         self.verifier.is_some()
+    }
+
+    /// 起動時にスナップショットから戻したか。
+    #[must_use]
+    pub const fn is_resumed(&self) -> bool {
+        self.resumed_from_snapshot
+    }
+
+    /// 索引にある操作の数。
+    #[must_use]
+    pub fn indexed_ops(&self) -> usize {
+        self.index.values().map(Vec::len).sum()
     }
 
     /// `keys/` と権限を読み直す（他人が参加した・持ち主が権限を変えた）。
@@ -140,13 +227,97 @@ impl FileJournal {
         self.verifier = verifier;
         Ok(())
     }
+
+    fn journal_path(&self, number: u8) -> Option<PathBuf> {
+        let (account, version) = self.journals.get(usize::from(number))?;
+        Some(
+            self.folder
+                .journal_directory()
+                .join(own_journal::file_name(*account, *version)),
+        )
+    }
+
+    fn read_ops_of(&self, item: ItemId) -> Result<Vec<Op>, StoreFailure> {
+        let mut ops = Vec::new();
+        for packed in self.index.get(&item).map_or(&[][..], Vec::as_slice) {
+            let (number, offset) = snapshot_file::unpack(*packed);
+            let path = self.journal_path(number).ok_or(StoreFailure::BadIndex)?;
+            let (op, _signature) = journal_file::read_line_at(&path, offset)?;
+            ops.push(op);
+        }
+        ops.sort_by_key(Op::id);
+        Ok(ops)
+    }
+
+    fn read_recent(&self, limit: usize) -> Result<Vec<Op>, StoreFailure> {
+        let bytes = u64::try_from(limit)
+            .unwrap_or(u64::MAX)
+            .saturating_mul(TAIL_BYTES_PER_OP);
+        let mut ops = Vec::new();
+        for (account, _version, path) in self.folder.journals()? {
+            ops.extend(self.admitted(account, journal_file::read_tail(&path, bytes)?));
+        }
+        ops.sort_by_key(Op::id);
+        let skip = ops.len().saturating_sub(limit);
+        Ok(ops.into_iter().skip(skip).collect())
+    }
+
+    fn read_all(&self) -> Result<Vec<Op>, StoreFailure> {
+        let mut ops = Vec::new();
+        for (account, _version, path) in self.folder.journals()? {
+            ops.extend(self.admitted(account, journal_file::read_since(&path, 0)?));
+        }
+        ops.sort_by_key(Op::id);
+        Ok(ops)
+    }
+
+    /// 読んだ行のうち、検証に通るもの（通らないものは黙って落とす: 数えるのは読み直しのときだけ）。
+    fn admitted(&self, account: AccountId, read: crate::journal_read::JournalRead) -> Vec<Op> {
+        read.into_entries()
+            .into_iter()
+            .filter_map(|entry| verifier::admit(self.verifier.as_ref(), account, entry).ok())
+            .collect()
+    }
+
+    fn write_checkpoint(&mut self, snapshot: &LedgerSnapshot) -> Result<(), StoreFailure> {
+        let own_name = (self.account.id(), self.own.version());
+        journal_number(&mut self.journals, own_name);
+        let mut offsets: BTreeMap<JournalName, u64> = self.others.offsets().clone();
+        offsets.insert(own_name, self.own.length()?);
+        let journals: Vec<(JournalName, u64)> = self
+            .journals
+            .iter()
+            .map(|name| (*name, offsets.get(name).copied().unwrap_or(0)))
+            .collect();
+        let stored = StoredSnapshot::new(
+            snapshot.clone(),
+            journals,
+            (
+                permissions_mark(self.folder.root())?,
+                self.own_rejected,
+                self.own_unverified,
+            ),
+            self.index.clone(),
+        );
+        snapshot_file::write(self.folder.root(), self.account.id(), &stored)
+    }
+}
+
+/// `permissions.v1.txt` の署名（無ければ `None`）。スナップショットが権限の変更をまたがないための印。
+fn permissions_mark(root: &Path) -> Result<Option<String>, StoreFailure> {
+    Ok(permissions_store::read(root)?.map(|reading| reading.signature().hex()))
 }
 
 impl JournalPort for FileJournal {
     fn append(&mut self, op: &Op) -> Result<(), JournalFailure> {
-        self.own
+        let own_name = (self.account.id(), self.own.version());
+        let number = journal_number(&mut self.journals, own_name);
+        let offset = self
+            .own
             .append(op)
-            .map_err(|_failure| JournalFailure::Unwritable)
+            .map_err(|_failure| JournalFailure::Unwritable)?;
+        remember(&mut self.index, op, number, offset);
+        Ok(())
     }
 
     fn sync(&mut self) -> Result<(), JournalFailure> {
@@ -161,10 +332,38 @@ impl JournalPort for FileJournal {
             .map_err(|_failure| JournalFailure::Unreadable)?;
         let fresh = self
             .others
-            .refresh(&self.folder, self.verifier.as_ref())
+            .refresh_located(&self.folder, self.verifier.as_ref())
             .map_err(|_failure| JournalFailure::Unreadable)?;
-        ops.extend(fresh);
+        for (name, offset, op) in fresh {
+            let number = journal_number(&mut self.journals, name);
+            remember(&mut self.index, &op, number, offset);
+            ops.push(op);
+        }
         Ok(ops)
+    }
+
+    fn snapshot(&mut self) -> Option<LedgerSnapshot> {
+        self.resumed.take()
+    }
+
+    fn ops_of(&self, item: ItemId) -> Result<Vec<Op>, JournalFailure> {
+        self.read_ops_of(item)
+            .map_err(|_failure| JournalFailure::Unreadable)
+    }
+
+    fn recent_ops(&self, limit: usize) -> Result<Vec<Op>, JournalFailure> {
+        self.read_recent(limit)
+            .map_err(|_failure| JournalFailure::Unreadable)
+    }
+
+    fn all_ops(&self) -> Result<Vec<Op>, JournalFailure> {
+        self.read_all()
+            .map_err(|_failure| JournalFailure::Unreadable)
+    }
+
+    fn checkpoint(&mut self, snapshot: &LedgerSnapshot) -> Result<(), JournalFailure> {
+        self.write_checkpoint(snapshot)
+            .map_err(|_failure| JournalFailure::Unwritable)
     }
 
     fn rejected_lines(&self) -> usize {
@@ -358,6 +557,87 @@ mod tests {
                 (OTHER, String::from("u4")),
                 (newer, String::from("u4"))
             ]
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    /// 持ち主が台帳を作り、1 件書いてスナップショットを書く。
+    fn checkpointed(root: &Path, owner: &Account) -> FileJournal {
+        let mut mine = FileJournal::open(root, "Team", owner).unwrap();
+        let (mut ledger, failure) =
+            nene_docket_application::ledger_opening::open(&mut mine, owner.clone());
+        assert_eq!(failure, None);
+        let op = ledger.compose(WallClock::new(0), OpKind::Create(ItemId::new(ME, 1)));
+        mine.append(&op).unwrap();
+        mine.sync().unwrap();
+        mine.checkpoint(&ledger.snapshot()).unwrap();
+        mine
+    }
+
+    #[test]
+    fn a_checkpoint_is_resumed_on_the_next_open_and_only_new_lines_are_read() {
+        let root = temp("resume");
+        let owner = account(ME, 1);
+        let other = account(OTHER, 2);
+        drop(FileJournal::open(&root, "Team", &owner).unwrap());
+        let mut theirs = FileJournal::open(&root, "Team", &other).unwrap();
+        theirs.append(&create(1, OTHER)).unwrap();
+        theirs.sync().unwrap();
+        let mine = checkpointed(&root, &owner);
+        assert!(!mine.is_resumed());
+        assert_eq!(mine.indexed_ops(), 2);
+        // 他人が 1 行足してから開き直す: スナップショットから戻り、伸びた分だけ届く。
+        theirs.append(&create(5, OTHER)).unwrap();
+        theirs.sync().unwrap();
+        let mut again = FileJournal::open(&root, "Team", &owner).unwrap();
+        assert!(again.is_resumed());
+        assert_eq!(again.snapshot().map(|s| s.docket().len()), Some(2));
+        assert_eq!(again.refresh().unwrap(), vec![create(5, OTHER)]);
+        assert_eq!(again.indexed_ops(), 3);
+        // 索引から課題の操作を引ける（同じ課題を 2 度作った 2 行）。新しい順の読みと全部の読みも。
+        assert_eq!(
+            again.ops_of(ItemId::new(OTHER, 1)).unwrap(),
+            vec![create(1, OTHER), create(5, OTHER)]
+        );
+        assert_eq!(again.recent_ops(2).unwrap().len(), 2);
+        assert_eq!(again.all_ops().unwrap().len(), 3);
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn a_checkpoint_is_dropped_when_the_permissions_change_or_a_journal_shrinks() {
+        let root = temp("resume-dropped");
+        let owner = account(ME, 1);
+        drop(checkpointed(&root, &owner));
+        assert!(
+            FileJournal::open(&root, "Team", &owner)
+                .unwrap()
+                .is_resumed()
+        );
+        // 権限を変えると（署名が変わる）スナップショットは捨てられ、全部読む。
+        administration::apply(&root, &owner, &[AdminCommand::Permissions(true)]).unwrap();
+        assert!(
+            !FileJournal::open(&root, "Team", &owner)
+                .unwrap()
+                .is_resumed()
+        );
+        // 署名付きで書き直した後にジャーナルが縮めば（手で消した）、やはり捨てる。
+        let signed = checkpointed(&root, &owner);
+        assert!(signed.is_signed());
+        drop(signed);
+        assert!(
+            FileJournal::open(&root, "Team", &owner)
+                .unwrap()
+                .is_resumed()
+        );
+        let path = root
+            .join("journal")
+            .join(own_journal::file_name(ME, JournalVersion::Two));
+        fs::write(&path, "").unwrap();
+        assert!(
+            !FileJournal::open(&root, "Team", &owner)
+                .unwrap()
+                .is_resumed()
         );
         fs::remove_dir_all(&root).unwrap();
     }

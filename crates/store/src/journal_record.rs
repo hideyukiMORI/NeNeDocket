@@ -273,7 +273,8 @@ fn decode_value(field: Field, text: &str) -> Result<FieldValue, RecordFailure> {
 }
 
 /// `,` で区切る。逃がした `\,` は区切らない。
-fn decode_labels(text: &str) -> Result<Vec<String>, RecordFailure> {
+/// `a\\,b,c` のように逃がした区切りを戻しながら割る（スナップショットの課題の行と共有）。
+pub(crate) fn decode_labels(text: &str) -> Result<Vec<String>, RecordFailure> {
     let mut labels = Vec::new();
     let mut current = String::new();
     let mut escaped = false;

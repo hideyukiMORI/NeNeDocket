@@ -7,6 +7,7 @@ use crate::date::Date;
 use crate::field_value::FieldValue;
 use crate::item_id::ItemId;
 use crate::item_state::ItemState;
+use crate::op_kind::OpKind;
 
 /// 題名・本文・状態・担当・期限・ラベル・並び順と、消されているか。すべて併合の派生値で、正本はジャーナル。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -52,6 +53,17 @@ impl Item {
             FieldValue::Rank(rank) => self.rank = rank,
         }
         self
+    }
+
+    /// 操作の種類を当てた課題（`Docket::applied` の 1 件版）。権限の記録は何もしない。
+    #[must_use]
+    pub fn applied(self, kind: &OpKind) -> Self {
+        match kind {
+            OpKind::Create(_) | OpKind::Admin(_) => self,
+            OpKind::Set { value, .. } => self.with(value.clone()),
+            OpKind::Delete(_) => self.with_deleted(true),
+            OpKind::Restore(_) => self.with_deleted(false),
+        }
     }
 
     /// 消した・戻した状態。

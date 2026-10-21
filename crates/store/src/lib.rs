@@ -21,5 +21,8 @@ pub mod other_journals;
 pub mod own_journal;
 pub mod permissions_store;
 pub mod record_failure;
+mod resumed_snapshot;
+pub mod snapshot_file;
+mod snapshot_reading;
 pub mod store_failure;
 pub mod verifier;
