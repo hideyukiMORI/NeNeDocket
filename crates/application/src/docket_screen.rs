@@ -1,4 +1,4 @@
-//! 画面の状態の所有者（ARC-004）。検索欄・絞り込み・完了の表示・表の選択とスクロール・選んだ課題の編集（題名・担当・期限・状態・削除）・履歴の段・Undo / Redo。
+//! 画面の状態の所有者（ARC-004）。検索欄・絞り込み・完了の表示・表の選択とスクロール・選んだ課題の編集（題名・担当・期限・ラベル・状態・削除）・履歴の段・Undo / Redo。
 //!
 //! 即時モード（ADR 0006）。`step` が 1 フレームの入力を受け、鍵を前のフレームのフォーカスに配り、
 //! 部品を問い合わせ、描画命令を返す。業務の判断（どの行を出すか・何が選ばれたか・どの操作を作るか）は
@@ -63,6 +63,7 @@ const ASSIGNEE: WidgetId = WidgetId::new(9);
 const DUE: WidgetId = WidgetId::new(10);
 /// 11 は履歴の段のスクロールバー（`history_pane`）。
 const HISTORY_TOGGLE: WidgetId = WidgetId::new(12);
+const LABELS: WidgetId = WidgetId::new(13);
 const FILTER_OPTION: WidgetId = WidgetId::new(100);
 const STATE_OPTION: WidgetId = WidgetId::new(200);
 const ROW: WidgetId = WidgetId::new(1_000);
@@ -79,8 +80,11 @@ const NUMBER_WIDTH_PX: u16 = 72;
 const STATE_WIDTH_PX: u16 = 110;
 const ASSIGNEE_WIDTH_PX: u16 = 90;
 const DUE_WIDTH_PX: u16 = 90;
+const LABELS_WIDTH_PX: u16 = 120;
 /// 編集行の担当と期限の欄。
 const EDIT_FIELD_WIDTH_PX: u16 = 100;
+/// 編集行のラベルの欄。
+const LABELS_FIELD_WIDTH_PX: u16 = 140;
 /// ホイール 1 刻みで送る行数。
 const WHEEL_ROWS: i32 = 3;
 /// 番号の列に出す作成者の ID の桁数。
@@ -104,6 +108,7 @@ pub struct DocketScreen {
     title: TextEdit,
     assignee: TextEdit,
     due: TextEdit,
+    labels: TextEdit,
     bad_due: bool,
     state: SelectState,
     history: HistoryPane,
@@ -132,6 +137,7 @@ impl DocketScreen {
             title: TextEdit::empty(),
             assignee: TextEdit::empty(),
             due: TextEdit::empty(),
+            labels: TextEdit::empty(),
             bad_due: false,
             state: SelectState::closed(STATE_OPTIONS.len(), 0),
             history: HistoryPane::hidden(environment.scale()),
@@ -286,11 +292,17 @@ impl DocketScreen {
             .into_iter()
             .filter(|item| wanted.is_none_or(|state| item.state() == state))
             .filter(|item| self.show_done || item.state() != ItemState::Done)
-            .filter(|item| {
-                self.search.text().is_empty() || item.title().contains(self.search.text())
-            })
+            .filter(|item| self.matches_search(item))
             .map(Item::id)
             .collect()
+    }
+
+    /// 検索欄が空か、題名かラベルに含まれる。
+    fn matches_search(&self, item: &Item) -> bool {
+        let wanted = self.search.text();
+        wanted.is_empty()
+            || item.title().contains(wanted)
+            || item.labels().iter().any(|label| label.contains(wanted))
     }
 
     /// 選んでいる課題の、いまの値。
@@ -346,11 +358,12 @@ impl DocketScreen {
             .probe(&mut self.interaction, (area, &lines), commands);
     }
 
-    fn editor_widths(&self) -> [ColumnWidth; 5] {
+    fn editor_widths(&self) -> [ColumnWidth; 6] {
         [
             ColumnWidth::Fill,
             ColumnWidth::Fixed(self.px(EDIT_FIELD_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(EDIT_FIELD_WIDTH_PX)),
+            ColumnWidth::Fixed(self.px(LABELS_FIELD_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(STATE_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(BUTTON_WIDTH_PX)),
         ]
@@ -362,6 +375,7 @@ impl DocketScreen {
             EditSlot::Title => TITLE,
             EditSlot::Assignee => ASSIGNEE,
             EditSlot::Due => DUE,
+            EditSlot::Labels => LABELS,
         }
     }
 
@@ -377,6 +391,7 @@ impl DocketScreen {
             EditSlot::Title => &self.title,
             EditSlot::Assignee => &self.assignee,
             EditSlot::Due => &self.due,
+            EditSlot::Labels => &self.labels,
         }
     }
 
@@ -385,6 +400,7 @@ impl DocketScreen {
             EditSlot::Title => &mut self.title,
             EditSlot::Assignee => &mut self.assignee,
             EditSlot::Due => &mut self.due,
+            EditSlot::Labels => &mut self.labels,
         }
     }
 
@@ -423,6 +439,7 @@ impl DocketScreen {
             ColumnWidth::Fixed(self.px(STATE_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(ASSIGNEE_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(DUE_WIDTH_PX)),
+            ColumnWidth::Fixed(self.px(LABELS_WIDTH_PX)),
         ])
     }
 
@@ -657,6 +674,10 @@ impl DocketScreen {
                 item: item.id(),
                 value,
             });
+            // 欄を正規の形（`a, b`・`2026-12-31`）に揃える。
+            if let Some(updated) = self.selected_item() {
+                *self.slot_mut(slot) = TextEdit::showing(&slot.text_of(&updated));
+            }
         }
     }
 
@@ -722,16 +743,24 @@ impl DocketScreen {
         (filter_rect, filter)
     }
 
-    /// 選んだ課題の題名・担当・期限・状態・削除。状態の箱は最後に描く。
+    /// 選んだ課題の題名・担当・期限・ラベル・状態・削除。状態の箱は最後に描く。
     fn probe_editor(
         &mut self,
         editor: &[PixelRect],
         commands: &mut Vec<DrawCommand>,
     ) -> (PixelRect, Response) {
-        let [title_rect, assignee_rect, due_rect, state_rect, delete_rect] = Self::rects(editor);
-        for (slot, rect) in EditSlot::ALL
-            .into_iter()
-            .zip([title_rect, assignee_rect, due_rect])
+        let [
+            title_rect,
+            assignee_rect,
+            due_rect,
+            labels_rect,
+            state_rect,
+            delete_rect,
+        ] = Self::rects(editor);
+        for (slot, rect) in
+            EditSlot::ALL
+                .into_iter()
+                .zip([title_rect, assignee_rect, due_rect, labels_rect])
         {
             let response = self.interaction.probe(Self::slot_id(slot), rect, true);
             commands.extend(text_field::text_field(rect, self.slot(slot), response));
@@ -806,7 +835,7 @@ impl DocketScreen {
         for (cell, heading) in table
             .cells(header)
             .into_iter()
-            .zip(["#", "Title", "State", "Assignee", "Due"])
+            .zip(["#", "Title", "State", "Assignee", "Due", "Labels"])
         {
             commands.push(Self::cell_text(
                 cell,
@@ -860,6 +889,7 @@ impl DocketScreen {
             item.state().label().to_owned(),
             item.assignee().to_owned(),
             EditSlot::Due.text_of(item),
+            EditSlot::Labels.text_of(item),
         ];
         for (cell, text) in cells.into_iter().zip(texts) {
             commands.push(Self::cell_text(cell, &text, Paint::Ink, self.px(MARGIN_PX)));
@@ -960,7 +990,7 @@ mod tests {
     use crate::clock_port::ClockPort;
     use crate::journal_port::JournalPort;
 
-    const BOUNDS: PixelRect = PixelRect::new(0, 0, 640, 400);
+    const BOUNDS: PixelRect = PixelRect::new(0, 0, 800, 400);
     const ME: AccountId = AccountId::new(1);
     const OTHER: AccountId = AccountId::new(2);
     /// 1 行目の中央。段は 8..36（道具）・44..72（編集）・80..108（ヘッダ）・108 から行。
@@ -968,14 +998,20 @@ mod tests {
     const SECOND_ROW_Y: u16 = 150;
     const TOOLBAR_Y: u16 = 20;
     const EDITOR_Y: u16 = 58;
-    /// 道具の段: 絞り込み 168..308・完了 316..436・履歴 444..544・追加 552..632。
-    const FILTER_X: u16 = 240;
-    const SHOW_DONE_X: u16 = 380;
-    const HISTORY_X: u16 = 500;
-    const ADD_X: u16 = 600;
-    /// 編集行の担当の欄（218..318）と期限の欄（326..426）。
-    const ASSIGNEE_X: u16 = 260;
-    const DUE_X: u16 = 370;
+    /// 道具の段: 絞り込み 328..468・完了 476..596・履歴 604..704・追加 712..792。
+    const FILTER_X: u16 = 400;
+    const SHOW_DONE_X: u16 = 530;
+    const HISTORY_X: u16 = 650;
+    const ADD_X: u16 = 750;
+    /// 編集行: 題名 8..222・担当 230..330・期限 338..438・ラベル 446..586・状態 594..704・削除 712..792。
+    const TITLE_X: u16 = 100;
+    const STATE_X: u16 = 650;
+    const DELETE_X: u16 = 750;
+    const LABELS_X: u16 = 510;
+    /// スクロールバーの溝（781..792）。
+    const TRACK_X: u16 = 786;
+    const ASSIGNEE_X: u16 = 280;
+    const DUE_X: u16 = 390;
 
     /// 書き込みを覚え、読み直しで渡す分を積める偽のジャーナル。
     #[derive(Debug, Default)]
@@ -1244,7 +1280,7 @@ mod tests {
     fn editing_the_title_commits_when_focus_leaves() {
         let (mut screen, spy) = screen(3);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, 100, EDITOR_Y);
+        click(&mut screen, TITLE_X, EDITOR_Y);
         keys(&mut screen, &[KeyIntent::SelectAll]);
         keys(&mut screen, &chars("Renamed"));
         assert_eq!(spy.written.borrow().len(), 0);
@@ -1260,9 +1296,9 @@ mod tests {
         let (mut screen, spy) = screen(3);
         let first = ItemId::new(OTHER, 1);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, 500, EDITOR_Y);
+        click(&mut screen, STATE_X, EDITOR_Y);
         assert!(!screen.filter().is_open());
-        click(&mut screen, 500, 142);
+        click(&mut screen, STATE_X, 142);
         assert_eq!(
             screen.ledger().docket().item(first).map(Item::state),
             Some(ItemState::Done)
@@ -1280,7 +1316,7 @@ mod tests {
         let (mut screen, spy) = screen(3);
         let first = ItemId::new(OTHER, 1);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, 600, EDITOR_Y);
+        click(&mut screen, DELETE_X, EDITOR_Y);
         assert_eq!(screen.selected(), None);
         assert_eq!(screen.visible_items().len(), 2);
         keys(&mut screen, &[KeyIntent::Undo]);
@@ -1308,11 +1344,11 @@ mod tests {
     #[test]
     fn delete_by_key_needs_the_focus_and_a_selection() {
         let (mut screen, spy) = screen(2);
-        keys(&mut screen, &[KeyIntent::Tab; 10]);
+        keys(&mut screen, &[KeyIntent::Tab; 11]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 0);
         click(&mut screen, 100, FIRST_ROW_Y);
-        keys(&mut screen, &[KeyIntent::Tab; 10]);
+        keys(&mut screen, &[KeyIntent::Tab; 11]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 1);
     }
@@ -1365,6 +1401,34 @@ mod tests {
     }
 
     #[test]
+    fn labels_are_comma_separated_and_the_search_matches_them() {
+        let (mut screen, spy) = screen(2);
+        let first = ItemId::new(OTHER, 1);
+        click(&mut screen, 100, FIRST_ROW_Y);
+        click(&mut screen, LABELS_X, EDITOR_Y);
+        keys(&mut screen, &chars("bug, ui ,"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert_eq!(
+            screen.ledger().docket().item(first).map(Item::labels),
+            Some(&[String::from("bug"), String::from("ui")][..])
+        );
+        assert_eq!(spy.written.borrow().len(), 1);
+        let frame = idle(&mut screen);
+        assert!(
+            texts(&frame)
+                .iter()
+                .filter(|text| *text == "bug, ui")
+                .count()
+                >= 2
+        );
+        click(&mut screen, 100, TOOLBAR_Y);
+        keys(&mut screen, &chars("ui"));
+        assert_eq!(screen.visible_items().len(), 1);
+        keys(&mut screen, &[KeyIntent::SelectAll, KeyIntent::Backspace]);
+        assert_eq!(screen.visible_items().len(), 2);
+    }
+
+    #[test]
     fn selecting_another_row_reloads_every_field_and_drops_the_date_notice() {
         let (mut screen, _) = screen(2);
         click(&mut screen, 100, FIRST_ROW_Y);
@@ -1414,7 +1478,7 @@ mod tests {
             },
         ));
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, 100, EDITOR_Y);
+        click(&mut screen, TITLE_X, EDITOR_Y);
         keys(&mut screen, &[KeyIntent::SelectAll]);
         keys(&mut screen, &chars("Mine"));
         keys(&mut screen, &[KeyIntent::Enter]);
@@ -1501,8 +1565,8 @@ mod tests {
         let (mut screen, _) = screen(3);
         click(&mut screen, HISTORY_X, TOOLBAR_Y);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, 500, EDITOR_Y);
-        click(&mut screen, 500, 142);
+        click(&mut screen, STATE_X, EDITOR_Y);
+        click(&mut screen, STATE_X, 142);
         keys(&mut screen, &[KeyIntent::Undo]);
         screen
     }
@@ -1512,7 +1576,7 @@ mod tests {
         let (mut screen, spy) = screen(2);
         let first = ItemId::new(OTHER, 1);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, 100, EDITOR_Y);
+        click(&mut screen, TITLE_X, EDITOR_Y);
         keys(&mut screen, &[KeyIntent::SelectAll]);
         keys(&mut screen, &chars("Renamed"));
         keys(&mut screen, &[KeyIntent::Enter]);
@@ -1579,8 +1643,8 @@ mod tests {
     #[test]
     fn dragging_the_scroll_bar_moves_the_offset() {
         let (mut screen, _) = screen(200);
-        screen.step(&pointer(630, 200, ButtonPhase::Pressed));
-        screen.step(&pointer(630, 300, ButtonPhase::Held));
+        screen.step(&pointer(TRACK_X, 200, ButtonPhase::Pressed));
+        screen.step(&pointer(TRACK_X, 300, ButtonPhase::Held));
         assert!(screen.scroll().offset() > 0);
         assert!(screen.scroll().offset() <= screen.scroll().max_offset());
     }
@@ -1597,7 +1661,7 @@ mod tests {
             |command| matches!(command, DrawCommand::Text { text, caret: Some(_), .. } if text == "か")
         ));
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, 100, EDITOR_Y);
+        click(&mut screen, TITLE_X, EDITOR_Y);
         let in_title = screen.step(
             &FrameInput::new(BOUNDS, PointerInput::absent())
                 .with_preedit(Some(nene_docket_core::preedit::Preedit::new("き", 1))),

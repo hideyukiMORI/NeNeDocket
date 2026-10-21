@@ -448,7 +448,21 @@ Xvfb（`:97`）: `Add` → 題名 → 状態を `Done` → 題名を変えて En
 🔴 **見つかった欠陥（この PR で直した）:** 最初のスクリーンショットには 6 行目 `title : Decide … -> Snapshot ADR` が余計に出ていた。題名の欄にフォーカスがあるまま Ctrl+Z すると、欄には戻す前の文字が残り（入力中の欄は読み直しで触らない規則）、
 フォーカスが外れた瞬間に「欄と課題が違う」と判定して戻す前の値を追記していた。Undo / Redo / Delete の後は入力中の欄も強制的に合わせるようにした（`reload_editor(true)`）。テスト `undo_while_a_field_is_focused_reloads_it_so_nothing_is_re_appended`。
 
-## 18. 再現
+## 18. Issue #20 — ラベルを画面から変える（2026-10-21）
+
+同じコンテナ。`EditSlot::Labels`（`,` 区切り・前後の空白を落とす・空は無し）、編集行の 4 つ目の欄、表の `Labels` の列、検索欄は題名かラベルに含まれば出す。確定した欄は正規の形（`a, b`）に揃える。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 241 件（application 44） |
+| `make conformance` | 違反なし（151 ファイル） |
+| `make coverage` | regions 99.22% |
+
+Xvfb（`:97`）: 課題を 2 つ足し、1 つ目にラベル `ui,table , later`、2 つ目に `adr`。ジャーナルには `labels	ui,table,later` と `labels	adr`（`,` は `\,` に逃がして 1 行）。
+検索欄に `table` で 1 つ目だけが出る（[01-labels-search](screenshots/2026-10-21-labels-01-search.png)）。
+
+## 19. 再現
 
 ```bash
 make prove
