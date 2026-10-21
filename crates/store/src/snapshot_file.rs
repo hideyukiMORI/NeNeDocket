@@ -27,6 +27,7 @@ use nene_docket_core::op_id::OpId;
 
 use core::fmt::Write as _;
 
+use crate::crc32::crc32;
 use crate::escape::{escape, unescape};
 use crate::journal_record;
 use crate::journal_version::JournalVersion;
@@ -227,7 +228,24 @@ pub fn encode(snapshot: &StoredSnapshot) -> String {
     }
     let count: usize = snapshot.index.values().map(Vec::len).sum();
     let _written = writeln!(text, "index = {count}");
+    // 🔴 最後の行は検査和（状態の文・索引のバイト列）。ビット反転も捨てて全部読む側に倒す（Issue #77）。
+    let _checksum = writeln!(
+        text,
+        "crc = {:08x} {:08x}",
+        crc32(text.as_bytes()),
+        crc32(&encode_index(&snapshot.index))
+    );
     text
+}
+
+/// 最後の行の検査和を確かめ、それより前の文を返す。無い・合わないなら `None`。
+fn checked_body<'a>(text: &'a str, index_bytes: &[u8]) -> Option<&'a str> {
+    let last = text.lines().last()?;
+    let body = text.get(..text.len().checked_sub(last.len())?.checked_sub(1)?)?;
+    let (state_hex, index_hex) = last.strip_prefix("crc = ")?.split_once(' ')?;
+    let state_ok = u32::from_str_radix(state_hex, 16).ok()? == crc32(body.as_bytes());
+    let index_ok = u32::from_str_radix(index_hex, 16).ok()? == crc32(index_bytes);
+    (state_ok && index_ok).then_some(body)
 }
 
 fn op_id_text(id: OpId) -> String {
@@ -342,9 +360,10 @@ pub(crate) fn parse_item(text: &str) -> Option<Item> {
 ///
 /// 形が違う。
 pub fn parse(text: &str, index_bytes: &[u8]) -> Result<StoredSnapshot, StoreFailure> {
+    let body = checked_body(text, index_bytes).ok_or(StoreFailure::BadSnapshot)?;
     let mut reading = Reading::empty();
     let mut versioned = false;
-    for line in text.lines() {
+    for line in body.lines() {
         let (key, value) = line.split_once(" = ").ok_or(StoreFailure::BadSnapshot)?;
         if key == "version" {
             versioned = true;

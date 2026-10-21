@@ -9,6 +9,8 @@ pub mod administration;
 pub mod admission_failure;
 pub mod attachment_store;
 mod crc32;
+#[cfg(test)]
+mod damage;
 pub mod docket_file;
 mod escape;
 pub mod file_journal;

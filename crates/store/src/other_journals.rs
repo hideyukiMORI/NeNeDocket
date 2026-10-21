@@ -1,5 +1,7 @@
 //! 他人のジャーナルの読み直し。アカウントごとに読んだ位置を覚え、伸びた分だけ読む（ADR 0004 の 8）。
 //! 権限を有効にした台帳では、読んだ行を検証器に通し、通らない行は捨てて数える（ADR 0010 の 4）。
+//! 改行の無い末尾（書きかけ）は次回に回すが、読み直し 4 回伸びなければ「書き手が止まった」として壊れた行に数える（Issue #77）。
+//! その後に伸びれば数えるのをやめる（書き手が開き直すと改行を足して 1 行の壊れになる・`own_journal`）。
 
 use std::collections::BTreeMap;
 
@@ -17,13 +19,17 @@ use crate::verifier::{self, Verifier};
 /// 読んだ操作と、それがどのジャーナル（アカウントと版）の何バイト目か。
 pub type LocatedOp = ((AccountId, JournalVersion), u64, Op);
 
-/// 自分のアカウントと、他人のジャーナル（アカウントと版）ごとの次に読む位置。
+/// 書きかけの末尾を「止まった」と数えるまでの読み直しの回数（3 秒の刻みで約 12 秒）。
+const STALL_REFRESHES: u32 = 4;
+
+/// 自分のアカウントと、他人のジャーナル（アカウントと版）ごとの次に読む位置。`stalls` は書きかけの末尾の位置と、それが伸びなかった回数。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct OtherJournals {
     own: AccountId,
     offsets: BTreeMap<(AccountId, JournalVersion), u64>,
     rejected: Vec<(AccountId, u64, RecordFailure)>,
     unverified: Vec<(AccountId, AdmissionFailure)>,
+    stalls: BTreeMap<(AccountId, JournalVersion), (u64, u32)>,
 }
 
 impl OtherJournals {
@@ -35,6 +41,7 @@ impl OtherJournals {
             offsets: BTreeMap::new(),
             rejected: Vec::new(),
             unverified: Vec::new(),
+            stalls: BTreeMap::new(),
         }
     }
 
@@ -49,6 +56,7 @@ impl OtherJournals {
             offsets,
             rejected: Vec::new(),
             unverified: Vec::new(),
+            stalls: BTreeMap::new(),
         }
     }
 
@@ -94,6 +102,11 @@ impl OtherJournals {
             let offset = self.offsets.get(&(account, version)).copied().unwrap_or(0);
             let read = journal_file::read_since(&path, offset)?;
             self.offsets.insert((account, version), read.next_offset());
+            self.note_tail(
+                (account, version),
+                read.next_offset(),
+                read.has_partial_tail(),
+            );
             self.rejected.extend(
                 read.rejected()
                     .iter()
@@ -107,6 +120,32 @@ impl OtherJournals {
             }
         }
         Ok(fresh)
+    }
+
+    /// 書きかけの末尾の様子。同じ位置のまま 4 回なら壊れた行に数え、伸びたら数えるのをやめる。
+    fn note_tail(&mut self, journal: (AccountId, JournalVersion), offset: u64, partial: bool) {
+        let account = journal.0;
+        match (self.stalls.get(&journal).copied(), partial) {
+            (Some((at, seen)), true) if at == offset => {
+                let seen = seen.saturating_add(1);
+                self.stalls.insert(journal, (at, seen));
+                if seen == STALL_REFRESHES {
+                    self.rejected.push((account, at, RecordFailure::Unfinished));
+                }
+            }
+            (Some((at, _)), _) => {
+                self.rejected
+                    .retain(|entry| *entry != (account, at, RecordFailure::Unfinished));
+                self.stalls.remove(&journal);
+                if partial {
+                    self.stalls.insert(journal, (offset, 1));
+                }
+            }
+            (None, true) => {
+                self.stalls.insert(journal, (offset, 1));
+            }
+            (None, false) => {}
+        }
     }
 
     /// これまでに見た壊れた行（アカウント・位置・理由）。
