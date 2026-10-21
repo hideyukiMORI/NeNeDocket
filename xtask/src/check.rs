@@ -492,9 +492,10 @@ pub(crate) fn no_nondeterministic_input(file: &SourceFile) -> Vec<Violation> {
 }
 
 /// クレート間で許された依存（ARC-002）。鍵はディレクトリ名、値は依存してよいパッケージ名。
-/// 🔴 core と application は依存 0。外部クレートを足すのは ADR と deny.toml の仕事（ARC-013）。
+/// 🔴 core の外部クレートは `ed25519-dalek` だけ（ADR 0010）。application・store・xtask は外部 0。
+///    外部クレートを足すのは ADR と deny.toml の仕事（ARC-013）。
 const ALLOWED_DEPENDENCIES: [(&str, &[&str]); 9] = [
-    ("crates/core/", &[]),
+    ("crates/core/", &["ed25519-dalek"]),
     ("crates/application/", &["nene-docket-core"]),
     (
         "crates/store/",
@@ -531,8 +532,13 @@ const ALLOWED_DEPENDENCIES: [(&str, &[&str]); 9] = [
     ("xtask/", &[]),
 ];
 
-/// 外部クレートを持たないクレート（中核と、標準ライブラリだけの store）。
-const NO_EXTERNAL_CRATES: [&str; 2] = ["crates/application/", "crates/store/"];
+/// 外部クレートを表に書いたものだけに限るクレート（中核・store・検査器）。他は ADR と deny.toml に任せる。
+const LISTED_EXTERNAL_CRATES: [&str; 4] = [
+    "crates/core/",
+    "crates/application/",
+    "crates/store/",
+    "xtask/",
+];
 
 /// 内部クレートの接頭辞。
 const INTERNAL_PREFIX: &str = "nene-docket-";
@@ -559,9 +565,9 @@ fn dependency_names(file: &SourceFile) -> Vec<(usize, String)> {
     found
 }
 
-/// CNF-013 — クレート間の依存は許可された向きだけ。中核と検査器は依存 0（ARC-002 / ARC-013）。
+/// CNF-013 — クレート間の依存は許可された向きだけ。中核と検査器の外部クレートは表に書いたものだけ（ARC-002 / ARC-013）。
 ///
-/// 内部クレートは表と照合する。外部クレートは中核（core / application）と xtask では拒み、
+/// 内部クレートは表と照合する。外部クレートは中核（core / application）・store・xtask では表に無ければ拒み、
 /// 他では ADR と deny.toml に任せる。
 pub(crate) fn dependencies_follow_graph(file: &SourceFile) -> Vec<Violation> {
     if !file.is_named("Cargo.toml") {
@@ -573,12 +579,13 @@ pub(crate) fn dependencies_follow_graph(file: &SourceFile) -> Vec<Violation> {
     else {
         return Vec::new();
     };
-    let pure = allowed.is_empty() || NO_EXTERNAL_CRATES.contains(&directory);
+    let listed = LISTED_EXTERNAL_CRATES.contains(&directory);
     dependency_names(file)
         .into_iter()
         .filter(|(_, name)| {
             let internal = name.starts_with(INTERNAL_PREFIX);
-            (internal && !allowed.contains(&name.as_str())) || (!internal && pure)
+            let known = allowed.contains(&name.as_str());
+            !known && (internal || listed)
         })
         .map(|(number, name)| {
             Violation::new(
@@ -997,9 +1004,22 @@ mod tests {
     }
 
     #[test]
-    fn cnf013_catches_external_crate_in_core() {
+    fn cnf013_catches_external_crate_in_core_but_allows_the_listed_one() {
         let file = fixture("crates/core/Cargo.toml", "[dependencies]\nregex = \"1\"\n");
         assert_eq!(dependencies_follow_graph(&file).len(), 1);
+        let listed = fixture(
+            "crates/core/Cargo.toml",
+            "[dependencies]\ned25519-dalek = { version = \"2.2\", default-features = false }\n",
+        );
+        assert!(dependencies_follow_graph(&listed).is_empty());
+        let elsewhere = fixture(
+            "crates/application/Cargo.toml",
+            "[dependencies]\ned25519-dalek = \"2.2\"\n",
+        );
+        assert_eq!(
+            rules(&dependencies_follow_graph(&elsewhere)),
+            vec!["CNF-013"]
+        );
     }
 
     #[test]

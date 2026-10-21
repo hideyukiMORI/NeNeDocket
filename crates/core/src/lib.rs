@@ -1,7 +1,7 @@
 //! `NeNe Docket` の中核。値・不変条件・閉じた選択肢と、部品の核（ARC-003 / ADR 0006）。
 //!
 //! 🔴 `#![no_std]` である。X11・Win32・cairo・Direct2D・ファイル・時刻・環境変数には構文的に到達できない。
-//! 外部クレートへの依存は 0（ARC-013 / CNF-013）。
+//! 外部クレートは `ed25519-dalek`（署名と検証・ADR 0010）だけ。他は CNF-013 が拒む（ARC-013）。
 //!
 //! 部品の核は即時モードで書く。UI は毎フレーム、ポインタと鍵の入力を [`interaction::Interaction`] に渡し、
 //! 部品ごとに矩形と ID を問い合わせて [`response::Response`] を受け取り、[`draw_command::DrawCommand`] の列を描く。
@@ -28,6 +28,7 @@ pub mod docket;
 pub mod draw_command;
 pub mod field;
 pub mod field_value;
+pub mod hex;
 pub mod interaction;
 pub mod item;
 pub mod item_id;
@@ -43,10 +44,12 @@ pub mod op_id;
 pub mod op_kind;
 pub mod paint;
 pub mod palette;
+pub mod permissions;
 pub mod pixel_point;
 pub mod pixel_rect;
 pub mod pointer_input;
 pub mod preedit;
+pub mod public_key;
 pub mod response;
 pub mod response_phase;
 pub mod rgb;
@@ -54,6 +57,8 @@ pub mod scroll_bar;
 pub mod scroll_state;
 pub mod select_box;
 pub mod select_state;
+pub mod signature;
+pub mod signing_key;
 pub mod table_layout;
 pub mod text_align;
 pub mod text_caret;

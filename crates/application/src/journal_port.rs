@@ -1,9 +1,12 @@
 //! ジャーナルのポート（ARC-003）。追記・同期・読み直し。実装は store。
 
+use alloc::string::String;
 use alloc::vec::Vec;
 
+use nene_docket_core::account_id::AccountId;
 use nene_docket_core::op::Op;
 
+use crate::admission_report::AdmissionReport;
 use crate::journal_failure::JournalFailure;
 
 /// 自分のジャーナルに追記し、同期し、他人の伸びた分を読む。
@@ -31,4 +34,10 @@ pub trait JournalPort {
 
     /// これまでに見た壊れた行の数。利用者に示す（FR-014）。
     fn rejected_lines(&self) -> usize;
+
+    /// 署名と権限の検証の報告（FR-010）。権限を使わない台帳は [`AdmissionReport::open`]。
+    fn admission(&self) -> AdmissionReport;
+
+    /// 台帳の `keys/` にあるアカウントの名前（FR-009）。履歴の「誰が」に使う。
+    fn names(&self) -> Vec<(AccountId, String)>;
 }

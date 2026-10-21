@@ -52,4 +52,10 @@ pub enum Word {
     UnknownTheme,
     /// 言語の選択肢の「OS に従う」。
     FollowSystem,
+    /// 署名か権限が通らず捨てた行（数が続く・FR-010）。
+    UnverifiedLines,
+    /// 台帳にある自分の公開鍵が手元と違う。
+    KeyMismatch,
+    /// 自分はこの台帳の編集者でない。
+    NotAnEditor,
 }

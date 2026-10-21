@@ -539,7 +539,38 @@ application に設定の版 2・`SettingsPort`・`Environment` の言語と明�
 
 🔴 **正直に:** 翻訳 6 言語 × 31 語は自分で書き、母語話者の目を通していない。導出した 8 色の見た目は仮（ADR 0012 の 2）。既定のライトが `neutral-light`（橙の強調）になり、Issue #5〜#20 の青い強調から変わった。
 
-## 22. 再現
+## 22. Issue #29 — 署名と権限（ADR 0010 受理・2026-10-21）
+
+同じコンテナ。core に `ed25519-dalek`（唯一の外部クレート）と `hex` / `SigningKey` / `PublicKey` / `Signature` / `Permissions`。application に `account_file` 版 2・`key_record`・`permissions_file`・`AdmissionReport`・履歴の「誰が」の名前。store にジャーナル版 2（署名付き）・`keys/`・`permissions.v1.txt`・`verifier`・`administration`。adapters に鍵の乱数と `account.v2.txt`（版 1 から移行）。app に持ち主の旗（`--permissions` / `--allow` / `--disallow` / `--group` / `--ungroup`）。
+
+### 22.1 ゲート
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make build-windows` | exe 2.4 MB（2.0 MB から・Windows では未実行のまま） |
+| `make test` | 306 件（core 89・application 56・store 39・adapters-x11 8・adapters-windows 5・xtask 81） |
+| `make conformance` | 違反なし（210 ファイル）。CNF-013 は core の `ed25519-dalek` を通し、他のクレートの外部クレートは今まで通り拒む（xtask のテスト） |
+| `make deny` | ok。`BSD-3-Clause` を足す前は `licenses FAILED`（ed25519-dalek / curve25519-dalek / subtle）で落ちることを実測してから足した |
+| `make coverage` | core ＋ application regions 99.03% |
+
+テストが要求すること: 鍵の 16 進の往復と `Debug` が秘密を出さないこと、署名が持ち主の公開鍵でだけ通ること（1 ビット変えれば落ちる）、版 2 の行の往復・署名の無い版 2 の行は読めない（`BadSignature`）・値を書き換えて検査和だけ直した行は署名で落ちる、編集者の名で別の鍵が署名した行（なりすまし）・編集者でない人の行・鍵の無い人の行・版 1 の行がそれぞれの理由で捨てられ数えられること、`permissions.v1.txt` の署名が持ち主の鍵でだけ本物になること（持ち主でない署名・持ち主の欄の改変・鍵の無い持ち主は起動を止める）、持ち主でない人の `--permissions` は何も書かないこと、`account.v1.txt` が鍵を足して版 2 になり版 1 が残ること。
+
+### 22.2 Xvfb（`:96`・`LANG=en_US.UTF-8`・3 アカウント・QLT-013）
+
+| 手順 | 見えたもの | PNG |
+| --- | --- | --- |
+| alice が台帳を作り 1 件書く（権限なし） | `journal/<alice>.v1.log` に 2 行 | |
+| bob と carol が開いて閉じる | `keys/` に 3 人の公開鍵と名前 | |
+| `nene-docket shared --permissions on --allow <bob>`（alice） | `docket.v1.txt` に `owner` と `permissions = on`、`permissions.v1.txt` に `editor = <bob>` と署名。終了コード 0 | |
+| 同じ命令を carol が | 終了コード 1・`only the docket owner may change permissions`。ファイルは変わらない | |
+| 3 人が開き、それぞれ 1 件足す | alice と bob は互いの課題を見て carol の課題は見ない。窓の下に `lines failing signature or permission: 4`（alice の版 1 の 2 行 ＋ carol の 2 行）。carol は自分の課題を見るが `not an editor of this docket; changes are ignored` | [03-after-edits](screenshots/2026-10-21-permissions-03-after-edits.png) |
+| alice が bob の行を選び History | 「誰が」が `keys/` の名前 `bob` | [04-alice-history](screenshots/2026-10-21-permissions-04-alice-history.png) |
+| ジャーナル | 3 人とも `.v2.log` に署名 128 桁付きの行。alice の `.v1.log` は残る | |
+
+🔴 **正直に:** 権限を有効にする前の履歴（alice の 2 行）は捨てられて数に出る（ADR 0010 の 4）。権限を変える画面は無い。秘密鍵は平文。SMB の上と Windows は施主の実機で。
+
+## 23. 再現
 
 ```bash
 make prove

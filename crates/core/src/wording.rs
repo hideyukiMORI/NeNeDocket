@@ -52,6 +52,9 @@ const fn japanese(word: Word) -> &'static str {
         Word::CannotWriteSettings => "設定を書けません",
         Word::UnknownTheme => "知らないテーマです",
         Word::FollowSystem => "OS に従う",
+        Word::UnverifiedLines => "署名か権限が通らない行",
+        Word::KeyMismatch => "台帳にある自分の公開鍵が手元と違います",
+        Word::NotAnEditor => "この台帳の編集者ではありません。変更は無視されます",
     }
 }
 
@@ -88,6 +91,9 @@ const fn english(word: Word) -> &'static str {
         Word::CannotWriteSettings => "settings: cannot write",
         Word::UnknownTheme => "unknown theme",
         Word::FollowSystem => "System",
+        Word::UnverifiedLines => "lines failing signature or permission",
+        Word::KeyMismatch => "my key in this docket differs from mine",
+        Word::NotAnEditor => "not an editor of this docket; changes are ignored",
     }
 }
 
@@ -123,6 +129,9 @@ const fn simplified_chinese(word: Word) -> &'static str {
         Word::CannotWriteSettings => "无法写入设置",
         Word::UnknownTheme => "未知的主题",
         Word::FollowSystem => "跟随系统",
+        Word::UnverifiedLines => "签名或权限未通过的行",
+        Word::KeyMismatch => "台账中的本人公钥与本机不一致",
+        Word::NotAnEditor => "不是此台账的编辑者，改动将被忽略",
     }
 }
 
@@ -158,6 +167,9 @@ const fn traditional_chinese(word: Word) -> &'static str {
         Word::CannotWriteSettings => "無法寫入設定",
         Word::UnknownTheme => "未知的主題",
         Word::FollowSystem => "跟隨系統",
+        Word::UnverifiedLines => "簽名或權限未通過的行",
+        Word::KeyMismatch => "帳冊中的本人公鑰與本機不一致",
+        Word::NotAnEditor => "不是此帳冊的編輯者，改動將被忽略",
     }
 }
 
@@ -193,6 +205,9 @@ const fn korean(word: Word) -> &'static str {
         Word::CannotWriteSettings => "설정을 쓸 수 없음",
         Word::UnknownTheme => "알 수 없는 테마",
         Word::FollowSystem => "시스템",
+        Word::UnverifiedLines => "서명 또는 권한이 맞지 않는 행",
+        Word::KeyMismatch => "장부에 있는 내 공개 키가 이 기기와 다릅니다",
+        Word::NotAnEditor => "이 장부의 편집자가 아닙니다. 변경은 무시됩니다",
     }
 }
 
@@ -229,6 +244,9 @@ const fn spanish(word: Word) -> &'static str {
         Word::CannotWriteSettings => "configuración: no se puede escribir",
         Word::UnknownTheme => "tema desconocido",
         Word::FollowSystem => "Sistema",
+        Word::UnverifiedLines => "líneas sin firma o permiso válidos",
+        Word::KeyMismatch => "mi clave en este registro no coincide con la local",
+        Word::NotAnEditor => "no es editor de este registro; los cambios se ignoran",
     }
 }
 
@@ -237,7 +255,7 @@ mod tests {
     use super::*;
 
     /// 全部の語（`Word` の閉じた集合を 1 か所で列挙する。増えたらここも増える）。
-    const WORDS: [Word; 31] = [
+    const WORDS: [Word; 34] = [
         Word::All,
         Word::StateName(ItemState::Open),
         Word::StateName(ItemState::InProgress),
@@ -269,6 +287,9 @@ mod tests {
         Word::CannotWriteSettings,
         Word::UnknownTheme,
         Word::FollowSystem,
+        Word::UnverifiedLines,
+        Word::KeyMismatch,
+        Word::NotAnEditor,
     ];
 
     #[test]

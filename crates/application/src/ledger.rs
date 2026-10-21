@@ -159,6 +159,7 @@ mod tests {
     use nene_docket_core::field_value::FieldValue;
     use nene_docket_core::item::Item;
     use nene_docket_core::item_state::ItemState;
+    use nene_docket_core::signing_key::SigningKey;
 
     use super::*;
 
@@ -167,8 +168,12 @@ mod tests {
     /// ID が小さいので、同じ時計では自分より前に並ぶ。
     const EARLIER: AccountId = AccountId::new(0);
 
+    fn me() -> Account {
+        Account::new(ME, String::from("me"), SigningKey::from_bytes(&[1_u8; 32]))
+    }
+
     fn ledger() -> Ledger {
-        Ledger::open(Account::new(ME, String::from("me")), Vec::new())
+        Ledger::open(me(), Vec::new())
     }
 
     fn set_title(ledger: &mut Ledger, item: ItemId, title: &str) -> Op {
@@ -248,7 +253,7 @@ mod tests {
         first.compose(WallClock::new(0), OpKind::Create(item));
         set_title(&mut first, item, "x");
         first.compose_undo(WallClock::new(0));
-        let mut again = Ledger::open(Account::new(ME, String::from("me")), first.ops().to_vec());
+        let mut again = Ledger::open(me(), first.ops().to_vec());
         assert_eq!(again.fresh_item_id(), ItemId::new(ME, 2));
         assert!(again.can_redo());
         assert_eq!(again.account().name(), "me");

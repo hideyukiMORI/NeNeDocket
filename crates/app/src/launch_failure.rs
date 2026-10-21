@@ -29,7 +29,9 @@ pub(crate) enum LaunchFailure {
 impl fmt::Display for LaunchFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            Self::Usage => formatter.write_str("usage: nene-docket [FOLDER]"),
+            Self::Usage => formatter.write_str(
+                "usage: nene-docket [FOLDER] [--permissions on|off] [--allow ACCOUNT] [--disallow ACCOUNT] [--group NAME ACCOUNT] [--ungroup NAME ACCOUNT]",
+            ),
             Self::Adapter(failure) => fmt::Display::fmt(failure, formatter),
             Self::Store(failure) => fmt::Display::fmt(failure, formatter),
             Self::Ui(failure) => fmt::Display::fmt(failure, formatter),
@@ -61,9 +63,10 @@ mod tests {
 
     #[test]
     fn usage_and_wrapped_failures_have_words() {
-        assert_eq!(
-            LaunchFailure::Usage.to_string(),
-            "usage: nene-docket [FOLDER]"
+        assert!(
+            LaunchFailure::Usage
+                .to_string()
+                .starts_with("usage: nene-docket [FOLDER]")
         );
         let wrapped: LaunchFailure = StoreFailure::BadDocketFile.into();
         assert!(wrapped.to_string().contains("docket.v1.txt"));

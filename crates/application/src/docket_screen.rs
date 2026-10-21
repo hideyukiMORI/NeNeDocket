@@ -10,6 +10,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use nene_docket_core::account_id::AccountId;
 use nene_docket_core::button;
 use nene_docket_core::checkbox;
 use nene_docket_core::column_width::ColumnWidth;
@@ -126,6 +127,8 @@ pub struct DocketScreen {
     history: HistoryPane,
     ledger: Ledger,
     ports: Ports,
+    /// 台帳の `keys/` にある名前（履歴の「誰が」）。読み直しのたびに取り直す。
+    names: Vec<(AccountId, String)>,
     write_failure: Option<JournalFailure>,
     read_failure: Option<JournalFailure>,
     environment: Environment,
@@ -153,6 +156,7 @@ impl DocketScreen {
         };
         let language = settings.language().resolve(environment.language());
         let theme = settings.theme().resolve(environment.appearance());
+        let names = ports.journal().names();
         Self {
             scale: environment.scale(),
             interaction: Interaction::idle(),
@@ -170,6 +174,7 @@ impl DocketScreen {
             history: HistoryPane::hidden(environment.scale()),
             ledger: Ledger::open(account, ops),
             ports,
+            names,
             write_failure: None,
             read_failure,
             environment,
@@ -334,7 +339,7 @@ impl DocketScreen {
     #[must_use]
     pub fn history_lines(&self) -> Vec<HistoryLine> {
         self.selected
-            .map(|id| HistoryLine::lines(self.ledger.ops(), id))
+            .map(|id| HistoryLine::lines(self.ledger.ops(), id, &self.names))
             .unwrap_or_default()
     }
 
@@ -358,6 +363,16 @@ impl DocketScreen {
         notices.extend(self.settings_failure.map(Notice::Settings));
         if self.unknown_theme {
             notices.push(Notice::UnknownTheme);
+        }
+        let admission = self.ports.journal().admission();
+        if admission.unverified_lines() > 0 {
+            notices.push(Notice::UnverifiedLines(admission.unverified_lines()));
+        }
+        if admission.key_mismatch() {
+            notices.push(Notice::KeyMismatch);
+        }
+        if !admission.may_edit() {
+            notices.push(Notice::NotAnEditor);
         }
         notices
     }
@@ -683,6 +698,7 @@ impl DocketScreen {
         match self.ports.journal_mut().refresh() {
             Ok(fresh) => {
                 self.read_failure = None;
+                self.names = self.ports.journal().names();
                 self.ledger.absorb(fresh);
             }
             Err(failure) => self.read_failure = Some(failure),
@@ -1178,12 +1194,14 @@ mod tests {
     use alloc::rc::Rc;
     use core::cell::RefCell;
 
-    use nene_docket_core::account_id::AccountId;
     use nene_docket_core::appearance::Appearance;
     use nene_docket_core::button_phase::ButtonPhase;
     use nene_docket_core::logical_clock::LogicalClock;
     use nene_docket_core::op_id::OpId;
     use nene_docket_core::pixel_point::PixelPoint;
+    use nene_docket_core::signing_key::SigningKey;
+
+    use crate::admission_report::AdmissionReport;
     use nene_docket_core::pointer_input::PointerInput;
     use nene_docket_core::wall_clock::WallClock;
 
@@ -1218,7 +1236,7 @@ mod tests {
     const DUE_X: u16 = 550;
 
     /// 書き込みを覚え、読み直しで渡す分を積める偽のジャーナル。
-    #[derive(Debug, Default)]
+    #[derive(Debug)]
     struct FakeJournal {
         written: Rc<RefCell<Vec<Op>>>,
         pending: Rc<RefCell<Vec<Op>>>,
@@ -1226,6 +1244,21 @@ mod tests {
         fail_write: bool,
         fail_read: bool,
         rejected: usize,
+        admission: AdmissionReport,
+    }
+
+    impl Default for FakeJournal {
+        fn default() -> Self {
+            Self {
+                written: Rc::default(),
+                pending: Rc::default(),
+                synced: Rc::default(),
+                fail_write: false,
+                fail_read: false,
+                rejected: 0,
+                admission: AdmissionReport::open(),
+            }
+        }
     }
 
     impl JournalPort for FakeJournal {
@@ -1251,6 +1284,14 @@ mod tests {
 
         fn rejected_lines(&self) -> usize {
             self.rejected
+        }
+
+        fn admission(&self) -> AdmissionReport {
+            self.admission
+        }
+
+        fn names(&self) -> Vec<(AccountId, String)> {
+            alloc::vec![(OTHER, String::from("other"))]
         }
     }
 
@@ -1313,7 +1354,7 @@ mod tests {
             Box::new(FixedClock),
             Box::new(settings_port),
         );
-        let account = Account::new(ME, String::from("me"));
+        let account = Account::new(ME, String::from("me"), SigningKey::from_bytes(&[1_u8; 32]));
         (
             DocketScreen::open(environment, account, ports, Settings::initial()),
             spy,

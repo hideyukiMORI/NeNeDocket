@@ -1,13 +1,17 @@
 //! ジャーナルを読んだ結果。読めた操作と、次に読み始める位置と、読めなかった行。
 
 use nene_docket_core::op::Op;
+use nene_docket_core::signature::Signature;
 
 use crate::record_failure::RecordFailure;
+
+/// 読めた 1 行: 操作と、版 2 なら署名。
+pub type Entry = (Op, Option<Signature>);
 
 /// 完全な行だけを読む。末尾の改行の無い断片は「書きかけ」として次回に回す。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct JournalRead {
-    ops: Vec<Op>,
+    entries: Vec<Entry>,
     next_offset: u64,
     partial_tail: bool,
     rejected: Vec<(u64, RecordFailure)>,
@@ -17,29 +21,35 @@ impl JournalRead {
     /// 値から作る。
     #[must_use]
     pub const fn new(
-        ops: Vec<Op>,
+        entries: Vec<Entry>,
         next_offset: u64,
         partial_tail: bool,
         rejected: Vec<(u64, RecordFailure)>,
     ) -> Self {
         Self {
-            ops,
+            entries,
             next_offset,
             partial_tail,
             rejected,
         }
     }
 
-    /// 読めた操作。ファイルの順。
+    /// 読めた行。ファイルの順。
     #[must_use]
-    pub fn ops(&self) -> &[Op] {
-        &self.ops
+    pub fn entries(&self) -> &[Entry] {
+        &self.entries
     }
 
-    /// 操作を取り出す。
+    /// 読めた操作（署名は落とす）。ファイルの順。
     #[must_use]
-    pub fn into_ops(self) -> Vec<Op> {
-        self.ops
+    pub fn ops(&self) -> Vec<Op> {
+        self.entries.iter().map(|(op, _)| op.clone()).collect()
+    }
+
+    /// 行を取り出す。
+    #[must_use]
+    pub fn into_entries(self) -> Vec<Entry> {
+        self.entries
     }
 
     /// 次に読み始めるバイト位置（最後の完全な行の直後）。

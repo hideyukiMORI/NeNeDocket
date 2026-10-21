@@ -1,6 +1,6 @@
 [package]
 name = "nene-docket-core"
-description = "NeNe Docket の中核。値・不変条件・閉じた選択肢・部品の核（配置・当たり判定・フォーカス・編集状態・描画命令）。#![no_std]・依存 0"
+description = "NeNe Docket の中核。値・不変条件・閉じた選択肢・部品の核（配置・当たり判定・フォーカス・編集状態・描画命令）。#![no_std]・署名と検証（外部クレートは ed25519-dalek だけ）"
 version.workspace = true
 edition.workspace = true
 license.workspace = true
@@ -11,5 +11,7 @@ publish = false
 [lints]
 workspace = true
 
-# 🔴 依存 0 を保つ（ARC-013）。CNF-013 が拒む。
+# 🔴 外部クレートはここに名を書いたものだけ（ARC-013）。CNF-013 が表と照合する。
+#    ed25519-dalek — 署名と検証（FR-010・ADR 0010）。`no_std`・`alloc` 無し。BSD-3-Clause（deny.toml）。
 [dependencies]
+ed25519-dalek = { version = "2.2", default-features = false }

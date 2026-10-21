@@ -8,6 +8,7 @@ use nene_docket_adapters_x11::saved_settings::{self, SettingsStore};
 use nene_docket_adapters_x11::system_clock::SystemClock;
 use nene_docket_application::docket_screen::DocketScreen;
 use nene_docket_application::ports::Ports;
+use nene_docket_store::administration;
 use nene_docket_store::file_journal::FileJournal;
 use nene_docket_ui_x11::atoms;
 use nene_docket_ui_x11::display::Display;
@@ -17,13 +18,17 @@ use nene_docket_ui_x11::event_loop;
 use crate::arguments::Arguments;
 use crate::launch_failure::LaunchFailure;
 
-/// 依存を結んで走らせる。台帳のフォルダは引数、無ければ設定の最近の台帳（FR-012）。開けたら設定に覚える。
+/// 依存を結んで走らせる。権限の命令があれば書いて終わる（画面は開かない）。台帳のフォルダは引数、無ければ設定の最近の台帳（FR-012）。開けたら設定に覚える。
 /// OS の言語と明暗は起動時に 1 度だけ観測して環境に添える（ADR 0011 / 0012）。
 pub(crate) fn run(arguments: &Arguments) -> Result<(), LaunchFailure> {
     let settings = saved_settings::load()?;
     let folder = arguments.folder_or(settings.latest());
     let account = saved_account::load_or_create()?;
-    let journal = FileJournal::open(&folder, &Arguments::docket_name(&folder), account.id())?;
+    if !arguments.admin().is_empty() {
+        administration::apply(&folder, &account, arguments.admin())?;
+        return Ok(());
+    }
+    let journal = FileJournal::open(&folder, &Arguments::docket_name(&folder), &account)?;
     let settings = saved_settings::remember(settings, &folder)?;
     let ports = Ports::new(
         Box::new(journal),
