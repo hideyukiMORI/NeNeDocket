@@ -15,6 +15,7 @@ use nene_docket_core::attachment::Attachment;
 use nene_docket_core::attachment_word::AttachmentWord;
 use nene_docket_core::button;
 use nene_docket_core::button_phase::ButtonPhase;
+use nene_docket_core::cell_text;
 use nene_docket_core::checkbox;
 use nene_docket_core::column_width::ColumnWidth;
 use nene_docket_core::draw_command::DrawCommand;
@@ -40,7 +41,6 @@ use nene_docket_core::scroll_state::ScrollState;
 use nene_docket_core::select_box;
 use nene_docket_core::select_state::SelectState;
 use nene_docket_core::table_layout::TableLayout;
-use nene_docket_core::text_align::TextAlign;
 use nene_docket_core::text_edit::TextEdit;
 use nene_docket_core::text_field;
 use nene_docket_core::theme::Theme;
@@ -1925,7 +1925,7 @@ impl DocketScreen {
         self.probe_column_grips(header, &cells);
         self.probe_column_heads(&cells);
         for (cell, heading) in cells.into_iter().zip(headings) {
-            commands.push(Self::cell_text(
+            commands.extend(cell_text::cell_text(
                 cell,
                 heading,
                 Paint::Muted,
@@ -1993,7 +1993,7 @@ impl DocketScreen {
             .columns()
             .map(|column| self.cell_of(column, shown, &number));
         for (cell, text) in cells.into_iter().zip(texts) {
-            commands.push(Self::cell_text(cell, &text, paint, self.px(MARGIN_PX)));
+            commands.extend(cell_text::cell_text(cell, &text, paint, self.px(MARGIN_PX)));
         }
         commands.push(DrawCommand::Stroke {
             rect: PixelRect::new(rect.x(), rect.bottom(), rect.width(), 1),
@@ -2004,21 +2004,6 @@ impl DocketScreen {
     /// 番号の列。作成者の ID の先頭と、その作成者の中での連番。複数アカウントでも重ならない。
     fn number_text(id: ItemId) -> String {
         item_number::text(id)
-    }
-
-    fn cell_text(cell: PixelRect, text: &str, paint: Paint, padding: u16) -> DrawCommand {
-        DrawCommand::Text {
-            rect: PixelRect::new(
-                cell.x().saturating_add(padding),
-                cell.y(),
-                cell.width().saturating_sub(padding.saturating_mul(2)),
-                cell.height(),
-            ),
-            text: text.to_owned(),
-            align: TextAlign::Start,
-            paint,
-            caret: None,
-        }
     }
 
     /// 降格の文言を 1 行に並べる（FR-014）。
@@ -2035,7 +2020,7 @@ impl DocketScreen {
             rect,
             paint: Paint::Surface,
         });
-        commands.push(Self::cell_text(
+        commands.extend(cell_text::cell_text(
             rect,
             &words.join(" / "),
             Paint::Ink,
@@ -2538,6 +2523,31 @@ mod tests {
         assert_eq!(screen.ledger().docket().len(), 10_000);
         assert_eq!(frame.font_px(), 13);
         assert!(screen.notices().is_empty());
+    }
+
+    /// 窓を狭めて題名の列をつぶしても、セルの文字は自分の列の矩形で切り抜かれ、隣の列に出ない（#95）。
+    #[test]
+    fn cell_text_is_clipped_to_its_column_when_the_title_column_is_narrow() {
+        let (mut screen, _) = screen(3);
+        let narrow = PixelRect::new(0, 0, 560, 400);
+        let frame = screen.step(&FrameInput::new(narrow, PointerInput::absent()));
+        let commands = frame.commands();
+        let mut titles = 0_usize;
+        for (index, command) in commands.iter().enumerate() {
+            let DrawCommand::Text { rect, text, .. } = command else {
+                continue;
+            };
+            if !text.starts_with("Issue #") {
+                continue;
+            }
+            titles = titles.saturating_add(1);
+            let before = index.checked_sub(1).and_then(|i| commands.get(i));
+            let after = index.checked_add(1).and_then(|i| commands.get(i));
+            assert_eq!(before, Some(&DrawCommand::Clip(*rect)), "{text}");
+            assert_eq!(after, Some(&DrawCommand::Unclip), "{text}");
+            assert!(rect.width() < 50, "{text}: {rect:?}");
+        }
+        assert_eq!(titles, 3);
     }
 
     #[test]
