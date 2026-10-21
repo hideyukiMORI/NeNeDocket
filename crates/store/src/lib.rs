@@ -7,6 +7,7 @@
 mod crc32;
 pub mod docket_file;
 mod escape;
+pub mod file_journal;
 pub mod journal_file;
 pub mod journal_folder;
 pub mod journal_read;

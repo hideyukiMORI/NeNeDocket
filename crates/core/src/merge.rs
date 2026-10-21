@@ -6,9 +6,13 @@
 use alloc::vec::Vec;
 
 use crate::docket::Docket;
+use crate::field::Field;
+use crate::field_value::FieldValue;
+use crate::item::Item;
 use crate::item_id::ItemId;
 use crate::op::Op;
 use crate::op_id::OpId;
+use crate::op_kind::OpKind;
 
 /// 操作を（論理時計・アカウント）の全順序に並べ、重複を落とし、順に適用する。
 #[must_use]
@@ -31,6 +35,41 @@ where
         .into_iter()
         .filter(|op| op.kind().item() == item)
         .collect()
+}
+
+/// `target` を打ち消す操作の種類。`Create` は `Delete`、`Delete` は `Restore`、`Restore` は `Delete`、
+/// `Set` はその直前に同じ項目が持っていた値を置く `Set`。`target` が無ければ `None`（ADR 0004 の 4）。
+#[must_use]
+pub fn inverse_of<'a, I>(ops: I, target: OpId) -> Option<OpKind>
+where
+    I: IntoIterator<Item = &'a Op>,
+{
+    let all = ordered(ops);
+    let found = all.iter().find(|op| op.id() == target)?;
+    Some(match found.kind() {
+        OpKind::Create(item) | OpKind::Restore(item) => OpKind::Delete(*item),
+        OpKind::Delete(item) => OpKind::Restore(*item),
+        OpKind::Set { item, value } => OpKind::Set {
+            item: *item,
+            value: value_before(&all, target, *item, value.field()),
+        },
+    })
+}
+
+/// 全順序で `target` より前に、同じ課題の同じ項目へ最後に置かれた値。無ければ作った直後の値。
+fn value_before(ordered: &[&Op], target: OpId, item: ItemId, field: Field) -> FieldValue {
+    ordered
+        .iter()
+        .take_while(|op| op.id() < target)
+        .filter_map(|op| match op.kind() {
+            OpKind::Set {
+                item: set_item,
+                value,
+            } if *set_item == item && value.field() == field => Some(value.clone()),
+            OpKind::Set { .. } | OpKind::Create(_) | OpKind::Delete(_) | OpKind::Restore(_) => None,
+        })
+        .last()
+        .unwrap_or_else(|| Item::created(item).value_of(field))
 }
 
 /// 全順序に並べ、同じ ID の操作は最初の 1 つだけ残す。
@@ -205,5 +244,35 @@ mod tests {
         assert_eq!(Docket::empty().len(), 0);
     }
 
-    use crate::item::Item;
+    #[test]
+    fn inverse_restores_the_previous_value_and_flips_create_delete_restore() {
+        let ops = two_accounts();
+        let item = ItemId::new(A, 1);
+        let id = |clock: u64, account: AccountId| OpId::new(LogicalClock::new(clock), account);
+        assert_eq!(inverse_of(&ops, id(1, A)), Some(OpKind::Delete(item)));
+        assert_eq!(inverse_of(&ops, id(5, A)), Some(OpKind::Restore(item)));
+        assert_eq!(inverse_of(&ops, id(6, A)), Some(OpKind::Delete(item)));
+        assert_eq!(
+            inverse_of(&ops, id(3, B)),
+            Some(OpKind::Set {
+                item,
+                value: title("from a")
+            })
+        );
+        assert_eq!(
+            inverse_of(&ops, id(2, A)),
+            Some(OpKind::Set {
+                item,
+                value: title("")
+            })
+        );
+        assert_eq!(
+            inverse_of(&ops, id(4, B)),
+            Some(OpKind::Set {
+                item,
+                value: FieldValue::State(ItemState::Open)
+            })
+        );
+        assert_eq!(inverse_of(&ops, id(9, B)), None);
+    }
 }

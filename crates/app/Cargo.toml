@@ -17,10 +17,12 @@ path = "src/main.rs"
 workspace = true
 
 # 🔴 合成ルートだけが全クレートを見る（ARC-002 / ARC-006）。外部 crate はここに書かない。
-#    OS ごとの画面は target の節で選ぶ（ADR 0002）。Windows の画面はまだ無い。
+#    OS ごとの画面とアダプタは target の節で選ぶ（ADR 0002）。Windows の画面はまだ無い。
 [dependencies]
 nene-docket-application = { path = "../application" }
 nene-docket-core = { path = "../core" }
+nene-docket-store = { path = "../store" }
 
 [target.'cfg(not(windows))'.dependencies]
+nene-docket-adapters-x11 = { path = "../adapters-x11" }
 nene-docket-ui-x11 = { path = "../ui-x11" }

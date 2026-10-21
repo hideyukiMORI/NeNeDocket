@@ -2,7 +2,6 @@
 
 use nene_docket_application::docket_screen::DocketScreen;
 use nene_docket_application::frame_input::FrameInput;
-use nene_docket_core::key_intent::KeyIntent;
 use nene_docket_core::pointer_input::PointerInput;
 use x11rb::connection::Connection;
 use x11rb::protocol::Event;
@@ -11,30 +10,39 @@ use crate::display::Display;
 use crate::docket_window::DocketWindow;
 use crate::flow::Flow;
 use crate::gathering::Gathering;
+use crate::pending_frame::PendingFrame;
 use crate::ui_failure::UiFailure;
 
-/// 窓を開き、イベントを待ち、画面に渡し、描き直す。閉じる要求で戻る。
+/// 開いた窓でイベントを待ち、画面に渡し、描き直す。閉じる要求で戻る。
+/// 読み直しの合図（[`crate::atoms::REFRESH_NAME`] の `ClientMessage`）は、次のフレームに読み直しを乗せる。
 ///
 /// # Errors
 ///
 /// X の要求か cairo が失敗した。
-pub fn run(display: &Display, screen: &mut DocketScreen) -> Result<(), UiFailure> {
-    let mut window = DocketWindow::open(display)?;
+pub fn run(
+    display: &Display,
+    window: &mut DocketWindow<'_>,
+    screen: &mut DocketScreen,
+) -> Result<(), UiFailure> {
     let mut gathering = Gathering::empty();
-    present(&window, screen, PointerInput::absent(), Vec::new())?;
+    present(
+        window,
+        screen,
+        &PendingFrame::of_pointer(PointerInput::absent()),
+    )?;
     loop {
         let event = display.connection().wait_for_event()?;
-        if step(display, &mut window, &mut gathering, &event) == Flow::Quit {
+        if step(display, window, &mut gathering, &event) == Flow::Quit {
             return Ok(());
         }
         // 溜まったイベントは 1 回の描き直しにまとめる。押下と離しだけは 1 つずつフレームにする。
         while let Some(pending) = display.connection().poll_for_event()? {
-            if step(display, &mut window, &mut gathering, &pending) == Flow::Quit {
+            if step(display, window, &mut gathering, &pending) == Flow::Quit {
                 return Ok(());
             }
         }
-        for (pointer, keys) in gathering.take_frames() {
-            present(&window, screen, pointer, keys)?;
+        for frame in gathering.take_frames() {
+            present(window, screen, &frame)?;
         }
     }
 }
@@ -77,6 +85,9 @@ fn step(
         {
             return Flow::Quit;
         }
+        if message.type_ == atoms.refresh {
+            gathering.push_refresh();
+        }
     }
     Flow::Continue
 }
@@ -85,10 +96,13 @@ fn step(
 fn present(
     window: &DocketWindow<'_>,
     screen: &mut DocketScreen,
-    pointer: PointerInput,
-    keys: Vec<KeyIntent>,
+    pending: &PendingFrame,
 ) -> Result<(), UiFailure> {
-    let input = FrameInput::new(window.bounds(), pointer).with_keys(keys);
+    let mut input =
+        FrameInput::new(window.bounds(), pending.pointer()).with_keys(pending.keys().to_vec());
+    if pending.refresh() {
+        input = input.with_refresh();
+    }
     let frame = screen.step(&input);
     window.present(&frame)
 }

@@ -318,7 +318,73 @@ Xvfb `:97`（1024×700×24・`-noreset`）、WM 無し。`target/debug/nene-dock
 
 🔴 **まだ証明していないこと:** SMB の上での同時の追記と読み直し（QLT-013・施主の共有で）。2 プロセスが同じ機械で同じフォルダを同時に使うこと（一時ディレクトリのテストは 1 プロセスの中で 2 アカウント）。
 
-## 14. 再現
+## 14. Issue #11 — 画面とジャーナルの配線（2026-10-21）
+
+同じコンテナ。application に `Ledger`・`UndoStack`・`Ports`・`JournalPort` / `ClockPort`・`Notice`・`account_file`、store に `FileJournal`、
+新しい `crates/adapters-x11`（`SystemClock`・`saved_account`・`RefreshTicker`・ADR 0008）、`crates/app` に引数（`nene-docket [FOLDER]`）。見本の課題（`SampleItem`）は消した。
+
+### 14.1 ゲート
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` | 差分なし |
+| `make lint` | 0 件。`#[expect]` は `crates/app/src/main.rs` の `print_stderr` だけ |
+| `make lint-windows` | 0 件（`adapters-x11` も除外に足した。X が無い） |
+| `make test` | core 69・application 29・store 22・adapters-x11 3・ui-x11 16・app 3・xtask 81、すべて成功 |
+| `make conformance` | 違反なし（144 ファイル） |
+| `make deny` | ok。`adapters-x11` の外部は x11rb だけで、新しいクレートは増えていない（`Cargo.lock` の差分は内部クレートの 3 行） |
+| `make doc-check` | 警告なし |
+| `make coverage` | core ＋ application: regions 99.54%・functions 99.58%・lines 99.73% |
+
+### 14.2 実ファイルでの発火
+
+| 規則 | やったこと | 実出力 |
+| --- | --- | --- |
+| CNF-012（ARC-007） | `crates/app/src/x11_root.rs` に `use std::time::Duration;` を書いた（刻みの間隔を `Duration` で渡そうとした） | `CNF-012: crates/app/src/x11_root.rs:3 — std::time はアダプタと store の外で読まない（ARC-007）`。間隔は秒の `u64` にして `Duration` はアダプタの中で作る |
+| CNF-013（ARC-002） | `crates/ui-x11/Cargo.toml` に `nene-docket-store` を足した（Issue #5 では store が無く組めなかった） | `CNF-013: crates/ui-x11/Cargo.toml:20 — nene-docket-store への依存は crates/ui-x11/ に許されていない（ARC-002 / ARC-013）` |
+
+### 14.3 Xvfb で 2 プロセスが同じフォルダを編集する（環境検証・QLT-013）
+
+Xvfb `:97`（2000×700×24）、WM 無し。`target/debug/nene-docket <一時フォルダ>/shared` を、`XDG_CONFIG_HOME` と `USER` を変えて 2 つ起動した（A = alice、B = bob。アカウントは別々に作られる）。B の窓は `xdotool windowmove` で x = 1000 に寄せた。読み直しの刻みは 3 秒なので、相手の操作の後に 4 秒待って撮った。
+
+| 手順 | 見えたもの | PNG |
+| --- | --- | --- |
+| A: `Add` → 題名の欄にフォーカス → `Written by A` と打って Enter | A の表に `9283-1 Written by A`。4 秒後、B の表にも同じ行 | [03-b-sees-a](screenshots/2026-10-21-two-03-b-sees-a.png) |
+| B: 行を選び、状態の箱を開いて `Done` | B の行が `Done`。4 秒後、A の行も `Done`。A の編集行の箱も `Done` に追従 | [06-a-sees-done](screenshots/2026-10-21-two-06-a-sees-done.png) |
+| A: 題名を `Renamed by A` にして Enter → Ctrl+Z → Ctrl+Y | 題名が `Written by A` に戻り、また `Renamed by A` に。4 秒後、B も `Renamed by A` | |
+| A: `Delete` | A の表から行が消え、選択が外れる。B はまだ出ている（撮った時点で 0.3 秒） | [10-a-deleted](screenshots/2026-10-21-two-10-a-deleted.png) |
+| A: Ctrl+Z | 行が戻る（`restore` の追記） | [11-a-restored](screenshots/2026-10-21-two-11-a-restored.png) |
+| A を `kill -9` → 同じフォルダで起動し直す | 同じアカウント（`account.v1.txt`）で開き、表は同じ | |
+| A（再起動後）: Ctrl+Z → Ctrl+Y | 束はジャーナルから組み直され、次に戻すのは素の操作 4（題名の変更）。題名が `Written by A` に戻り、Redo で `Renamed by A` に | [13-a-undo-after-restart](screenshots/2026-10-21-two-13-a-undo-after-restart.png) |
+| 2 つの窓を `windowclose` | どちらも終了コード 0 | |
+
+終わったあとの `journal/`（A のファイル。B は `3` の 1 行）:
+
+```text
+v1	1	9283…	…	-	create	9283…:1	…
+v1	2	9283…	…	-	set	9283…:1	title	Written by A	…
+v1	4	9283…	…	-	set	9283…:1	title	Renamed by A	…
+v1	5	9283…	…	4:9283…	set	9283…:1	title	Written by A	…
+v1	6	9283…	…	5:9283…	set	9283…:1	title	Renamed by A	…
+v1	7	9283…	…	-	delete	9283…:1	…
+v1	8	9283…	…	7:9283…	restore	9283…:1	…
+v1	9	9283…	…	4:9283…	set	9283…:1	title	Written by A	…
+v1	10	9283…	…	9:9283…	set	9283…:1	title	Renamed by A	…
+```
+
+B の操作は論理時計 `3`（A の 1・2 を見たあと）、A の次の操作は `4`（B の 3 を見たあと）で、全順序が 2 プロセスをまたいで繋がっている。
+Undo は逆の操作の**追記**で、ジャーナルは一度も書き換えていない（ADR 0004）。`kill -9` の直前の操作まで残っている（追記ごとに `sync`）。
+
+🔴 **見つかったこと:** 最初の試行では B の状態の箱の x 座標を間違え（960 幅の窓では 754〜864）、B の操作が 1 つも書かれなかった。アプリの不具合ではないが、「書かれなかった」ことがジャーナルを見るまで分からなかった。
+`Add` は `create` 1 行だけを追記する（検索欄に字があれば `title` も）。担当は空のままで、画面から担当を変える経路はまだ無い。
+
+### 14.4 まだ証明していないこと（Issue #11）
+
+- SMB の上（施主の共有で）。2 プロセスは同じマシンの同じディレクトリ
+- 1 万件の表の 1 フレームは Issue #5 の計測（見本の課題）のまま。併合した `Docket` から表を作る経路は `visible_items` が `live_items` を毎フレーム集めるので、同じ桁のはずだが測り直していない
+- IME（第 11.5 節と同じ）・WM のある環境・Windows
+
+## 15. 再現
 
 ```bash
 make prove

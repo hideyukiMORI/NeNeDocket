@@ -3,14 +3,16 @@
 use nene_docket_core::key_intent::KeyIntent;
 use nene_docket_core::pointer_input::PointerInput;
 
+use crate::pending_frame::PendingFrame;
 use crate::pointer_tracker::PointerTracker;
 
-/// ポインタの追跡（フレームをまたぐ）と、このまとまりの鍵と、押下・離しのように 1 つずつフレームが要る入力。
+/// ポインタの追跡（フレームをまたぐ）と、このまとまりの鍵と、押下・離しのように 1 つずつフレームが要る入力と、読み直しの合図。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Gathering {
     pointer: PointerTracker,
     keys: Vec<KeyIntent>,
     frames: Vec<PointerInput>,
+    refresh: bool,
 }
 
 impl Gathering {
@@ -20,6 +22,7 @@ impl Gathering {
             pointer: PointerTracker::outside(),
             keys: Vec::new(),
             frames: Vec::new(),
+            refresh: false,
         }
     }
 
@@ -38,16 +41,25 @@ impl Gathering {
         self.keys.extend(key);
     }
 
-    /// 描くべきフレームの入力を、届いた順に取り出す。鍵は最初のフレームに乗せ、最後に今の位置のフレームを足す。
-    pub(crate) fn take_frames(&mut self) -> Vec<(PointerInput, Vec<KeyIntent>)> {
-        let mut frames: Vec<(PointerInput, Vec<KeyIntent>)> = self
+    /// 読み直しの合図。何度届いても次のまとまりで 1 度だけ読み直す。
+    pub(crate) const fn push_refresh(&mut self) {
+        self.refresh = true;
+    }
+
+    /// 描くべきフレームの入力を、届いた順に取り出す。鍵と読み直しは最初のフレームに乗せ、最後に今の位置のフレームを足す。
+    pub(crate) fn take_frames(&mut self) -> Vec<PendingFrame> {
+        let mut frames: Vec<PendingFrame> = self
             .frames
             .drain(..)
-            .map(|input| (input, Vec::new()))
+            .map(PendingFrame::of_pointer)
             .collect();
-        frames.push((self.pointer.current(), Vec::new()));
+        frames.push(PendingFrame::of_pointer(self.pointer.current()));
         if let Some(first) = frames.first_mut() {
-            first.1 = core::mem::take(&mut self.keys);
+            *first = PendingFrame::new(
+                first.pointer(),
+                core::mem::take(&mut self.keys),
+                core::mem::take(&mut self.refresh),
+            );
         }
         frames
     }
@@ -65,13 +77,21 @@ mod tests {
         gathering.push_frame(pressed);
         gathering.push_key(Some(KeyIntent::Tab));
         gathering.push_key(None);
+        gathering.push_refresh();
         let frames = gathering.take_frames();
         assert_eq!(frames.len(), 2);
         assert_eq!(
-            frames.first().map(|f| (f.0.phase(), f.1.len())),
-            Some((ButtonPhase::Pressed, 1))
+            frames
+                .first()
+                .map(|f| (f.pointer().phase(), f.keys().len(), f.refresh())),
+            Some((ButtonPhase::Pressed, 1, true))
         );
-        assert_eq!(frames.get(1).map(|f| f.0.phase()), Some(ButtonPhase::Held));
-        assert_eq!(gathering.take_frames().len(), 1);
+        assert_eq!(
+            frames.get(1).map(|f| (f.pointer().phase(), f.refresh())),
+            Some((ButtonPhase::Held, false))
+        );
+        let rest = gathering.take_frames();
+        assert_eq!(rest.len(), 1);
+        assert_eq!(rest.first().map(PendingFrame::refresh), Some(false));
     }
 }

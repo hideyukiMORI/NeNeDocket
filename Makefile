@@ -38,9 +38,9 @@ lint:
 
 ## lint-windows — Windows 版のクレートを Windows のターゲットで検査する（ADR 0002）。
 ## 🔴 Linux の make lint では Windows のコードは cfg で外れて見えない。Windows のコードはここでだけ検査される。
-## X11 のクレートは Windows では組み立てない（cairo が無い）。合成ルートは Windows の画面ができるまで外す。
+## X11 のクレート（画面とアダプタ）は Windows では組み立てない（cairo と X が無い）。合成ルートは Windows の画面ができるまで外す。
 WINDOWS_TARGET := x86_64-pc-windows-gnu
-WINDOWS_EXCLUDE := --exclude nene-docket-ui-x11 --exclude nene-docket
+WINDOWS_EXCLUDE := --exclude nene-docket-ui-x11 --exclude nene-docket-adapters-x11 --exclude nene-docket
 lint-windows:
 	$(CARGO) clippy --workspace $(WINDOWS_EXCLUDE) --all-targets --locked --target $(WINDOWS_TARGET) -- -D warnings
 

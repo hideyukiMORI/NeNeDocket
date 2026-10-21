@@ -2,7 +2,14 @@
 
 A small, fast issue tracker for Windows and X11. Rust, no UI toolkit, no server.
 
-> **Status (2026-10-21):** the X11 window runs on Xvfb: a 10,000-row table with search, a filter box, a checkbox, a button and a scroll bar, all drawn by hand through `x11rb` + cairo, under 1 ms per frame. The journal (append-only, one file per account, CRC-32 per line) and the merge are in place but not yet wired to the screen. No Windows build and no IME yet. Rules and gates are measured (`make prove`, 26 proofs; core + application at 99.5% region coverage).
+> **Status (2026-10-21):** `nene-docket <folder>` opens a docket on X11. Issues are added, renamed, moved between states and deleted in a hand-drawn table (`x11rb` + cairo, under 1 ms per frame at 10,000 rows); every edit is appended to this account's journal and fsynced, Ctrl+Z / Ctrl+Y append the inverse op, and two processes on the same folder see each other's changes within 3 seconds (verified on Xvfb). No Windows build, no IME and no permissions yet. Rules and gates are measured (`make prove`, 26 proofs; core + application at 99.5% region coverage).
+
+```bash
+cargo build --release -p nene-docket
+target/release/nene-docket /path/to/docket   # the folder is created if missing; default ./docket
+```
+
+The account (a random 128-bit id and your `USER` name) is created once in `$XDG_CONFIG_HOME/nene-docket/account.v1.txt`.
 
 ## What it will be
 

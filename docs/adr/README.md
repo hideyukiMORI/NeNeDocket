@@ -23,6 +23,7 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0005](0005-rust-foundation-and-measured-limits.md) | Rust の検査基盤と実測できた限界を固定する | 受理 |
 | [0006](0006-widget-kernel-in-core.md) | 部品の核は即時モードで core に置く。既製の部品ライブラリは入れない | 受理 |
 | [0007](0007-japanese-font-family-chosen-at-startup.md) | 日本語のフォントは、起動時に「日」の字形を持つ家族を探して 1 つ選ぶ | 受理（ADR 0002 の決定 6 を改める） |
+| [0008](0008-account-file-and-refresh-tick.md) | アカウントは設定フォルダの乱数の ID。他人のジャーナルは X の合図で読み直す | 受理 |
 
 ## これから書くもの（Issue が立ったら）
 
