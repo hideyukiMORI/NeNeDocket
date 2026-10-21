@@ -4,6 +4,7 @@ use alloc::format;
 use alloc::string::String;
 
 use nene_docket_core::admin_command::AdminCommand;
+use nene_docket_core::attachment_word::AttachmentWord;
 use nene_docket_core::date::Date;
 use nene_docket_core::field::Field;
 use nene_docket_core::field_value::FieldValue;
@@ -29,6 +30,10 @@ pub enum HistoryChange {
         /// 置いた値。
         after: FieldValue,
     },
+    /// 添付した（名前・FR-021）。
+    Attached(String),
+    /// 添付を外した（名前）。
+    Detached(String),
     /// 権限を変えた（監査・ADR 0014）。`subject` は相手の名前（`keys/` から）か `グループ: 名前`、`新 ← 旧`。
     Administered {
         /// 命令。
@@ -55,6 +60,14 @@ impl HistoryChange {
                 wording::text(language, Word::FieldName(*field)),
                 value_text(language, before),
                 value_text(language, after)
+            ),
+            Self::Attached(name) => format!(
+                "{}: {name}",
+                wording::text(language, Word::Attachment(AttachmentWord::Attached))
+            ),
+            Self::Detached(name) => format!(
+                "{}: {name}",
+                wording::text(language, Word::Attachment(AttachmentWord::Detached))
             ),
             Self::Administered { command, subject } => {
                 let word = wording::text(language, admin_word(command));

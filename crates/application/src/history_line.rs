@@ -95,7 +95,9 @@ impl HistoryLine {
                         OpKind::Create(_)
                         | OpKind::Set { .. }
                         | OpKind::Delete(_)
-                        | OpKind::Restore(_),
+                        | OpKind::Restore(_)
+                        | OpKind::Attach { .. }
+                        | OpKind::Detach { .. },
                         None,
                     ) => (HistoryChange::Created, String::new()),
                 };
@@ -189,17 +191,21 @@ fn change_of(before: &Item, kind: &OpKind) -> HistoryChange {
             command: command.clone(),
             subject: String::new(),
         },
+        OpKind::Attach { attachment, .. } => {
+            HistoryChange::Attached(String::from(attachment.name()))
+        }
+        OpKind::Detach { sequence, .. } => {
+            HistoryChange::Detached(before.attachment(*sequence).map_or_else(
+                || format!("#{sequence}"),
+                |known| String::from(known.name()),
+            ))
+        }
     }
 }
 
 /// 操作の種類を課題に当てる（`Docket::applied` の 1 件版）。
 fn applied(item: Item, kind: &OpKind) -> Item {
-    match kind {
-        OpKind::Create(_) | OpKind::Admin(_) => item,
-        OpKind::Set { value, .. } => item.with(value.clone()),
-        OpKind::Delete(_) => item.with_deleted(true),
-        OpKind::Restore(_) => item.with_deleted(false),
-    }
+    item.applied(kind)
 }
 
 #[cfg(test)]

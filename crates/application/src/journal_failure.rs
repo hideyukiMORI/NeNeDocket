@@ -1,5 +1,6 @@
 //! ジャーナルのポートの失敗。閉じた集合（ARC-010）。store の失敗はアダプタがここへ写す。
 
+use nene_docket_core::attachment_word::AttachmentWord;
 use nene_docket_core::word::Word;
 
 /// 書けない・読めない。どちらも利用者に示す（FR-014）。
@@ -11,6 +12,10 @@ pub enum JournalFailure {
     Unreadable,
     /// 権限（`permissions.v1.txt` と `docket.v1.txt`）を書けなかった。
     PermissionsUnwritable,
+    /// 添付する元のファイルを読めない（FR-021）。
+    AttachmentUnreadable,
+    /// 添付の写しを置けない（FR-021）。
+    AttachmentUnwritable,
 }
 
 impl JournalFailure {
@@ -21,6 +26,8 @@ impl JournalFailure {
             Self::Unwritable => Word::CannotWriteJournal,
             Self::Unreadable => Word::CannotReadJournals,
             Self::PermissionsUnwritable => Word::CannotWritePermissions,
+            Self::AttachmentUnreadable => Word::Attachment(AttachmentWord::CannotRead),
+            Self::AttachmentUnwritable => Word::Attachment(AttachmentWord::CannotWrite),
         }
     }
 }

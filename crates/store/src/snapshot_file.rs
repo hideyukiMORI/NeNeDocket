@@ -2,7 +2,9 @@
 //!
 //! 状態は `key = value` の行: `version = 1`・`clock = <時計>`・`sequence = <次の連番>`・`last = <時計>:<アカウント>|-`・
 //! `permissions = <署名の 16 進>|-`（権限が変わったら捨てる）・`rejected = <n>`・`unverified = <n>`・`orphans = <n>`・
-//! `journal = <アカウント> <版の印> <読み終えた位置>`（索引の番号はこの順）・`item = <課題> <消した 0|1> <順位> <状態> <期限|-> <題名> <担当> <ラベル> <本文>`（タブ区切り・逃がし）・
+//! `journal = <アカウント> <版の印> <読み終えた位置>`（索引の番号はこの順）・
+//! `item = <課題> <消した 0|1> <順位> <状態> <期限|-> <題名> <担当> <ラベル> <本文> <添付の最大の連番> <添付…>`（タブ区切り・逃がし・
+//! 添付は `<連番>:<大きさ>:<SHA-256>:<名前>` を `,` で結ぶ）・
 //! `undo = done|undone|map …`・`own = <操作> <課題>`・`index = <索引の件数>`。
 //! 索引は 1 件 32 バイト: 作ったアカウント（16・ビッグエンディアン）・連番（4）・ジャーナルの番号（1）・詰め物（3）・位置（8）。
 //! 派生値なので、消しても正しさは変わらない（全部読み直す）。書くときは一時名に書いて rename する。
@@ -13,8 +15,10 @@ use std::path::{Path, PathBuf};
 
 use nene_docket_application::ledger_snapshot::LedgerSnapshot;
 use nene_docket_core::account_id::AccountId;
+use nene_docket_core::attachment::Attachment;
 use nene_docket_core::date::Date;
 use nene_docket_core::field_value::FieldValue;
+use nene_docket_core::hex;
 use nene_docket_core::item::Item;
 use nene_docket_core::item_id::ItemId;
 use nene_docket_core::item_state::ItemState;
@@ -266,13 +270,46 @@ fn item_text(item: &Item) -> String {
             .collect::<Vec<String>>()
             .join(","),
         escape(item.body()),
+        item.last_attachment().to_string(),
+        item.attachments()
+            .iter()
+            .map(|attachment| {
+                format!(
+                    "{}:{}:{}:{}",
+                    attachment.sequence(),
+                    attachment.bytes(),
+                    attachment.digest_hex(),
+                    escape(attachment.name())
+                )
+            })
+            .collect::<Vec<String>>()
+            .join(","),
     ]
     .join("\t")
 }
 
+/// `<連番>:<大きさ>:<SHA-256>:<名前>` を `,` で結んだもの（逃がした `,` は割らない）から。
+fn parse_attachments(text: &str) -> Option<Vec<Attachment>> {
+    if text.is_empty() {
+        return Some(Vec::new());
+    }
+    journal_record::decode_labels(text)
+        .ok()?
+        .into_iter()
+        .map(|entry| {
+            let mut parts = entry.splitn(4, ':');
+            let sequence = parts.next()?.parse().ok()?;
+            let bytes = parts.next()?.parse().ok()?;
+            let digest = hex::decode::<32>(parts.next()?)?;
+            let name = parts.next()?;
+            Some(Attachment::new(sequence, String::from(name), bytes, digest))
+        })
+        .collect()
+}
+
 pub(crate) fn parse_item(text: &str) -> Option<Item> {
     let fields: Vec<&str> = text.split('\t').collect();
-    if fields.len() != 9 {
+    if fields.len() != 11 {
         return None;
     }
     let field = |index: usize| fields.get(index).copied().unwrap_or("");
@@ -294,7 +331,8 @@ pub(crate) fn parse_item(text: &str) -> Option<Item> {
             .with(FieldValue::Assignee(unescape(field(6))?))
             .with(FieldValue::Labels(labels))
             .with(FieldValue::Body(unescape(field(8))?))
-            .with_deleted(field(1) == "1"),
+            .with_deleted(field(1) == "1")
+            .with_attachments(parse_attachments(field(10))?, field(9).parse().ok()?),
     )
 }
 
@@ -393,6 +431,14 @@ mod tests {
                 OpKind::Set {
                     item,
                     value: FieldValue::Labels(vec![String::from("a,b"), String::from("c")]),
+                },
+            ))
+            .applied(&Op::new(
+                OpId::new(LogicalClock::new(4), ME),
+                WallClock::new(0),
+                OpKind::Attach {
+                    item,
+                    attachment: Attachment::new(2, String::from("a,b:c.png"), 5, [1_u8; 32]),
                 },
             ));
         let mut index = BTreeMap::new();

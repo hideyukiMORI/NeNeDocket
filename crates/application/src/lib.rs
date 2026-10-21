@@ -16,6 +16,8 @@ pub mod account_file;
 pub mod account_reading;
 pub mod administration_log;
 pub mod admission_report;
+pub mod attachments_action;
+pub mod attachments_pane;
 pub mod audit_report;
 pub mod body_pane;
 pub mod clock_port;

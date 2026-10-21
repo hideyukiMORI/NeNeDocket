@@ -521,7 +521,7 @@ application に設定の版 2・`SettingsPort`・`Environment` の言語と明�
 | `make deny` | ok（外部クレートは増えていない） |
 | `make coverage` | core ＋ application regions 99.12% |
 
-テストが要求すること: 125 配色すべてで字 / 背景のコントラスト 4.5 以上・字 / 面 4.0 以上、名前の一意性と `_` の別綴り、6 言語 × 31 語が空でない、設定の版 2 の往復と版 1 の読み込み（`language` を含む版 1 は拒む）、OS の言語の解決（`zh_HK` → 繁体字・`C` → `None`）。
+テストが要求すること: 125 配色すべてで字 / 背景のコントラスト 4.5 以上・字 / 面 4.0 以上、名前の一意性と `_` の別綴り、6 言語 × 31 語（当時）が空でない、設定の版 2 の往復と版 1 の読み込み（`language` を含む版 1 は拒む）、OS の言語の解決（`zh_HK` → 繁体字・`C` → `None`）。
 
 ### 21.2 Xvfb（`:97`・`LANG=ja_JP.UTF-8`・QLT-013）
 
@@ -537,7 +537,7 @@ application に設定の版 2・`SettingsPort`・`Environment` の言語と明�
 
 繁體中文と English も撮った（02 / 04 / 06・docs には置かない）。`xdotool type` は ASCII だけなので題名は英語。
 
-🔴 **正直に:** 翻訳 6 言語 × 31 語は自分で書き、母語話者の目を通していない。導出した 8 色の見た目は仮（ADR 0012 の 2）。既定のライトが `neutral-light`（橙の強調）になり、Issue #5〜#20 の青い強調から変わった。
+🔴 **正直に:** 翻訳 6 言語 × 31 語（当時）は自分で書き、母語話者の目を通していない。導出した 8 色の見た目は仮（ADR 0012 の 2）。既定のライトが `neutral-light`（橙の強調）になり、Issue #5〜#20 の青い強調から変わった。
 
 ## 22. Issue #29 — 署名と権限（ADR 0010 受理・2026-10-21）
 
@@ -855,7 +855,27 @@ bench（scratchpad の `year.rs`・release・3 アカウント・別プロセス
 
 Xvfb（`:102`・`scratchpad/snapshot.sh`）: 読み直し 1 秒の設定で alice が 2 件足し、100 回目の読み直しで `snapshot/<alice>.v1.txt`（810 バイト・`clock = 4`・`sequence = 3`）と `.idx`（128 バイト・4 件）が書かれた。その後 3 件目を足してプロセスを殺し（窓を閉じる経路は WM の無い Xvfb では通らない）、開き直すと 3 件とも出て（3 件目はスナップショットの後の自分の行から）、履歴の段は索引から引いた 2 行（[01-resumed](screenshots/2026-10-21-snapshot-01-resumed.png)）、Ctrl+Z は 3 件目の題名を戻した（前の回の自分の操作が Undo の束に積まれている・[02-undo](screenshots/2026-10-21-snapshot-02-undo.png)）。
 
-## 39. 再現
+## 39. Issue #62 — 添付: 台帳フォルダに写し、`attach` / `detach` を追記（ADR 0016 受理・2026-10-21）
+
+同じコンテナ。core に `Attachment`（連番・名前・バイト数・SHA-256）と自前の `sha256`（FIPS 180-4・外部クレートを足さない）、`OpKind::Attach` / `Detach`、`Item::attachments` と逆の操作。store に `attachment_store`（`attachments/<作ったアカウント>:<連番>/<添付の連番>-<名前>` に一時名 → rename で写す・`is_intact`）、`attach`（11 欄）/ `detach`（8 欄）の行、スナップショットの課題の行に添付の列。application に添付の段 `AttachmentsPane`（パスの欄・「添付する」・「外す」・名前・大きさ・SHA-256 の先頭 8 桁）、履歴の「添付した」「添付を外した」、知らせ（読めない・置けない）。app に `--attach <課題> <パス>`。文言は `Word::Attachment(AttachmentWord)` で 6 言語 × 10 語。道具の段の「添付」は 110 px（90 では英語が切れた）。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` / `deny` | 差分なし・0 件・0 件・警告なし・ok |
+| `make test` | 384 件（core 104・application 103・store 54・app 5・xtask 81） |
+| `make conformance` | 違反なし（240 ファイル） |
+| `make coverage` | core ＋ application の行 97.75%・region 97.56%（閾値 90） |
+
+Xvfb（`:101` / `:102`・`scratchpad/attach.sh` / `attach2.sh` / `attach3.sh`・1200×700・英語）:
+
+1. alice が課題を足し、「添付」を押して段を出し、パスの欄に `note.txt`（17 バイト）を打って Enter → 行に名前・17・`2852d726`（`sha256sum` と一致）、`attachments/<alice>:1/1-note.txt` が置かれ、alice のジャーナルに `attach` の行（[01-attached](screenshots/2026-10-21-attach-01-attached.png)）
+2. bob が同じフォルダを開くと 4 秒後に同じ行が見えた。carol が `--attach <alice>:1 photo.png`（5,000 バイト・画面は開かない）→ 両方の窓に 2 行（[02-two-processes](screenshots/2026-10-21-attach-02-two-processes.png)）
+3. bob が `note.txt` の行を選んで「外す」→ 行が消え、bob のジャーナルに `detach`。写しは残る。写しに 1 バイト足してから Ctrl+Z → 行が戻り（`attach` の行が `undoes` 付きで追記）、名前に `⚠ note.txt: contents differ from the record`（[03-altered](screenshots/2026-10-21-attach-03-altered.png)）
+4. 履歴の段: `undo: attached: note.txt` / `detached: note.txt` / `attached: photo.png` / `attached: note.txt` が誰が付きで並ぶ（[04-history](screenshots/2026-10-21-attach-04-history.png)）。`--audit` も同じ 6 行
+
+🔴 **正直に:** 元のファイルは丸ごと記憶に読む（大きなファイルの上限は無い）。写しを消す経路は無い。ビューワーはまだ（#63 / #64 / #66）。
+
+## 40. 再現
 
 ```bash
 make prove

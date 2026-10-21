@@ -1,6 +1,6 @@
 # いまのタスク — NeNe Docket
 
-> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #61 まで）。
+> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #62 まで）。
 
 ## 状態
 
@@ -33,14 +33,15 @@
 | 監査（FR-020） | ✅ Issue #56・[ADR 0014](../adr/0014-administration-is-journaled-for-audit.md) 受理。権限の変更も `admin` の行としてジャーナルに追記（署名付き）。履歴の段は課題を選んでいなければ台帳全体の時系列、`--audit` でテキスト。読んだ記録は残さない（gate-proofs 第 36 節） |
 | FR-017 の実測（1 万件・1 年分の併合） | ✅ Issue #24。30 万操作・45 MB を 0.6〜0.7 秒で併合（gate-proofs 第 20 節） |
 | 大容量でも軽い（FR-017 を 10 万件・300 万操作に）| ✅ Issue #61・[ADR 0015](../adr/0015-large-dockets-snapshot-and-incremental-merge.md) 受理。段階 1（表の一覧のキャッシュ・増分の併合）で 1 フレーム 22 ms → 1.4 ms。段階 2（自分のスナップショット `snapshot/<account>.v1.txt` ＋ 索引 `.idx`・操作は記憶に持たず履歴はジャーナルから引く）で 300 万操作の 2 回目の起動 8.5 秒 → 0.9 秒・RSS 703 → 178 MB（目標 150 MB は未達・gate-proofs 第 37・38 節） |
-| 添付とビューワー（FR-021 / FR-022） | ❌ Issue #62（添付の記録と段・`--attach`）→ #63（テキスト・CSV・外部起動・`encoding_rs`）→ #64（PNG・JPEG）→ #65（ドラッグ＆ドロップ）→ #66（PDF・`hayro` を試す）。施主 2026-10-21「全部推しで」 |
+| 添付（FR-021） | ✅ Issue #62・[ADR 0016](../adr/0016-attachments-copied-into-the-docket.md) 受理。台帳フォルダの `attachments/<課題>/<連番>-<名前>` に写し、`attach`（名前・大きさ・SHA-256 は core に自前）/ `detach` を追記。添付の段（道具の段の「添付」・パスの欄・「添付する」・「外す」）と `--attach`。写しは消さず、改変は `⚠` で示す。Xvfb で 3 アカウント（gate-proofs 第 39 節） |
+| ビューワーとドラッグ＆ドロップ（FR-022） | ❌ #63（テキスト・CSV・外部起動・`encoding_rs`）→ #64（PNG・JPEG）→ #65（ドラッグ＆ドロップ）→ #66（PDF・`hayro` を試す）。施主 2026-10-21「全部推しで」 |
 | CI の `check`（`make ci`）と commit-msg フック | ✅ PR #3 で CI が動き、枝名で落ちた（gate-proofs 第 10 節）。QLT-005・GIT-001・GIT-003 を active に |
 | ruleset（main の保護・squash-only） | 未設定。施主が GitHub で設定したら gate-proofs に記録する |
 
 ## 次に行うこと
 
 1. **ruleset（main の保護・squash-only・`check` を必須）を施主が GitHub で設定する。** 設定したら gate-proofs に記録し、GIT-002 / GIT-004 を active に。PR は harness の枝 `claude/cloud-session-qus6l5` から squash で merge している（件名は PR のタイトル・GIT-003 の形）
-2. 添付（Issue #62 → #63 → #64 → #65 → #66）
+2. 添付のビューワー（Issue #63 → #64 → #65 → #66）。依存を足すたびに ADR・`deny.toml`・CNF-013 の表
 3. 持ち主の交代はコマンドラインのまま（施主の決定）。引き継ぎを取り消す経路は無い（要るなら Issue）
 3. **IME の実測は施主の WSLg で**: fcitx5 か ibus を入れ、`XMODIFIERS=@im=fcitx` で XIM の preedit が x11rb の窓に届く経路（XIM プロトコルの自前実装か、IM サーバの D-Bus か）を決める ADR
 5. 環境の setup script（環境の設定）に DEVELOPMENT_WORKFLOW 第 9 節の行を置く。リポジトリ側のフック（`.claude/hooks/session-start.sh`）には `mingw-w64` を足した（Issue #24）
@@ -62,5 +63,6 @@
 - 読み直しの刻みは X の `ClientMessage` で、Windows では別の経路になる（ADR 0008）。間隔は設定の `refresh_seconds`（Issue #16）
 - 設定の列の幅と順は Issue #41 / #43（ヘッダの境と見出しのドラッグ）、段の高さは Issue #55（表との境のドラッグ・出している段は全部同じ高さ）、見えは Issue #27 で入った
 - X11 の OS の明暗は GTK の慣習（`GTK_THEME` と `gtk-3.0/settings.ini`）から読む（Issue #48）。GNOME の `color-scheme`（dconf）は読まない。利用者のテーマファイル（nene-nib の `.v1.theme`）はまだ
-- 翻訳（6 言語 × 31 語）と導出した配色の見た目は施主の確認待ち
+- 翻訳（6 言語 × 65 語）と導出した配色の見た目は施主の確認待ち
+- 添付の写しは消えない（外しても残る・ADR 0016）。元のファイルは丸ごと記憶に読む。パスは手で打つ（ドラッグ＆ドロップは Issue #65）
 - 履歴の「いつ」は UTC（時差を知るアダプタが無い）、「誰が」は `keys/` の名前（無ければ ID の先頭 4 桁）。過去の時点の再現はポインタを置いている間の表示だけ（Issue #39）。台帳をその時点へ戻すのは履歴の行を押して 1 項目ずつ（Issue #35）

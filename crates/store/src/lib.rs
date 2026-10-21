@@ -7,6 +7,7 @@
 
 pub mod administration;
 pub mod admission_failure;
+pub mod attachment_store;
 mod crc32;
 pub mod docket_file;
 mod escape;

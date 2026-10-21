@@ -60,9 +60,11 @@ impl Docket {
                     self.creation_order.push(*id);
                 }
             }
-            OpKind::Set { item, value } => match self.items.remove(item) {
+            OpKind::Set { item, .. }
+            | OpKind::Attach { item, .. }
+            | OpKind::Detach { item, .. } => match self.items.remove(item) {
                 Some(found) => {
-                    self.items.insert(*item, found.with(value.clone()));
+                    self.items.insert(*item, found.applied(op.kind()));
                 }
                 None => self.orphans = self.orphans.saturating_add(1),
             },
