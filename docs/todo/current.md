@@ -1,6 +1,6 @@
 # いまのタスク — NeNe Docket
 
-> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #54 まで）。
+> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #55 まで）。
 
 ## 状態
 
@@ -18,7 +18,7 @@
 | 画面とジャーナルの配線（`Ledger`・`Ports`・`FileJournal`・追加・題名・状態・削除・Ctrl+Z / Ctrl+Y・3 秒ごとの読み直し） | ✅ Issue #11・[ADR 0008](../adr/0008-account-file-and-refresh-tick.md)。Xvfb で 2 プロセスが同じフォルダを編集し、互いの変更が届いた（gate-proofs 第 14 節）。併合した台帳で 1 万件の 1 フレーム 0.87 ms ＋ 0.70 ms |
 | adapters-x11（時計・アカウント・読み直しの刻み） | ✅ Issue #11 |
 | 担当と期限を画面から変える（FR-001） | ✅ Issue #14。期限の形が違えば追記せず窓の下で示す（gate-proofs 第 15 節） |
-| 設定ファイル（FR-012）: 最近の台帳と読み直しの間隔 | ✅ Issue #16。引数なしで最近の台帳を開く。読めない設定は起動を止めて示す（gate-proofs 第 16 節）。見えは Issue #27、列の幅は Issue #41（版 3・第 28 節）、列の順は Issue #43（版 4・第 29 節） |
+| 設定ファイル（FR-012）: 最近の台帳と読み直しの間隔 | ✅ Issue #16。引数なしで最近の台帳を開く。読めない設定は起動を止めて示す（gate-proofs 第 16 節）。見えは Issue #27、列の幅は Issue #41（版 3・第 28 節）、列の順は Issue #43（版 4・第 29 節）、段の高さは Issue #55（版 5・第 35 節） |
 | ラベルを画面から変える（FR-001） | ✅ Issue #20。`,` 区切り。検索はラベルにも効く（gate-proofs 第 18 節） |
 | 表示言語 6 つと配色 125（FR-019 / FR-012 の見え） | ✅ Issue #27・[ADR 0011](../adr/0011-ui-language-is-a-versioned-setting.md) / [ADR 0012](../adr/0012-theme-model-and-builtin-colorschemes.md)。設定は版 2。Xvfb で日本語・简体中文・한국어・Español と dracula / solarized-light（gate-proofs 第 21 節）。翻訳と配色の見た目は施主の目を通していない |
 | 本文（複数行の欄・FR-001） | ✅ Issue #31。core の `text_area`、道具の段の「本文」、表の下の段（履歴と同時なら 1/4 ずつ）。検索は本文にも。Xvfb で 2 プロセス（gate-proofs 第 23 節）。スクロールバーは Issue #36（第 26 節） |
@@ -37,7 +37,7 @@
 ## 次に行うこと
 
 1. **ruleset（main の保護・squash-only・`check` を必須）を施主が GitHub で設定する。** 設定したら gate-proofs に記録し、GIT-002 / GIT-004 を active に。PR は harness の枝 `claude/cloud-session-qus6l5` から squash で merge している（件名は PR のタイトル・GIT-003 の形）
-2. 段の高さの調整（Issue #55）。監査ログ（Issue #56・ADR 0014）。持ち主の交代はコマンドラインのまま（施主の決定）
+2. 監査ログ（Issue #56・ADR 0014）。持ち主の交代はコマンドラインのまま（施主の決定）
 3. **IME の実測は施主の WSLg で**: fcitx5 か ibus を入れ、`XMODIFIERS=@im=fcitx` で XIM の preedit が x11rb の窓に届く経路（XIM プロトコルの自前実装か、IM サーバの D-Bus か）を決める ADR
 4. スナップショットの ADR は、1 年分の併合が 1 秒を超えてから（いまは 0.7 秒）
 5. 環境の setup script（環境の設定）に DEVELOPMENT_WORKFLOW 第 9 節の行を置く。リポジトリ側のフック（`.claude/hooks/session-start.sh`）には `mingw-w64` を足した（Issue #24）
@@ -56,7 +56,7 @@
 - `xdotool windowclose` は WM の無い Xvfb では `WM_DELETE_WINDOW` を送らず窓を消す。閉じる要求の経路は WSLg で確かめる
 - `Add` は `create` だけを追記し、担当は空のまま（編集行で変える）。アカウントの名前は `USER` で、画面から変えられない（ADR 0008）
 - 読み直しの刻みは X の `ClientMessage` で、Windows では別の経路になる（ADR 0008）。間隔は設定の `refresh_seconds`（Issue #16）
-- 設定の列の幅と順は Issue #41 / #43（ヘッダの境と見出しのドラッグ）、見えは Issue #27 で入った。段の高さは変えられない
+- 設定の列の幅と順は Issue #41 / #43（ヘッダの境と見出しのドラッグ）、段の高さは Issue #55（表との境のドラッグ・出している段は全部同じ高さ）、見えは Issue #27 で入った
 - X11 の OS の明暗は GTK の慣習（`GTK_THEME` と `gtk-3.0/settings.ini`）から読む（Issue #48）。GNOME の `color-scheme`（dconf）は読まない。利用者のテーマファイル（nene-nib の `.v1.theme`）はまだ
 - 翻訳（6 言語 × 31 語）と導出した配色の見た目は施主の確認待ち
 - 履歴の「いつ」は UTC（時差を知るアダプタが無い）、「誰が」は `keys/` の名前（無ければ ID の先頭 4 桁）。過去の時点の再現はポインタを置いている間の表示だけ（Issue #39）。台帳をその時点へ戻すのは履歴の行を押して 1 項目ずつ（Issue #35）
