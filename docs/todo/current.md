@@ -38,6 +38,15 @@
 | CI の `check`（`make ci`）と commit-msg フック | ✅ PR #3 で CI が動き、枝名で落ちた（gate-proofs 第 10 節）。QLT-005・GIT-001・GIT-003 を active に |
 | ruleset（main の保護・squash-only） | 未設定。施主が GitHub で設定したら gate-proofs に記録する |
 
+## 見た目（Issue #109・ADR 0022・2026-10-22 施主承認）
+
+[採用案](../design/2026-10-22-look.md)（画は `docs/design/look/`）: 枠なし窓・共有ビューのタブの帯・表示の切り替え・詳細のペイン・色の札 14。すべて planned。
+
+- 窓の枠と帯（Windows は Nib と同じ作り・X11 は WSLg で先に試す）
+- 詳細のペイン（下の段をやめる・幅はドラッグ）
+- 色の札 14（配色 125 から導く・`synced` も）
+- 定例の帯・印刷（印の欄）・Ctrl+P・台帳を始める は ADR 0021 の段階に合わせる
+
 ## 次に行うこと
 
 施主 2026-10-21「SMB 遅延、NAS の癖、ファイル破損、タイムスタンプ差、Windows ロック、日本語入力、OS フリーズなども考慮予定にして」→ Issue #75〜#81 に起こした（棚卸しで見つけた添付のフォルダ名の `:` は Issue #74 で直した）。

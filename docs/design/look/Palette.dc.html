@@ -1,0 +1,78 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>NeNe Docket Ctrl+P</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 100%; height: 900px; position: relative; overflow: hidden; background: #300A24; font-family: 'Noto Sans JP', system-ui, sans-serif">
+<dc-import name="Main" theme="dark" mode="normal" lines="2" hint-size="100%,900px"></dc-import>
+<div style="position: absolute; left: 0; right: 0; top: 40px; bottom: 0; background: rgba(20, 3, 15, 0.55)"></div>
+<div role="dialog" aria-label="課題・操作・ビューへ移動" style="position: absolute; top: 96px; left: 50%; margin-left: -320px; width: 640px; border-radius: 10px; overflow: hidden; background: #3B1430; border: 1px solid #5A2A4C; box-shadow: 0 24px 64px rgba(0, 0, 0, 0.5); color: #EEEEEC; font-size: 13px">
+<label style="height: 52px; display: flex; align-items: center; gap: 10px; padding: 0 16px; border-bottom: 1px solid #5A2A4C">
+<svg width="16" height="16" viewBox="0 0 16 16" aria-hidden="true"><circle cx="7" cy="7" r="5" fill="none" stroke="#B8A9B3" stroke-width="1.5"></circle><path d="M11 11l3.5 3.5" stroke="#B8A9B3" stroke-width="1.5" stroke-linecap="round"></path></svg>
+<input aria-label="移動先を探す" value="権限" style="flex: 1; min-width: 0; border: 0; outline: 0; background: transparent; color: #EEEEEC; font: inherit; font-size: 15px">
+<span style="display: flex; gap: 4px">
+<sc-for list="{{scopes}}" as="s" hint-placeholder-count="4">
+<span style="height: 22px; padding: 0 7px; border-radius: 5px; display: flex; align-items: center; gap: 4px; font-size: 11px; background: {{s.bg}}; color: {{s.fg}}"><span style="font-family: 'JetBrains Mono', monospace">{{s.key}}</span>{{s.name}}</span>
+</sc-for>
+</span>
+</label>
+<div style="padding: 6px 0">
+<sc-for list="{{groups}}" as="g" hint-placeholder-count="3">
+<div style="height: 26px; display: flex; align-items: center; padding: 0 16px; font-size: 11px; color: #B8A9B3; font-weight: 500">{{g.name}}</div>
+<sc-for list="{{g.items}}" as="it" hint-placeholder-count="3">
+<div style="height: 40px; display: flex; align-items: center; gap: 12px; padding: 0 16px; background: {{it.bg}}">
+<span style="width: 20px; height: 20px; border-radius: 5px; display: flex; align-items: center; justify-content: center; font-size: 10.5px; font-weight: 700; background: {{it.iconBg}}; color: {{it.iconFg}}">{{it.icon}}</span>
+<span style="font-family: {{it.font}}; font-size: 11.5px; color: #B8A9B3; width: 56px">{{it.key}}</span>
+<span style="flex: 1; min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{it.name}}</span>
+<span style="font-size: 11.5px; color: #B8A9B3">{{it.extra}}</span>
+</div>
+</sc-for>
+</sc-for>
+</div>
+<div style="height: 34px; display: flex; align-items: center; gap: 16px; padding: 0 16px; border-top: 1px solid #5A2A4C; font-size: 11.5px; color: #B8A9B3">
+<span><span style="color: #EEEEEC">↑↓</span> 選ぶ</span><span><span style="color: #EEEEEC">Enter</span> 開く</span><span><span style="color: #EEEEEC">Ctrl+Enter</span> 詳細で開く</span><div style="flex: 1"></div><span><span style="color: #EEEEEC">Esc</span> 閉じる</span>
+</div>
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":900}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const scopes = [['#', '課題', true], ['>', '操作', false], ['@', '担当', false], [':', 'ビュー', false]].map((s) => ({
+      key: s[0], name: s[1], bg: s[2] ? 'rgba(233,84,32,0.22)' : '#4A1E3D', fg: s[2] ? '#F6B49A' : '#B8A9B3'
+    }));
+    const issue = (key, name, extra, sel, state) => ({
+      key, name, extra, icon: state, font: "'JetBrains Mono', monospace",
+      bg: sel ? 'rgba(233,84,32,0.22)' : 'transparent',
+      iconBg: state === '確' ? 'rgba(215,196,229,0.16)' : (state === '対' ? 'rgba(233,84,32,0.22)' : '#4A1E3D'),
+      iconFg: state === '確' ? '#D7C4E5' : (state === '対' ? '#F6B49A' : '#B8A9B3')
+    });
+    const op = (key, name, extra) => ({ key, name, extra, icon: '>', font: "'JetBrains Mono', monospace", bg: 'transparent', iconBg: '#4A1E3D', iconFg: '#EEEEEC' });
+    const groups = [
+      { name: '課題', items: [
+        issue('森-2', '共有フォルダの権限が人によって違う', '確認中 · 森 · 10/25', true, '確'),
+        issue('田中-4', '退職者のアカウントの停止が遅れる', '対応中 · 佐藤 · 11/02', false, '対'),
+        issue('森-9', 'ファイルサーバの権限の棚卸し', '未着手 · 森 · 11/30', false, '未')
+      ] },
+      { name: '操作', items: [
+        op('', '参加者と権限を開く', '台帳の設定'),
+        op('', '権限を有効にする', '持ち主だけ')
+      ] }
+    ];
+    return { scopes, groups };
+  }
+}
+</script>
+</body>
+</html>
