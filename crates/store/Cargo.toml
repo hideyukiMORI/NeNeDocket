@@ -1,0 +1,16 @@
+[package]
+name = "nene-docket-store"
+description = "NeNe Docket のジャーナルと設定ファイルの形と置き場。追記・同期・読み直し。標準ライブラリだけ・外部クレート 0"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+# 🔴 内部は application と core だけ、外部クレートは 0（ARC-002 / ARC-013 / CNF-013）。
+[dependencies]
+nene-docket-core = { path = "../core" }

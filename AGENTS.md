@@ -15,7 +15,7 @@ the normative documents live in [docs/](docs/).
 
 Issue #1 (2026-10-21) put the documents in place. Issue #2 ported nene-ruler's machinery (`[workspace.lints]`, `clippy.toml`, `deny.toml`, `xtask`, `Makefile`, CI, hooks)
 and measured it here: `make prove` (26 real-tool proofs) and `cargo test -p xtask` (80). The rules that fired are `active` in `docs/QUALITY_GATES.md`; the rest stay `planned`.
-Issue #4 added `crates/core` with the widget kernel (immediate mode, ADR 0006). Issue #5 added `crates/application` (the screen state owner), `crates/ui-x11` (x11rb + cairo) and `crates/app`; the window runs on Xvfb with a 10,000-row table, search, filter and scrolling. Japanese is drawn by a font family chosen at startup (ADR 0007). Issue #7 added the journal core to `core`: `Op`/`OpId`/`ItemId`, `merge` (a pure function; the same set of ops in any order gives the same `Docket`) and `history`. **No store, adapters or Windows crates yet; no IME yet.**
+Issue #4 added `crates/core` with the widget kernel (immediate mode, ADR 0006). Issue #5 added `crates/application` (the screen state owner), `crates/ui-x11` (x11rb + cairo) and `crates/app`; the window runs on Xvfb with a 10,000-row table, search, filter and scrolling. Japanese is drawn by a font family chosen at startup (ADR 0007). Issue #7 added the journal core to `core`: `Op`/`OpId`/`ItemId`, `merge` (a pure function; the same set of ops in any order gives the same `Docket`) and `history`. Issue #9 added `crates/store`: journal v1 (one op per line with a CRC-32, append + fsync, incremental re-reads of other accounts' journals, `docket.v1.txt`). **The screen is not wired to the journal yet; no adapters or Windows crates; no IME.**
 
 ## Required reading before changing production code
 

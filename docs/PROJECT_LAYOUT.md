@@ -7,7 +7,7 @@
 Rust では層を**クレート**で表し、各クレートの `[dependencies]` が import 可能なものの全リストになる（ARC-002）。
 承認された向きの表は `xtask` の CNF-013 が持ち、マニフェストと照合する。
 
-🔴 クレートは具体的な責務とソースがある時だけ作る。**空の将来用モジュールは作らない。** Issue #5 の時点で在るのは `crates/core`・`crates/application`・`crates/ui-x11`・`crates/app`・`xtask`。adapters・store・Windows の 2 クレートはまだ無い。
+🔴 クレートは具体的な責務とソースがある時だけ作る。**空の将来用モジュールは作らない。** Issue #9 の時点で在るのは `crates/core`・`crates/application`・`crates/store`・`crates/ui-x11`・`crates/app`・`xtask`。adapters と Windows の 2 クレートはまだ無い。
 
 ---
 
@@ -30,7 +30,7 @@ crates/adapters-windows（nene-docket-adapters-windows）
     Windows のアダプタ。同じポートを Win32 で実装する。unsafe を書ける 2 クレートの 1 つ（ADR 0002）
 
 crates/store（nene-docket-store）
-    ジャーナル（版 1）と設定ファイル（版 1）の形と置き場。追記・同期・読み直し。標準ライブラリだけ・外部クレート 0
+    ジャーナル（版 1）の形と置き場。`docket.v1.txt`・`journal/<account>.v1.log`・1 行 1 操作と CRC-32・追記と同期・他人の伸びた分の読み直し。設定ファイルは FR-012 で足す。標準ライブラリだけ・外部クレート 0
 
     アダプタ 2 つと store だけが、現在時刻・乱数・環境・ファイルを読める製品モジュール（ARC-007 / CNF-012）
 

@@ -120,6 +120,13 @@ name = "nene-docket-core"
 version = "0.1.0"
 
 [[package]]
+name = "nene-docket-store"
+version = "0.1.0"
+dependencies = [
+ "nene-docket-core",
+]
+
+[[package]]
 name = "nene-docket-ui-x11"
 version = "0.1.0"
 dependencies = [
