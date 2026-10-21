@@ -23,6 +23,9 @@ pub struct OwnJournal {
     account: AccountId,
     signing: Option<SigningKey>,
     dirty: bool,
+    /// テストだけ: 次の追記を何回わざと失敗させるか（空き容量ゼロ・切れた共有の真似・Issue #81）。
+    #[cfg(test)]
+    failures_left: u32,
 }
 
 impl OwnJournal {
@@ -66,6 +69,8 @@ impl OwnJournal {
             account,
             signing,
             dirty: false,
+            #[cfg(test)]
+            failures_left: 0,
         };
         Ok((opened, read))
     }
@@ -76,6 +81,13 @@ impl OwnJournal {
     ///
     /// 書けない。
     pub fn append(&mut self, op: &Op) -> Result<u64, StoreFailure> {
+        #[cfg(test)]
+        if self.failures_left > 0 {
+            self.failures_left = self.failures_left.saturating_sub(1);
+            return Err(StoreFailure::Io(std::io::Error::from(
+                std::io::ErrorKind::StorageFull,
+            )));
+        }
         let mut line = match &self.signing {
             Some(key) => journal_record::encode_signed(op, key),
             None => journal_record::encode(op),
@@ -85,6 +97,22 @@ impl OwnJournal {
         self.file.write_all(line.as_bytes())?;
         self.dirty = true;
         Ok(offset)
+    }
+
+    /// 同じ場所を開き直す（スリープ復帰や共有の切断でハンドルが無効になったとき・Issue #81）。同期していない追記の印は残す。
+    ///
+    /// # Errors
+    ///
+    /// 開けない。
+    pub fn reopen(&mut self) -> Result<(), StoreFailure> {
+        self.file = open_append(&self.path)?;
+        Ok(())
+    }
+
+    /// テストだけ: 次の `count` 回の追記を空き容量ゼロとして失敗させる。
+    #[cfg(test)]
+    pub(crate) const fn fail_next(&mut self, count: u32) {
+        self.failures_left = count;
     }
 
     /// いまのファイルの長さ（全部読み終えた位置・スナップショットに残す）。
@@ -262,6 +290,28 @@ mod tests {
         let (_third, after) = OwnJournal::open(&directory, ACCOUNT, None).unwrap();
         assert_eq!(after.ops(), [op(1), op(2), op(3)]);
         assert_eq!(after.rejected().len(), 1);
+        let _ignored = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn reopening_gives_a_fresh_handle_and_injected_failures_are_counted_down() {
+        let directory = scratch("own-reopen");
+        let (mut journal, _) = OwnJournal::open(&directory, ACCOUNT, None).unwrap();
+        journal.append(&op(1)).unwrap();
+        journal.sync().unwrap();
+        // ファイルが消えた後（共有の切断の真似）、開き直すと新しいファイルに追記が続く。
+        std::fs::remove_file(journal.path()).unwrap();
+        journal.reopen().unwrap();
+        journal.append(&op(2)).unwrap();
+        journal.sync().unwrap();
+        assert_eq!(
+            journal_file::read_since(journal.path(), 0).unwrap().ops(),
+            [op(2)]
+        );
+        journal.fail_next(2);
+        assert!(journal.append(&op(3)).is_err());
+        assert!(journal.append(&op(3)).is_err());
+        journal.append(&op(3)).unwrap();
         let _ignored = std::fs::remove_dir_all(&directory);
     }
 

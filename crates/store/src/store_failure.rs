@@ -36,6 +36,8 @@ pub enum StoreFailure {
     CannotWriteAttachment,
     /// 添付の画像を復号できない（FR-022）。
     CannotDecodeAttachment,
+    /// 追記に失敗した操作がまだジャーナルに無い（スナップショットを書くと嘘になる・Issue #81）。
+    Unwritten(usize),
 }
 
 impl fmt::Display for StoreFailure {
@@ -64,6 +66,9 @@ impl fmt::Display for StoreFailure {
             Self::CannotReadAttachment => formatter.write_str("cannot read the file to attach"),
             Self::CannotWriteAttachment => formatter.write_str("cannot store the attachment"),
             Self::CannotDecodeAttachment => formatter.write_str("添付の画像を復号できない"),
+            Self::Unwritten(count) => {
+                write!(formatter, "{count} operations are not yet in the journal")
+            }
         }
     }
 }

@@ -27,6 +27,7 @@ use crate::journal_file;
 use crate::journal_folder::JournalFolder;
 use crate::journal_version::JournalVersion;
 use crate::key_file;
+use crate::leftovers;
 use crate::other_journals::OtherJournals;
 use crate::own_journal::{self, OwnJournal};
 use crate::permissions_store;
@@ -67,6 +68,8 @@ pub struct FileJournal {
     checkpoint_writer: Option<JoinHandle<Result<(), StoreFailure>>>,
     /// 最初の読み直しは待つ（起動の画面に他人の課題が揃うように）。以後は待たない。
     settle_first: bool,
+    /// 追記に失敗した操作（空き容量ゼロ・切れた共有）。次の追記・同期で先に書き直す。残っている間はスナップショットを書かない（Issue #81）。
+    unwritten: Vec<Op>,
 }
 
 impl FileJournal {
@@ -78,11 +81,7 @@ impl FileJournal {
     ///
     /// フォルダを作れない・読めない・版が違う・ジャーナルを開けない・鍵や権限のファイルが読めない。
     pub fn open(root: &Path, name: &str, account: &Account) -> Result<Self, StoreFailure> {
-        let mut folder = JournalFolder::open_or_create(root, name, account.id())?;
-        let key_mismatch = key_file::ensure_own(root, account)?;
-        if !key_mismatch && administration::adopt(root, account)? {
-            folder = JournalFolder::open_or_create(root, name, account.id())?;
-        }
+        let (folder, key_mismatch) = Self::prepare_folder(root, name, account)?;
         let enabled = folder.docket().permissions_on();
         let (keys, verifier) =
             verifier::load_if_enabled(root, folder.docket().owner().filter(|_| enabled))?;
@@ -135,10 +134,28 @@ impl FileJournal {
             scanner,
             checkpoint_writer: None,
             settle_first: true,
+            unwritten: Vec::new(),
         })
     }
 
     /// 自分のスナップショットが使えれば読む。無い・壊れている（捨てる）・権限が変わった・ジャーナルが縮んだ・知らないジャーナル名なら `None`。
+    /// フォルダを開く（無ければ作る）。途中で止まった置き換えの残骸を捨て（Issue #81）、自分の鍵を置き、
+    /// 引き継がれた台帳なら署名し直してから開き直す（ADR 0013）。鍵が台帳のものと違えばその印も返す。
+    fn prepare_folder(
+        root: &Path,
+        name: &str,
+        account: &Account,
+    ) -> Result<(JournalFolder, bool), StoreFailure> {
+        let mut folder = JournalFolder::open_or_create(root, name, account.id())?;
+        let owner = folder.docket().owner() == Some(account.id());
+        let _discarded = leftovers::discard(root, account.id(), owner)?;
+        let key_mismatch = key_file::ensure_own(root, account)?;
+        if !key_mismatch && administration::adopt(root, account)? {
+            folder = JournalFolder::open_or_create(root, name, account.id())?;
+        }
+        Ok((folder, key_mismatch))
+    }
+
     fn usable_snapshot(
         folder: &JournalFolder,
         account: AccountId,
@@ -321,7 +338,46 @@ impl FileJournal {
             .collect()
     }
 
+    /// 自分のジャーナルに 1 行追記し、索引に入れる。失敗したら 1 度だけ開き直して試す（ハンドルが無効になったとき）。
+    fn write_own(&mut self, op: &Op) -> Result<(), StoreFailure> {
+        let own_name = (self.account.id(), self.own.version());
+        let number = journal_number(&mut self.journals, own_name);
+        let offset = match self.own.append(op) {
+            Ok(offset) => offset,
+            Err(_first) => {
+                self.own.reopen()?;
+                self.own.append(op)?
+            }
+        };
+        remember(&mut self.index, op, number, offset);
+        Ok(())
+    }
+
+    /// 書けていない操作を古い順に書き直す。途中で失敗すればそこで止める（順は保つ）。
+    fn flush_unwritten(&mut self) -> Result<(), StoreFailure> {
+        while let Some(op) = self.unwritten.first().cloned() {
+            self.write_own(&op)?;
+            self.unwritten.remove(0);
+        }
+        Ok(())
+    }
+
+    /// まだジャーナルに書けていない操作の数（テストから見る。画面は追記の失敗を示すだけ）。
+    #[must_use]
+    pub fn unwritten(&self) -> usize {
+        self.unwritten.len()
+    }
+
+    /// テストだけ: 自分のジャーナル（失敗を仕込む）。
+    #[cfg(test)]
+    pub(crate) const fn own_mut(&mut self) -> &mut OwnJournal {
+        &mut self.own
+    }
+
     fn write_checkpoint(&mut self, snapshot: &LedgerSnapshot) -> Result<(), StoreFailure> {
+        if !self.unwritten.is_empty() {
+            return Err(StoreFailure::Unwritten(self.unwritten.len()));
+        }
         let own_name = (self.account.id(), self.own.version());
         journal_number(&mut self.journals, own_name);
         let mut offsets: BTreeMap<JournalName, u64> = self.others.offsets().clone();
@@ -410,20 +466,19 @@ fn permissions_mark(root: &Path) -> Result<Option<String>, StoreFailure> {
 }
 
 impl JournalPort for FileJournal {
+    /// 先に書けていない操作を書き直してから追記する。失敗した操作は覚えて次に回し、失敗を示す（Issue #81）。
     fn append(&mut self, op: &Op) -> Result<(), JournalFailure> {
-        let own_name = (self.account.id(), self.own.version());
-        let number = journal_number(&mut self.journals, own_name);
-        let offset = self
-            .own
-            .append(op)
-            .map_err(|_failure| JournalFailure::Unwritable)?;
-        remember(&mut self.index, op, number, offset);
+        let written = self.flush_unwritten().and_then(|()| self.write_own(op));
+        if written.is_err() {
+            self.unwritten.push(op.clone());
+            return Err(JournalFailure::Unwritable);
+        }
         Ok(())
     }
 
     fn sync(&mut self) -> Result<(), JournalFailure> {
-        self.own
-            .sync()
+        self.flush_unwritten()
+            .and_then(|()| self.own.sync())
             .map_err(|_failure| JournalFailure::Unwritable)
     }
 
@@ -520,6 +575,7 @@ impl JournalPort for FileJournal {
             |failure| match failure {
                 StoreFailure::CannotReadAttachment => JournalFailure::AttachmentUnreadable,
                 StoreFailure::CannotDecodeAttachment
+                | StoreFailure::Unwritten(_)
                 | StoreFailure::Io(_)
                 | StoreFailure::UnknownDocketVersion(_)
                 | StoreFailure::BadDocketFile
@@ -568,6 +624,7 @@ impl JournalPort for FileJournal {
                 StoreFailure::CannotDecodeAttachment => JournalFailure::AttachmentUndecodable,
                 StoreFailure::CannotReadAttachment
                 | StoreFailure::CannotWriteAttachment
+                | StoreFailure::Unwritten(_)
                 | StoreFailure::Io(_)
                 | StoreFailure::UnknownDocketVersion(_)
                 | StoreFailure::BadDocketFile
@@ -607,6 +664,8 @@ mod tests {
     use super::*;
     use crate::administration;
     use crate::permissions_store;
+    use nene_docket_application::key_record::KeyRecord;
+    use nene_docket_application::ledger_opening;
     use nene_docket_core::admin_command::AdminCommand;
 
     const ME: AccountId = AccountId::new(0x11);
@@ -679,6 +738,71 @@ mod tests {
     }
 
     /// 権限の無いうちに持ち主が 1 行書き、権限を有効にして編集者を 1 人加える。
+    #[test]
+    fn a_failed_append_is_kept_in_order_and_written_before_the_next_and_blocks_checkpoints() {
+        let root = temp("unwritten");
+        let me = account(ME, 1);
+        let mut mine = FileJournal::open(&root, "Team", &me).unwrap();
+        let (ledger, _) = ledger_opening::open(&mut mine, me.clone());
+        // 空き容量ゼロの真似: 追記が 4 回失敗する（1 回目 ＋ 開き直しの再試行で 2 回ずつ）。
+        mine.own_mut().fail_next(4);
+        assert_eq!(mine.append(&create(1, ME)), Err(JournalFailure::Unwritable));
+        assert_eq!(mine.unwritten(), 1);
+        assert_eq!(
+            mine.checkpoint(&ledger.snapshot()),
+            Err(JournalFailure::Unwritable)
+        );
+        assert_eq!(mine.append(&create(2, ME)), Err(JournalFailure::Unwritable));
+        assert_eq!(mine.unwritten(), 2);
+        // 書けるようになれば、同期で古い順に書き直す。
+        mine.sync().unwrap();
+        assert_eq!(mine.unwritten(), 0);
+        mine.append(&create(3, ME)).unwrap();
+        mine.sync().unwrap();
+        mine.checkpoint(&ledger.snapshot()).unwrap();
+        mine.finish_checkpoint().unwrap();
+        let path = mine
+            .folder()
+            .journal_directory()
+            .join(own_journal::file_name(ME, JournalVersion::One));
+        let read = journal_file::read_since(&path, 0).unwrap();
+        assert_eq!(read.ops(), [create(1, ME), create(2, ME), create(3, ME)]);
+        assert!(read.rejected().is_empty());
+        let _cleaned = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn temporaries_of_my_account_and_the_owners_files_are_discarded_on_open() {
+        let root = temp("leftovers");
+        let me = account(ME, 1);
+        drop(FileJournal::open(&root, "Team", &me).unwrap());
+        let mine = [
+            root.join("snapshot")
+                .join(format!("{}.v1.txt.tmp", ME.hex())),
+            root.join("snapshot")
+                .join(format!("{}.v1.idx.tmp", ME.hex())),
+            root.join("docket.v1.txt.tmp"),
+            root.join("permissions.v1.txt.tmp"),
+            key_file::directory(&root).join(format!("{}.tmp", KeyRecord::file_name(ME))),
+        ];
+        let theirs = root
+            .join("snapshot")
+            .join(format!("{}.v1.txt.tmp", OTHER.hex()));
+        let attachment = root.join("attachments").join("x").join("1-a.png.tmp");
+        std::fs::create_dir_all(root.join("snapshot")).unwrap();
+        std::fs::create_dir_all(attachment.parent().unwrap()).unwrap();
+        for path in mine.iter().chain([&theirs, &attachment]) {
+            std::fs::write(path, b"half").unwrap();
+        }
+        drop(FileJournal::open(&root, "Team", &me).unwrap());
+        for path in &mine {
+            assert!(!path.exists(), "{}", path.display());
+        }
+        assert!(theirs.exists());
+        assert!(attachment.exists());
+        let _cleaned = std::fs::remove_dir_all(&root);
+    }
+
     fn docket_with_permissions(root: &Path, owner: &Account, editor: AccountId) {
         let mut before = FileJournal::open(root, "Team", owner).unwrap();
         before.append(&create(1, ME)).unwrap();

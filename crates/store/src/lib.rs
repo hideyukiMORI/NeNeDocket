@@ -20,6 +20,7 @@ pub mod journal_read;
 pub mod journal_record;
 pub mod journal_version;
 pub mod key_file;
+mod leftovers;
 pub mod other_journals;
 pub mod own_journal;
 pub mod permissions_store;

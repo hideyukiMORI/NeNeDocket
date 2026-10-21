@@ -48,7 +48,7 @@ pub fn ensure_own(root: &Path, account: &Account) -> Result<bool, StoreFailure> 
 ///
 /// # Errors
 ///
-/// 読めない・鍵のファイルでない名前・読めない形・名前の ID と中の ID が違う。
+/// 読めない・鍵のファイルでない名前（`.tmp` の残骸は飛ばす）・読めない形・名前の ID と中の ID が違う。
 pub fn read_all(root: &Path) -> Result<Vec<KeyRecord>, StoreFailure> {
     let entries = match fs::read_dir(directory(root)) {
         Ok(entries) => entries,
@@ -59,6 +59,13 @@ pub fn read_all(root: &Path) -> Result<Vec<KeyRecord>, StoreFailure> {
     for entry in entries {
         let path = entry?.path();
         let name = file_name_of(&path);
+        // 途中で止まった置き換えの残骸（他人の分は消せない・Issue #81）。鍵ではないので読まない。
+        if path
+            .extension()
+            .is_some_and(|extension| extension.eq_ignore_ascii_case("tmp"))
+        {
+            continue;
+        }
         let account =
             KeyRecord::account_of(&name).ok_or_else(|| StoreFailure::BadKeyFile(name.clone()))?;
         let record = KeyRecord::parse(&fs::read_to_string(&path)?)
@@ -141,5 +148,18 @@ mod tests {
             Err(StoreFailure::BadKeyFile(_))
         ));
         let _ignored = fs::remove_dir_all(&root);
+    }
+
+    #[test]
+    fn a_leftover_temporary_is_skipped_but_a_stray_name_is_not() {
+        let root =
+            std::env::temp_dir().join(format!("nene-docket-store-{}-key-tmp", std::process::id()));
+        let _ignored = fs::remove_dir_all(&root);
+        fs::create_dir_all(directory(&root)).unwrap();
+        fs::write(directory(&root).join("x.txt.tmp"), "half").unwrap();
+        assert!(read_all(&root).unwrap().is_empty());
+        fs::write(directory(&root).join("x.txt"), "half").unwrap();
+        assert!(matches!(read_all(&root), Err(StoreFailure::BadKeyFile(_))));
+        let _cleaned = fs::remove_dir_all(&root);
     }
 }

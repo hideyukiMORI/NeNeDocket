@@ -48,7 +48,7 @@
 - #78 壁時計のずれ: 地方時の表示・ずれの印・期限の「今日」・mtime 不使用の検査
 - 🟡 #79 Windows のファイルロック: `retry`（50 ms × 5 回）と `replace_file`（一時名 → rename）に全部の置き換えを通し、自分のジャーナルは `FILE_SHARE_DELETE` を外す（docs/design）。残り: 施主の Windows での 3 つの手順（gate-proofs 第 47 節）
 - 🟡 #80 日本語入力: ADR 0020。Windows は IMM32（確定前の文字列を欄に・候補の窓は欄の下）、X11 は Ctrl+V の貼り付け、確定前は下線。残り: 施主の Windows での確認・WSLg で XIM が届くかの実測（gate-proofs 第 46 節）
-- #81 OS のフリーズ・停電・強制終了・スリープ復帰: 止まり方の表と戻ったときの約束
+- 🟡 #81 OS のフリーズ・停電・強制終了・スリープ復帰: 止まり方の表（docs/design・8 行にテスト）、追記に失敗した操作は覚えて書き直す・ハンドルの開き直し・`.tmp` の残骸は自分の分だけ捨てる。残り: 施主の実機の 3 手順（gate-proofs 第 48 節）
 
 1. **ruleset（main の保護・squash-only・`check` を必須）を施主が GitHub で設定する。** 設定したら gate-proofs に記録し、GIT-002 / GIT-004 を active に。PR は harness の枝 `claude/cloud-session-qus6l5` から squash で merge している（件名は PR のタイトル・GIT-003 の形）
 2. PDF のビューワーは保留（ADR 0019 の再提案の条件: 施主が依存の重さと `deny.toml` の緩和を受け入れる・`hayro` の重複が消える・実運用で OS のビューワーでは足りないと分かる）
