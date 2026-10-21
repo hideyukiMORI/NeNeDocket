@@ -2,6 +2,7 @@
 //!
 //! 位置はすべて**文字**（`char`）の添字で、バイトでは持たない。途中のバイトで切る経路が無い（Issue #4 の受け入れ条件）。
 //! 操作は値を返す純関数で、同じ状態と同じ意図から同じ状態が出る（ARC-007）。
+//! 文字列は `\n` で行に分かれる。Home / End は行の中で動き、複数行の欄（[`crate::text_area`]）では Enter が改行を挿し、上下が隣の行へ動く。
 
 use alloc::borrow::ToOwned;
 use alloc::string::String;
@@ -63,6 +64,65 @@ impl TextEdit {
             caret: self.caret,
             preedit,
         }
+    }
+
+    /// 複数行の欄として鍵の意図を適用した状態。Enter は改行を挿し、上下は隣の行の同じ桁へ。ほかは [`Self::applied`]。
+    #[must_use]
+    pub fn applied_in_area(&self, intent: KeyIntent) -> Self {
+        match intent {
+            KeyIntent::Enter => self.inserted("\n"),
+            KeyIntent::Up => self.moved_by_line(-1_i8),
+            KeyIntent::Down => self.moved_by_line(1_i8),
+            KeyIntent::Char(_)
+            | KeyIntent::Move { .. }
+            | KeyIntent::Backspace
+            | KeyIntent::Delete
+            | KeyIntent::SelectAll
+            | KeyIntent::Escape
+            | KeyIntent::Tab
+            | KeyIntent::BackTab
+            | KeyIntent::Undo
+            | KeyIntent::Redo => self.applied(intent),
+        }
+    }
+
+    /// 文字の添字がある行（0 から）と、行の中の桁（文字数）。
+    #[must_use]
+    pub fn position_of(&self, index: usize) -> (usize, usize) {
+        let mut line = 0_usize;
+        let mut column = 0_usize;
+        for character in self.text.chars().take(index) {
+            if character == '\n' {
+                line = line.saturating_add(1);
+                column = 0;
+            } else {
+                column = column.saturating_add(1);
+            }
+        }
+        (line, column)
+    }
+
+    /// 行と桁の文字の添字。行が無ければ末尾、桁が行より長ければ行の末尾。
+    #[must_use]
+    pub fn index_of(&self, line: usize, column: usize) -> usize {
+        let mut index = 0_usize;
+        let mut current = 0_usize;
+        for character in self.text.chars() {
+            if current == line {
+                break;
+            }
+            if character == '\n' {
+                current = current.saturating_add(1);
+            }
+            index = index.saturating_add(1);
+        }
+        let length = self
+            .text
+            .chars()
+            .skip(index)
+            .take_while(|character| *character != '\n')
+            .count();
+        index.saturating_add(column.min(length))
     }
 
     /// 鍵の意図を適用した状態。入力欄が扱わない意図（Enter・Esc・Tab・上下）では変わらない。
@@ -143,11 +203,43 @@ impl TextEdit {
             CursorMove::Right if caret.has_selection() && !extend => caret.end(),
             CursorMove::Left => caret.cursor().saturating_sub(1),
             CursorMove::Right => caret.cursor().saturating_add(1).min(self.char_count()),
-            CursorMove::Home => 0,
-            CursorMove::End => self.char_count(),
+            CursorMove::Home => {
+                let (line, _) = self.position_of(caret.cursor());
+                self.index_of(line, 0)
+            }
+            CursorMove::End => {
+                let (line, _) = self.position_of(caret.cursor());
+                self.index_of(line, usize::MAX)
+            }
         };
         let anchor = if extend { caret.anchor() } else { cursor };
         self.with_caret(TextCaret::new(cursor, anchor))
+    }
+
+    /// 隣の行の同じ桁へ。最初の行から上は先頭、最後の行から下は末尾。選択は畳む。
+    fn moved_by_line(&self, delta: i8) -> Self {
+        let (line, column) = self.position_of(self.caret.cursor());
+        let cursor = if delta < 0 {
+            match line.checked_sub(1) {
+                Some(above) => self.index_of(above, column),
+                None => 0,
+            }
+        } else if line.saturating_add(1) < self.line_count() {
+            self.index_of(line.saturating_add(1), column)
+        } else {
+            self.char_count()
+        };
+        self.with_caret(TextCaret::new(cursor, cursor))
+    }
+
+    /// 行の数（空でも 1）。
+    #[must_use]
+    pub fn line_count(&self) -> usize {
+        self.text
+            .chars()
+            .filter(|character| *character == '\n')
+            .count()
+            .saturating_add(1)
     }
 
     /// 選択があればそれを、無ければカーソルの左か右の 1 文字を消した状態。
@@ -289,6 +381,59 @@ mod tests {
         let composing = selected.with_preedit(Some(Preedit::new("x", 1)));
         assert_eq!(composing.display().0, "x");
         assert_eq!(composing.inserted("y").text(), "y");
+    }
+
+    #[test]
+    fn lines_and_columns_map_both_ways() {
+        let edit = TextEdit::showing("ab\ncde\nf");
+        assert_eq!(edit.line_count(), 3);
+        assert_eq!(edit.position_of(edit.caret().cursor()), (2, 1));
+        assert_eq!(edit.index_of(1, 1), 4);
+        assert_eq!(edit.index_of(1, 9), 6);
+        assert_eq!(edit.index_of(7, 0), 8);
+        assert_eq!(TextEdit::empty().line_count(), 1);
+    }
+
+    #[test]
+    fn home_and_end_move_within_the_current_line() {
+        let up = TextEdit::showing("ab\ncde\nf").applied_in_area(KeyIntent::Up);
+        assert_eq!(up.caret(), TextCaret::new(4, 4));
+        let home = moved(&up, CursorMove::Home, false);
+        assert_eq!(home.caret(), TextCaret::new(3, 3));
+        let end = moved(&up, CursorMove::End, true);
+        assert_eq!(end.caret(), TextCaret::new(6, 4));
+    }
+
+    #[test]
+    fn walking_past_the_first_or_last_line_lands_on_the_ends() {
+        let top = TextEdit::showing("ab\ncde\nf")
+            .applied_in_area(KeyIntent::Up)
+            .applied_in_area(KeyIntent::Up)
+            .applied_in_area(KeyIntent::Up);
+        assert_eq!(top.caret(), TextCaret::new(0, 0));
+        let bottom = top
+            .applied_in_area(KeyIntent::Down)
+            .applied_in_area(KeyIntent::Down)
+            .applied_in_area(KeyIntent::Down);
+        assert_eq!(bottom.caret(), TextCaret::new(8, 8));
+    }
+
+    #[test]
+    fn enter_in_the_area_inserts_a_line_break_and_tab_is_left_alone() {
+        let home = moved(
+            &TextEdit::showing("ab\ncde\nf").applied_in_area(KeyIntent::Up),
+            CursorMove::Home,
+            false,
+        );
+        let broken = home.applied_in_area(KeyIntent::Enter);
+        assert_eq!(broken.text(), "ab\n\ncde\nf");
+        assert_eq!(broken.caret(), TextCaret::new(4, 4));
+        assert_eq!(
+            broken.applied_in_area(KeyIntent::Char('x')).text(),
+            "ab\n\nxcde\nf"
+        );
+        assert_eq!(broken.applied_in_area(KeyIntent::Tab), broken);
+        assert_eq!(TextEdit::empty().line_count(), 1);
     }
 
     #[test]

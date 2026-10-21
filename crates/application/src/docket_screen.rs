@@ -47,6 +47,7 @@ use nene_docket_core::word::Word;
 use nene_docket_core::wording;
 
 use crate::account::Account;
+use crate::body_pane::BodyPane;
 use crate::docket_frame::DocketFrame;
 use crate::edit_slot::EditSlot;
 use crate::environment::Environment;
@@ -76,6 +77,8 @@ const HISTORY_TOGGLE: WidgetId = WidgetId::new(12);
 const LABELS: WidgetId = WidgetId::new(13);
 const LANGUAGE: WidgetId = WidgetId::new(14);
 const THEME: WidgetId = WidgetId::new(15);
+/// 16 は本文の段の欄（`body_pane`）。
+const BODY_TOGGLE: WidgetId = WidgetId::new(17);
 const FILTER_OPTION: WidgetId = WidgetId::new(100);
 const STATE_OPTION: WidgetId = WidgetId::new(200);
 const LANGUAGE_OPTION: WidgetId = WidgetId::new(300);
@@ -87,6 +90,9 @@ const ROW_PX: u16 = 28;
 const FILTER_WIDTH_PX: u16 = 140;
 const SHOW_DONE_WIDTH_PX: u16 = 120;
 const HISTORY_WIDTH_PX: u16 = 100;
+const BODY_WIDTH_PX: u16 = 80;
+/// 本文の段の 1 行。
+const BODY_LINE_PX: u16 = 20;
 const LANGUAGE_WIDTH_PX: u16 = 110;
 const THEME_WIDTH_PX: u16 = 130;
 const BUTTON_WIDTH_PX: u16 = 80;
@@ -122,6 +128,7 @@ pub struct DocketScreen {
     assignee: TextEdit,
     due: TextEdit,
     labels: TextEdit,
+    body: BodyPane,
     bad_due: bool,
     state: SelectState,
     history: HistoryPane,
@@ -169,6 +176,7 @@ impl DocketScreen {
             assignee: TextEdit::empty(),
             due: TextEdit::empty(),
             labels: TextEdit::empty(),
+            body: BodyPane::hidden(),
             bad_due: false,
             state: SelectState::closed(ItemState::ALL.len(), 0),
             history: HistoryPane::hidden(environment.scale()),
@@ -205,7 +213,7 @@ impl DocketScreen {
         let toolbar = layout.row(self.px(ROW_PX), &self.toolbar_widths());
         let editor = layout.row(self.px(ROW_PX), &self.editor_widths());
         let (table_area, notice_rect) = self.split_notice(layout.remaining());
-        let (table_area, history_area) = self.split_history(table_area);
+        let (table_area, body_area, history_area) = self.split_panes(table_area);
         let visible = self.visible_ids();
         let table = self.table_layout(table_area, visible.len());
         let track = Self::track_of(table_area, self.px(SCROLL_WIDTH_PX));
@@ -222,7 +230,8 @@ impl DocketScreen {
             self.probe_toolbar(&toolbar, &mut commands);
         let (state_rect, state_response) = self.probe_editor(&editor, &mut commands);
         self.probe_table(&table, &visible, &mut commands);
-        self.probe_scroll(track, history_area, &mut commands);
+        self.probe_scroll(track, [body_area, history_area], &mut commands);
+        self.probe_body(body_area, &mut commands);
         self.probe_history(history_area, &mut commands);
         self.probe_filter_options(filter_rect);
         self.probe_state_options(state_rect);
@@ -335,6 +344,18 @@ impl DocketScreen {
         self.history.is_shown()
     }
 
+    /// 本文の段を出しているか。
+    #[must_use]
+    pub const fn shows_body(&self) -> bool {
+        self.body.is_shown()
+    }
+
+    /// 本文の欄の文字列（編集中の値）。
+    #[must_use]
+    pub fn body_text(&self) -> &str {
+        self.body.edit().text()
+    }
+
     /// 選んだ課題の履歴。新しいものが先。選んでいなければ空。
     #[must_use]
     pub fn history_lines(&self) -> Vec<HistoryLine> {
@@ -404,11 +425,12 @@ impl DocketScreen {
             .collect()
     }
 
-    /// 検索欄が空か、題名かラベルに含まれる。
+    /// 検索欄が空か、題名か本文かラベルに含まれる。
     fn matches_search(&self, item: &Item) -> bool {
         let wanted = self.search.text();
         wanted.is_empty()
             || item.title().contains(wanted)
+            || item.body().contains(wanted)
             || item.labels().iter().any(|label| label.contains(wanted))
     }
 
@@ -424,38 +446,64 @@ impl DocketScreen {
         self.scale.px(base)
     }
 
-    fn toolbar_widths(&self) -> [ColumnWidth; 7] {
+    fn toolbar_widths(&self) -> [ColumnWidth; 8] {
         [
             ColumnWidth::Fill,
             ColumnWidth::Fixed(self.px(FILTER_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(SHOW_DONE_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(HISTORY_WIDTH_PX)),
+            ColumnWidth::Fixed(self.px(BODY_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(LANGUAGE_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(THEME_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(BUTTON_WIDTH_PX)),
         ]
     }
 
-    /// 履歴を出していて課題を選んでいれば、表の下 2/5 を履歴の段に使う。
-    fn split_history(&self, area: PixelRect) -> (PixelRect, Option<PixelRect>) {
-        if !self.history.is_shown() || self.selected.is_none() {
-            return (area, None);
-        }
-        let history_height = self.history.height_in(area.height());
-        let table_height = area
-            .height()
-            .saturating_sub(history_height)
-            .saturating_sub(self.px(MARGIN_PX));
-        let table = PixelRect::new(area.x(), area.y(), area.width(), table_height);
-        let history = PixelRect::new(
+    /// 課題を選んでいて本文か履歴を出していれば、表の下を段に使う。1 つなら 2/5、両方なら 1/4 ずつ（ヘッダ ＋ 3 行以上）。
+    fn split_panes(&self, area: PixelRect) -> (PixelRect, Option<PixelRect>, Option<PixelRect>) {
+        let body_shown = self.body.is_shown() && self.selected.is_some();
+        let history_shown = self.history.is_shown() && self.selected.is_some();
+        let height = if body_shown && history_shown {
+            (area.height() / 4).max(self.px(ROW_PX).saturating_mul(4))
+        } else {
+            self.history.height_in(area.height())
+        };
+        let mut bottom = area.bottom();
+        let mut pane = |shown: bool| {
+            if !shown {
+                return None;
+            }
+            let rect = PixelRect::new(
+                area.x(),
+                bottom.saturating_sub(height).saturating_add(1),
+                area.width(),
+                height,
+            );
+            bottom = rect
+                .y()
+                .saturating_sub(self.px(MARGIN_PX))
+                .saturating_sub(1);
+            Some(rect)
+        };
+        let history = pane(history_shown);
+        let body = pane(body_shown);
+        let table = PixelRect::new(
             area.x(),
-            area.bottom()
-                .saturating_sub(history_height)
-                .saturating_add(1),
+            area.y(),
             area.width(),
-            history_height,
+            bottom.saturating_add(1).saturating_sub(area.y()),
         );
-        (table, Some(history))
+        (table, body, history)
+    }
+
+    /// 本文の段。複数行の欄 1 つ。
+    fn probe_body(&mut self, area: Option<PixelRect>, commands: &mut Vec<DrawCommand>) {
+        let Some(area) = area else {
+            return;
+        };
+        let line_px = self.px(BODY_LINE_PX);
+        self.body
+            .probe(&mut self.interaction, (area, line_px), commands);
     }
 
     fn probe_history(&mut self, area: Option<PixelRect>, commands: &mut Vec<DrawCommand>) {
@@ -488,6 +536,7 @@ impl DocketScreen {
             EditSlot::Assignee => ASSIGNEE,
             EditSlot::Due => DUE,
             EditSlot::Labels => LABELS,
+            EditSlot::Body => BodyPane::id(),
         }
     }
 
@@ -504,6 +553,7 @@ impl DocketScreen {
             EditSlot::Assignee => &self.assignee,
             EditSlot::Due => &self.due,
             EditSlot::Labels => &self.labels,
+            EditSlot::Body => self.body.edit(),
         }
     }
 
@@ -513,6 +563,7 @@ impl DocketScreen {
             EditSlot::Assignee => &mut self.assignee,
             EditSlot::Due => &mut self.due,
             EditSlot::Labels => &mut self.labels,
+            EditSlot::Body => self.body.edit_mut(),
         }
     }
 
@@ -600,12 +651,7 @@ impl DocketScreen {
 
     fn key_to_focus(&mut self, key: KeyIntent) {
         if let Some(slot) = self.focused_slot() {
-            if key == KeyIntent::Enter {
-                self.commit_slot(slot);
-            } else {
-                let edit = self.slot_mut(slot);
-                *edit = edit.applied(key);
-            }
+            self.key_to_slot(slot, key);
             return;
         }
         match self.interaction.focus() {
@@ -622,16 +668,40 @@ impl DocketScreen {
                 self.state = self.state.applied(key);
                 self.state_changed(before);
             }
-            Some(SHOW_DONE) if matches!(key, KeyIntent::Enter | KeyIntent::Char(' ')) => {
-                self.show_done = !self.show_done;
+            Some(id) => {
+                if !self.key_to_control(id, key) {
+                    self.key_to_table(key);
+                }
             }
-            Some(HISTORY_TOGGLE) if matches!(key, KeyIntent::Enter | KeyIntent::Char(' ')) => {
-                self.history.toggle();
-            }
-            Some(ADD) if key == KeyIntent::Enter => self.add_item(),
-            Some(DELETE) if key == KeyIntent::Enter => self.delete_item(),
-            Some(_) | None => self.key_to_table(key),
+            None => self.key_to_table(key),
         }
+    }
+
+    /// 文字の欄の鍵。本文は複数行（Enter は改行）、ほかは Enter で確定。
+    fn key_to_slot(&mut self, slot: EditSlot, key: KeyIntent) {
+        if slot == EditSlot::Body {
+            let edit = self.body.edit_mut();
+            *edit = edit.applied_in_area(key);
+        } else if key == KeyIntent::Enter {
+            self.commit_slot(slot);
+        } else {
+            let edit = self.slot_mut(slot);
+            *edit = edit.applied(key);
+        }
+    }
+
+    /// チェックボックスとボタンの鍵。Enter か空白で押す。扱ったら真。
+    fn key_to_control(&mut self, id: WidgetId, key: KeyIntent) -> bool {
+        let pressed = matches!(key, KeyIntent::Enter | KeyIntent::Char(' '));
+        match id {
+            SHOW_DONE if pressed => self.show_done = !self.show_done,
+            HISTORY_TOGGLE if pressed => self.history.toggle(),
+            BODY_TOGGLE if pressed => self.body.toggle(),
+            ADD if key == KeyIntent::Enter => self.add_item(),
+            DELETE if key == KeyIntent::Enter => self.delete_item(),
+            _ => return false,
+        }
+        true
     }
 
     /// フォーカスが無いときの上下はスクロール。
@@ -889,6 +959,7 @@ impl DocketScreen {
             filter_rect,
             done_rect,
             history_rect,
+            body_rect,
             language_rect,
             theme_rect,
             add_rect,
@@ -919,6 +990,16 @@ impl DocketScreen {
             self.history.is_shown(),
             history,
         ));
+        let body = self.interaction.probe(BODY_TOGGLE, body_rect, true);
+        if body.clicked() {
+            self.body.toggle();
+        }
+        commands.extend(checkbox::checkbox(
+            body_rect,
+            self.word(Word::FieldName(Field::Body)),
+            self.body.is_shown(),
+            body,
+        ));
         let language = self.interaction.probe(LANGUAGE, language_rect, true);
         if language.clicked() {
             self.language_select = self.language_select.toggled();
@@ -948,7 +1029,7 @@ impl DocketScreen {
             delete_rect,
         ] = Self::rects(editor);
         for (slot, rect) in
-            EditSlot::ALL
+            EditSlot::ROW
                 .into_iter()
                 .zip([title_rect, assignee_rect, due_rect, labels_rect])
         {
@@ -1156,10 +1237,11 @@ impl DocketScreen {
     }
 
     /// スクロールバー。掴んで引けば位置が追い、ホイールは 3 行ずつ。ポインタが履歴の段の上ならホイールはそちらへ。
+    /// 表のスクロールバー。ホイールは、ポインタが下の段（本文・履歴）の上に無いときだけ表へ。
     fn probe_scroll(
         &mut self,
         track: PixelRect,
-        history_area: Option<PixelRect>,
+        panes: [Option<PixelRect>; 2],
         commands: &mut Vec<DrawCommand>,
     ) {
         let response = self.interaction.probe(SCROLL, track, false);
@@ -1174,11 +1256,10 @@ impl DocketScreen {
                 .scroll
                 .scrolled_to(u32::try_from(offset).unwrap_or(u32::MAX));
         }
-        let over_history = pointer
+        let over_pane = pointer
             .position()
-            .zip(history_area)
-            .is_some_and(|(point, area)| area.contains(point));
-        if !over_history {
+            .is_some_and(|point| panes.into_iter().flatten().any(|area| area.contains(point)));
+        if !over_pane {
             let wheel = i32::from(pointer.wheel())
                 .saturating_mul(WHEEL_ROWS)
                 .saturating_mul(i32::from(self.px(ROW_PX)));
@@ -1218,10 +1299,11 @@ mod tests {
     const SECOND_ROW_Y: u16 = 150;
     const TOOLBAR_Y: u16 = 20;
     const EDITOR_Y: u16 = 58;
-    /// 道具の段（960 幅）: 検索 8..224・絞り込み 232..372・完了 380..500・履歴 508..608・言語 616..726・配色 734..864・追加 872..952。
-    const FILTER_X: u16 = 300;
-    const SHOW_DONE_X: u16 = 440;
-    const HISTORY_X: u16 = 560;
+    /// 道具の段（960 幅）: 検索 8..136・絞り込み 144..284・完了 292..412・履歴 420..520・本文 528..608・言語 616..726・配色 734..864・追加 872..952。
+    const FILTER_X: u16 = 210;
+    const SHOW_DONE_X: u16 = 350;
+    const HISTORY_X: u16 = 470;
+    const BODY_X: u16 = 570;
     const LANGUAGE_X: u16 = 670;
     const THEME_X: u16 = 800;
     const ADD_X: u16 = 910;
@@ -1552,7 +1634,7 @@ mod tests {
         // 検索欄に字があれば、それが題名になる。
         click(&mut screen, 100, TOOLBAR_Y);
         keys(&mut screen, &chars("Issue"));
-        keys(&mut screen, &[KeyIntent::Tab; 6]);
+        keys(&mut screen, &[KeyIntent::Tab; 7]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(title_of(&screen, ItemId::new(ME, 2)), "Issue");
     }
@@ -1625,11 +1707,11 @@ mod tests {
     #[test]
     fn delete_by_key_needs_the_focus_and_a_selection() {
         let (mut screen, spy) = screen(2);
-        keys(&mut screen, &[KeyIntent::Tab; 13]);
+        keys(&mut screen, &[KeyIntent::Tab; 14]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 0);
         click(&mut screen, 100, FIRST_ROW_Y);
-        keys(&mut screen, &[KeyIntent::Tab; 13]);
+        keys(&mut screen, &[KeyIntent::Tab; 14]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 1);
     }
@@ -2012,6 +2094,90 @@ mod tests {
         screen.step(&pointer(TRACK_X, 300, ButtonPhase::Held));
         assert!(screen.scroll().offset() > 0);
         assert!(screen.scroll().offset() <= screen.scroll().max_offset());
+    }
+
+    /// 本文の段を出し、1 行目を選んで段を押す。
+    fn screen_with_body() -> (DocketScreen, Spy) {
+        let (mut screen, spy) = screen(3);
+        click(&mut screen, BODY_X, TOOLBAR_Y);
+        assert!(screen.shows_body());
+        click(&mut screen, 100, FIRST_ROW_Y);
+        click(&mut screen, 100, 380);
+        (screen, spy)
+    }
+
+    #[test]
+    fn the_body_pane_takes_lines_and_commits_when_focus_leaves() {
+        let (mut screen, spy) = screen_with_body();
+        keys(&mut screen, &chars("first"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        keys(&mut screen, &chars("second"));
+        assert_eq!(screen.body_text(), "first\nsecond");
+        assert_eq!(spy.written.borrow().len(), 0);
+        let frame = idle(&mut screen);
+        assert!(texts(&frame).iter().any(|text| text == "second"));
+        keys(&mut screen, &[KeyIntent::Escape]);
+        let written = spy.written.borrow();
+        assert_eq!(written.len(), 1);
+        assert_eq!(
+            written[0].kind(),
+            &OpKind::Set {
+                item: ItemId::new(OTHER, 1),
+                value: FieldValue::Body(String::from("first\nsecond")),
+            }
+        );
+        drop(written);
+        let item = screen
+            .ledger()
+            .docket()
+            .item(ItemId::new(OTHER, 1))
+            .unwrap();
+        assert_eq!(item.body(), "first\nsecond");
+        // 検索は本文にも効く。
+        click(&mut screen, 50, TOOLBAR_Y);
+        keys(&mut screen, &chars("second"));
+        assert_eq!(screen.visible_items().len(), 1);
+        // 履歴は改行を印にして 1 行に。
+        click(&mut screen, HISTORY_X, TOOLBAR_Y);
+        let lines = screen.history_lines();
+        assert_eq!(
+            lines
+                .first()
+                .map(|line| line.columns(Language::English)[2].clone()),
+            Some(String::from("Body :  -> first↵second"))
+        );
+    }
+
+    #[test]
+    fn the_body_pane_follows_the_selection_and_hides_by_key() {
+        let (mut screen, _) = screen_with_body();
+        keys(&mut screen, &chars("note"));
+        click(&mut screen, 100, SECOND_ROW_Y);
+        assert_eq!(screen.body_text(), "");
+        assert_eq!(
+            screen
+                .ledger()
+                .docket()
+                .item(ItemId::new(OTHER, 1))
+                .map(Item::body),
+            Some("note")
+        );
+        // ホイールは段の上では表を動かさない。
+        screen.step(&FrameInput::new(
+            BOUNDS,
+            PointerInput::new(Some(PixelPoint::new(100, 380)), ButtonPhase::Idle, 1),
+        ));
+        assert_eq!(screen.scroll().offset(), 0);
+        keys(&mut screen, &[KeyIntent::Escape]);
+        keys(&mut screen, &[KeyIntent::Tab; 5]);
+        keys(&mut screen, &[KeyIntent::Char(' ')]);
+        assert!(!screen.shows_body());
+        // 本文と履歴を両方出しても表は残る。
+        click(&mut screen, BODY_X, TOOLBAR_Y);
+        click(&mut screen, HISTORY_X, TOOLBAR_Y);
+        let frame = idle(&mut screen);
+        assert!(texts(&frame).iter().any(|text| text == "When"));
+        assert!(texts(&frame).iter().any(|text| text == "Issue #1"));
     }
 
     #[test]

@@ -15,6 +15,7 @@ pub mod account;
 pub mod account_file;
 pub mod account_reading;
 pub mod admission_report;
+pub mod body_pane;
 pub mod clock_port;
 pub mod docket_frame;
 pub mod docket_screen;

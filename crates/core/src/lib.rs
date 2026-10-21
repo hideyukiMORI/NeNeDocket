@@ -61,6 +61,7 @@ pub mod signature;
 pub mod signing_key;
 pub mod table_layout;
 pub mod text_align;
+pub mod text_area;
 pub mod text_caret;
 pub mod text_edit;
 pub mod text_field;
