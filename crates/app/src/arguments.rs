@@ -5,11 +5,13 @@
 //! `--ungroup <name> <account>` で権限を変える（FR-010・ADR 0010）。`--succeed <新 account> <旧 account>` で
 //! 引き継ぎ、`--owner <account>` で持ち主の交代（ADR 0013）。これらがあれば画面は開かず、書いて終わる。
 //! `--audit` は台帳全体の時系列（監査・ADR 0014）を標準出力に出して終わる。
+//! `--attach <課題> <パス>` はファイルを添付して終わる（課題は `<作ったアカウント 16 進>:<連番>`・FR-021）。
 
 use std::path::{Path, PathBuf};
 
 use nene_docket_core::account_id::AccountId;
 use nene_docket_core::admin_command::AdminCommand;
+use nene_docket_core::item_id::ItemId;
 
 use crate::launch_failure::LaunchFailure;
 
@@ -18,12 +20,13 @@ const DEFAULT_FOLDER: &str = "docket";
 /// `docket.v1.txt` を新しく作るときの名前の既定（フォルダ名が取れないとき）。
 const DEFAULT_NAME: &str = "Docket";
 
-/// 台帳のフォルダ（引数に無ければ `None`）と、権限の命令（無ければ空）と、監査の出力か。
+/// 台帳のフォルダ（引数に無ければ `None`）と、権限の命令（無ければ空）と、監査の出力かと、添付（課題とパス）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Arguments {
     folder: Option<PathBuf>,
     admin: Vec<AdminCommand>,
     audit: bool,
+    attach: Vec<(ItemId, String)>,
 }
 
 impl Arguments {
@@ -35,6 +38,7 @@ impl Arguments {
             folder: None,
             admin: Vec::new(),
             audit: false,
+            attach: Vec::new(),
         };
         while let Some(word) = arguments.next() {
             if !word.starts_with('-') {
@@ -43,6 +47,15 @@ impl Arguments {
             }
             if word == "--audit" {
                 parsed.audit = true;
+                continue;
+            }
+            if word == "--attach" {
+                let item = item(&mut arguments)?;
+                let path = arguments
+                    .next()
+                    .filter(|text| !text.is_empty())
+                    .ok_or(LaunchFailure::Usage)?;
+                parsed.attach.push((item, path));
                 continue;
             }
             let command = match word.as_str() {
@@ -89,6 +102,11 @@ impl Arguments {
         self.audit
     }
 
+    /// 添付する課題とパス。空なら無し。
+    pub(crate) fn attach(&self) -> &[(ItemId, String)] {
+        &self.attach
+    }
+
     /// 台帳を新しく作るときの名前。フォルダ名。
     pub(crate) fn docket_name(folder: &Path) -> String {
         folder
@@ -111,6 +129,16 @@ fn account<I: Iterator<Item = String>>(arguments: &mut I) -> Result<AccountId, L
         .next()
         .and_then(|text| AccountId::from_hex(&text))
         .ok_or(LaunchFailure::Usage)
+}
+
+/// `<作ったアカウント 16 進>:<連番>`。
+fn item<I: Iterator<Item = String>>(arguments: &mut I) -> Result<ItemId, LaunchFailure> {
+    let text = arguments.next().ok_or(LaunchFailure::Usage)?;
+    let (creator, sequence) = text.split_once(':').ok_or(LaunchFailure::Usage)?;
+    Ok(ItemId::new(
+        AccountId::from_hex(creator).ok_or(LaunchFailure::Usage)?,
+        sequence.parse().map_err(|_error| LaunchFailure::Usage)?,
+    ))
 }
 
 fn name<I: Iterator<Item = String>>(arguments: &mut I) -> Result<String, LaunchFailure> {
@@ -190,6 +218,12 @@ mod tests {
         let audit = parse(&["/srv/team", "--audit"]).unwrap();
         assert!(audit.audit());
         assert!(audit.admin().is_empty());
+        let item_text = format!("{hex}:7");
+        let attach = parse(&["--attach", &item_text, "/tmp/a.png"]).unwrap();
+        assert_eq!(
+            attach.attach(),
+            [(ItemId::new(id, 7), String::from("/tmp/a.png"))]
+        );
     }
 
     #[test]
@@ -209,6 +243,10 @@ mod tests {
             vec!["--succeed", &hex],
             vec!["--succeed", &hex, "zz"],
             vec!["--owner"],
+            vec!["--attach"],
+            vec!["--attach", &hex, "/a"],
+            vec!["--attach", "zz:1", "/a"],
+            vec!["--attach", "0000:x", "/a"],
         ] {
             assert!(
                 matches!(parse(&words), Err(LaunchFailure::Usage)),

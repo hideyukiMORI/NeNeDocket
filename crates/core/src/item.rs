@@ -3,13 +3,15 @@
 use alloc::string::String;
 use alloc::vec::Vec;
 
+use crate::attachment::Attachment;
 use crate::date::Date;
 use crate::field_value::FieldValue;
 use crate::item_id::ItemId;
 use crate::item_state::ItemState;
 use crate::op_kind::OpKind;
 
-/// 題名・本文・状態・担当・期限・ラベル・並び順と、消されているか。すべて併合の派生値で、正本はジャーナル。
+/// 題名・本文・状態・担当・期限・ラベル・並び順と、消されているか、添付（生きているもの・連番の順）と、
+/// 添付に使った最大の連番（外しても戻らない）。すべて併合の派生値で、正本はジャーナル。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item {
     id: ItemId,
@@ -21,6 +23,8 @@ pub struct Item {
     labels: Vec<String>,
     rank: i64,
     deleted: bool,
+    attachments: Vec<Attachment>,
+    last_attachment: u32,
 }
 
 impl Item {
@@ -37,7 +41,69 @@ impl Item {
             labels: Vec::new(),
             rank: 0,
             deleted: false,
+            attachments: Vec::new(),
+            last_attachment: 0,
         }
+    }
+
+    /// 添付を足した状態（同じ連番があれば置き換える）。連番の順に並ぶ。
+    #[must_use]
+    pub fn attached(mut self, attachment: Attachment) -> Self {
+        self.last_attachment = self.last_attachment.max(attachment.sequence());
+        self.attachments
+            .retain(|known| known.sequence() != attachment.sequence());
+        self.attachments.push(attachment);
+        self.attachments.sort_by_key(Attachment::sequence);
+        self
+    }
+
+    /// 添付を外した状態。無ければそのまま。
+    #[must_use]
+    pub fn detached(mut self, sequence: u32) -> Self {
+        self.attachments
+            .retain(|known| known.sequence() != sequence);
+        self
+    }
+
+    /// 添付（生きているもの・連番の順）。
+    #[must_use]
+    pub fn attachments(&self) -> &[Attachment] {
+        &self.attachments
+    }
+
+    /// 連番から添付。
+    #[must_use]
+    pub fn attachment(&self, sequence: u32) -> Option<&Attachment> {
+        self.attachments
+            .iter()
+            .find(|known| known.sequence() == sequence)
+    }
+
+    /// 次に添付するときの連番（使った最大 ＋ 1・外しても戻らない）。
+    #[must_use]
+    pub const fn next_attachment(&self) -> u32 {
+        self.last_attachment.saturating_add(1)
+    }
+
+    /// 添付の列と使った最大の連番から（スナップショットから戻す）。
+    #[must_use]
+    pub fn with_attachments(mut self, attachments: Vec<Attachment>, last_attachment: u32) -> Self {
+        self.attachments = attachments;
+        self.attachments.sort_by_key(Attachment::sequence);
+        self.last_attachment = last_attachment.max(
+            self.attachments
+                .iter()
+                .map(Attachment::sequence)
+                .max()
+                .unwrap_or(0),
+        );
+        self
+    }
+
+    /// 添付に使った最大の連番。
+    #[must_use]
+    pub const fn last_attachment(&self) -> u32 {
+        self.last_attachment
     }
 
     /// 項目を置いた状態。
@@ -63,6 +129,8 @@ impl Item {
             OpKind::Set { value, .. } => self.with(value.clone()),
             OpKind::Delete(_) => self.with_deleted(true),
             OpKind::Restore(_) => self.with_deleted(false),
+            OpKind::Attach { attachment, .. } => self.attached(attachment.clone()),
+            OpKind::Detach { sequence, .. } => self.detached(*sequence),
         }
     }
 

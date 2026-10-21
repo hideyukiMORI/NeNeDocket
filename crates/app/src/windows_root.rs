@@ -21,7 +21,9 @@ use std::path::Path;
 use nene_docket_application::account::Account;
 use nene_docket_application::ledger_opening;
 use nene_docket_core::admin_command::AdminCommand;
+use nene_docket_core::item_id::ItemId;
 use nene_docket_core::language::Language;
+use nene_docket_core::op_kind::OpKind;
 
 use crate::arguments::Arguments;
 use crate::launch_failure::LaunchFailure;
@@ -43,6 +45,9 @@ pub(crate) fn run(arguments: &Arguments) -> Result<(), LaunchFailure> {
             &account,
             settings.language().resolve(locale::read()),
         );
+    }
+    if !arguments.attach().is_empty() {
+        return attach_files(&folder, &account, arguments.attach());
     }
     let journal = FileJournal::open(&folder, &Arguments::docket_name(&folder), &account)?;
     let settings = saved_settings::remember(settings, &folder)?;
@@ -83,6 +88,35 @@ fn print_audit(folder: &Path, account: &Account, language: Language) -> Result<(
         "{}",
         audit_report::text(&ops, &ports.journal().names(), language)
     );
+    Ok(())
+}
+
+/// ファイルを添付して終わる（`--attach`・FR-021）。写してから操作を追記する。
+fn attach_files(
+    folder: &Path,
+    account: &Account,
+    attachments: &[(ItemId, String)],
+) -> Result<(), LaunchFailure> {
+    let (mut ledger, mut ports) = open_ledger(folder, account)?;
+    for (item, source) in attachments {
+        let sequence = ledger
+            .docket()
+            .item(*item)
+            .map_or(1, nene_docket_core::item::Item::next_attachment);
+        let attachment = ports
+            .journal_mut()
+            .copy_attachment(*item, sequence, source)?;
+        let now = ports.clock().now();
+        let op = ledger.compose(
+            now,
+            OpKind::Attach {
+                item: *item,
+                attachment,
+            },
+        );
+        ports.journal_mut().append(&op)?;
+    }
+    ports.journal_mut().sync()?;
     Ok(())
 }
 

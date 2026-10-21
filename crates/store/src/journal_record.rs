@@ -4,6 +4,7 @@
 //! `v1 <時計> <アカウント 16 進> <壁時計> <打ち消す操作 or -> <種類> <課題> [<項目> <値>] <検査和 8 桁>`
 //! `v2 <時計> <アカウント 16 進> <壁時計> <打ち消す操作 or -> <種類> <課題> [<項目> <値>] <署名 128 桁> <検査和 8 桁>`
 //! 課題は `<作ったアカウント 16 進>:<連番>`、打ち消す操作は `<時計>:<アカウント 16 進>`。
+//! 添付（FR-021）は `attach <課題> <連番> <大きさ> <SHA-256 の 16 進> <名前>`（名前は逃がす）と `detach <課題> <連番>`。
 //! 権限の記録（ADR 0014）は種類 `admin`、課題は `-`、続いて `<命令> <引数>…`:
 //! `permissions on|off`・`allow <アカウント>`・`disallow <アカウント>`・`group <名前> <アカウント>`・`ungroup <名前> <アカウント>`・
 //! `succeed <新> <旧>`・`owner <アカウント>`。
@@ -11,9 +12,11 @@
 
 use nene_docket_core::account_id::AccountId;
 use nene_docket_core::admin_command::AdminCommand;
+use nene_docket_core::attachment::Attachment;
 use nene_docket_core::date::Date;
 use nene_docket_core::field::Field;
 use nene_docket_core::field_value::FieldValue;
+use nene_docket_core::hex;
 use nene_docket_core::item_id::ItemId;
 use nene_docket_core::item_state::ItemState;
 use nene_docket_core::logical_clock::LogicalClock;
@@ -159,7 +162,34 @@ fn encode_kind(kind: &OpKind) -> Vec<String> {
             fields.extend(encode_admin(command));
             fields
         }
+        OpKind::Attach { item, attachment } => vec![
+            "attach".to_owned(),
+            encode_item(*item),
+            attachment.sequence().to_string(),
+            attachment.bytes().to_string(),
+            attachment.digest_hex(),
+            escape(attachment.name()),
+        ],
+        OpKind::Detach { item, sequence } => {
+            vec![
+                "detach".to_owned(),
+                encode_item(*item),
+                sequence.to_string(),
+            ]
+        }
     }
+}
+
+/// `attach` の欄（連番・大きさ・SHA-256・名前）。
+fn decode_attachment(fields: &[&str]) -> Result<Attachment, RecordFailure> {
+    let field = |index: usize| fields.get(index).copied().unwrap_or("");
+    let digest = hex::decode::<32>(field(9)).ok_or(RecordFailure::BadValue)?;
+    Ok(Attachment::new(
+        parse_number(field(7))?,
+        unescape(field(10)).ok_or(RecordFailure::BadValue)?,
+        parse_number(field(8))?,
+        digest,
+    ))
 }
 
 /// 命令と引数。グループの名前は逃がす。
@@ -221,7 +251,12 @@ fn decode_kind(kind: &str, item: &str, fields: &[&str]) -> Result<OpKind, Record
         return Ok(OpKind::Admin(decode_admin(fields)?));
     }
     let item = decode_item(item)?;
-    let expected_len = if kind == "set" { 9 } else { 7 };
+    let expected_len = match kind {
+        "set" => 9,
+        "attach" => 11,
+        "detach" => 8,
+        _ => 7,
+    };
     if fields.len() != expected_len {
         return Err(RecordFailure::WrongFieldCount);
     }
@@ -229,6 +264,14 @@ fn decode_kind(kind: &str, item: &str, fields: &[&str]) -> Result<OpKind, Record
         "create" => Ok(OpKind::Create(item)),
         "delete" => Ok(OpKind::Delete(item)),
         "restore" => Ok(OpKind::Restore(item)),
+        "attach" => Ok(OpKind::Attach {
+            item,
+            attachment: decode_attachment(fields)?,
+        }),
+        "detach" => Ok(OpKind::Detach {
+            item,
+            sequence: parse_number(fields.get(7).copied().unwrap_or(""))?,
+        }),
         "set" => {
             let field = Field::from_keyword(fields.get(7).copied().unwrap_or(""))
                 .ok_or(RecordFailure::UnknownField)?;
@@ -421,6 +464,14 @@ mod tests {
             op(9, set(FieldValue::Labels(Vec::new()))),
             op(10, set(FieldValue::Rank(-42))),
             op(11, OpKind::Delete(item)),
+            op(
+                12,
+                OpKind::Attach {
+                    item,
+                    attachment: Attachment::new(1, "a\tb,c.png".to_owned(), 1024, [0xab_u8; 32]),
+                },
+            ),
+            op(13, OpKind::Detach { item, sequence: 1 }),
             op(12, OpKind::Restore(item)).undoing(OpId::new(LogicalClock::new(11), A)),
         ]
     }

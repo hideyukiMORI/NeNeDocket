@@ -75,6 +75,7 @@
 | negative proof | ゲートが意図した規則で落ちることの実測 | `make prove` / `docs/quality/gate-proofs.md` |
 | 論理画素 | 物理画素 ÷（dpi / 96）。文字の大きさはこれで定める | `DevicePixelRatio`（core）・nene-ruler ADR 0027 / 0028 の継承 |
 | 環境 | UI の倍率と論理画素の比。合成ルートが起動時に渡し、`DpiChanged` で更新する | `Environment`（application） |
+| 添付 | 課題に付けたファイルの写し。台帳フォルダの `attachments/` にあり、ジャーナルの `attach` / `detach` が正本。写しは消さない | `Attachment`（core）・`attachment_store`（store）・ADR 0016 |
 
 ## 使ってはいけない語
 

@@ -30,6 +30,10 @@ pub enum StoreFailure {
     BadIndex,
     /// スナップショットが読めない形（ADR 0015）。捨てて全部読む。
     BadSnapshot,
+    /// 添付する元のファイルを読めない（FR-021）。
+    CannotReadAttachment,
+    /// 添付の写しを置けない（FR-021）。
+    CannotWriteAttachment,
 }
 
 impl fmt::Display for StoreFailure {
@@ -55,6 +59,8 @@ impl fmt::Display for StoreFailure {
             }
             Self::BadIndex => formatter.write_str("the snapshot index points at no journal line"),
             Self::BadSnapshot => formatter.write_str("the snapshot is not readable"),
+            Self::CannotReadAttachment => formatter.write_str("cannot read the file to attach"),
+            Self::CannotWriteAttachment => formatter.write_str("cannot store the attachment"),
         }
     }
 }

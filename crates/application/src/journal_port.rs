@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 
 use nene_docket_core::account_id::AccountId;
 use nene_docket_core::admin_command::AdminCommand;
+use nene_docket_core::attachment::Attachment;
 use nene_docket_core::item_id::ItemId;
 use nene_docket_core::op::Op;
 use nene_docket_core::permissions::Permissions;
@@ -83,6 +84,24 @@ pub trait JournalPort {
 
     /// 権限。有効でなければ `None`。
     fn permissions(&self) -> Option<Permissions>;
+
+    /// ファイルを `attachments/` に写し、添付の記録（連番・名前・大きさ・SHA-256）を返す（FR-021）。元は触らない。
+    ///
+    /// # Errors
+    ///
+    /// 元を読めない・写しを置けない。
+    fn copy_attachment(
+        &mut self,
+        item: ItemId,
+        sequence: u32,
+        source: &str,
+    ) -> Result<Attachment, JournalFailure>;
+
+    /// 添付の写しの中身が記録の SHA-256 と合うか。無い・読めないなら偽（FR-014）。
+    fn attachment_is_intact(&self, item: ItemId, attachment: &Attachment) -> bool;
+
+    /// 添付の写しの場所（表示と、外部のアプリで開くため）。
+    fn attachment_path(&self, item: ItemId, attachment: &Attachment) -> String;
 
     /// 持ち主が権限を変える（FR-010）。書いたら鍵と権限を読み直す。
     ///

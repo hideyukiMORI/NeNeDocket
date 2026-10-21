@@ -19,6 +19,7 @@ The account (a random 128-bit id, your `USER` name and a secret key) is created 
 - Crash-safe: every operation is appended within seconds, so at most a few seconds of work can be lost.
 - Permissions and groups are optional. Without them, everyone edits.
 - Everything is auditable: every edit and every permission change is an appended, signed journal line; `nene-docket <folder> --audit` prints who did what, when.
+- Attachments: a file is copied into the docket folder (`attachments/`), its name, size and SHA-256 are journaled, and an altered copy is flagged. Attach from the `Attachments` pane or `--attach`.
 - Every widget (table, select box, text field, scrollbar) is drawn by the app itself: Win32 + Direct2D on Windows, `x11rb` + cairo on Linux. No Electron, no GTK, no Qt, no JVM.
 
 The requirements are in [SPECIFICATION.md](SPECIFICATION.md) (Japanese).

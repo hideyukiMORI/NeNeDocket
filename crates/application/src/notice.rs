@@ -70,6 +70,8 @@ mod tests {
             Notice::Journal(JournalFailure::Unwritable),
             Notice::Journal(JournalFailure::Unreadable),
             Notice::Journal(JournalFailure::PermissionsUnwritable),
+            Notice::Journal(JournalFailure::AttachmentUnreadable),
+            Notice::Journal(JournalFailure::AttachmentUnwritable),
             Notice::Orphans(2),
             Notice::RejectedLines(1),
             Notice::NotADate,

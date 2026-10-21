@@ -5,6 +5,7 @@
 
 use alloc::vec::Vec;
 
+use crate::attachment::Attachment;
 use crate::docket::Docket;
 use crate::field::Field;
 use crate::field_value::FieldValue;
@@ -62,8 +63,42 @@ where
             item: *item,
             value: value_before(&all, target, *item, value.field()),
         },
+        OpKind::Attach { item, attachment } => OpKind::Detach {
+            item: *item,
+            sequence: attachment.sequence(),
+        },
+        OpKind::Detach { item, sequence } => OpKind::Attach {
+            item: *item,
+            attachment: attachment_before(&all, target, *item, *sequence)?,
+        },
         OpKind::Admin(_) => return None,
     })
+}
+
+/// 全順序で `target` より前に、同じ課題の同じ連番で最後に添付したもの。無ければ `None`（戻せない）。
+fn attachment_before(
+    ordered: &[&Op],
+    target: OpId,
+    item: ItemId,
+    sequence: u32,
+) -> Option<Attachment> {
+    ordered
+        .iter()
+        .take_while(|op| op.id() < target)
+        .filter_map(|op| match op.kind() {
+            OpKind::Attach {
+                item: attached,
+                attachment,
+            } if *attached == item && attachment.sequence() == sequence => Some(attachment.clone()),
+            OpKind::Attach { .. }
+            | OpKind::Detach { .. }
+            | OpKind::Set { .. }
+            | OpKind::Create(_)
+            | OpKind::Delete(_)
+            | OpKind::Restore(_)
+            | OpKind::Admin(_) => None,
+        })
+        .last()
 }
 
 /// 全順序で `target` より前に、同じ課題の同じ項目へ最後に置かれた値。無ければ作った直後の値。
@@ -80,7 +115,9 @@ fn value_before(ordered: &[&Op], target: OpId, item: ItemId, field: Field) -> Fi
             | OpKind::Create(_)
             | OpKind::Delete(_)
             | OpKind::Restore(_)
-            | OpKind::Admin(_) => None,
+            | OpKind::Admin(_)
+            | OpKind::Attach { .. }
+            | OpKind::Detach { .. } => None,
         })
         .last()
         .unwrap_or_else(|| Item::created(item).value_of(field))
@@ -197,6 +234,38 @@ mod tests {
         let all = chronicle(ops.iter().rev());
         assert_eq!(all.len(), 2);
         assert_eq!(all[1].id(), record.id());
+    }
+
+    #[test]
+    fn attach_and_detach_invert_each_other_and_a_detach_without_an_attach_is_not_invertible() {
+        let item = ItemId::new(A, 1);
+        let attachment = Attachment::new(1, String::from("a.txt"), 3, [9_u8; 32]);
+        let ops = [
+            op(1, A, OpKind::Create(item)),
+            op(
+                2,
+                A,
+                OpKind::Attach {
+                    item,
+                    attachment: attachment.clone(),
+                },
+            ),
+            op(3, A, OpKind::Detach { item, sequence: 1 }),
+            op(4, B, OpKind::Detach { item, sequence: 7 }),
+        ];
+        let docket = merge(&ops);
+        assert!(docket.item(item).unwrap().attachments().is_empty());
+        assert_eq!(docket.item(item).unwrap().next_attachment(), 2);
+        assert_eq!(
+            inverse_of(&ops, ops[1].id()),
+            Some(OpKind::Detach { item, sequence: 1 })
+        );
+        assert_eq!(
+            inverse_of(&ops, ops[2].id()),
+            Some(OpKind::Attach { item, attachment })
+        );
+        assert_eq!(inverse_of(&ops, ops[3].id()), None);
+        assert_eq!(merge(ops.iter().rev()), docket);
     }
 
     #[test]

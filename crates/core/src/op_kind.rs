@@ -1,6 +1,7 @@
 //! 操作の種類。
 
 use crate::admin_command::AdminCommand;
+use crate::attachment::Attachment;
 use crate::field_value::FieldValue;
 use crate::item_id::ItemId;
 
@@ -22,6 +23,20 @@ pub enum OpKind {
     Restore(ItemId),
     /// 権限を変えた記録（ADR 0014）。台帳の状態は変えず、履歴にだけ出る。戻せない。
     Admin(AdminCommand),
+    /// ファイルを添付した（FR-021）。写しは `attachments/` にある。
+    Attach {
+        /// 課題。
+        item: ItemId,
+        /// 添付。
+        attachment: Attachment,
+    },
+    /// 添付を外した。写しは残る。`Attach` の逆。
+    Detach {
+        /// 課題。
+        item: ItemId,
+        /// 外した添付の連番。
+        sequence: u32,
+    },
 }
 
 impl OpKind {
@@ -32,7 +47,9 @@ impl OpKind {
             Self::Create(item)
             | Self::Delete(item)
             | Self::Restore(item)
-            | Self::Set { item, .. } => Some(*item),
+            | Self::Set { item, .. }
+            | Self::Attach { item, .. }
+            | Self::Detach { item, .. } => Some(*item),
             Self::Admin(_) => None,
         }
     }
@@ -59,5 +76,14 @@ mod tests {
             Some(item)
         );
         assert_eq!(OpKind::Admin(AdminCommand::Permissions(true)).item(), None);
+        assert_eq!(
+            OpKind::Attach {
+                item,
+                attachment: Attachment::new(1, alloc::string::String::from("a"), 0, [0; 32])
+            }
+            .item(),
+            Some(item)
+        );
+        assert_eq!(OpKind::Detach { item, sequence: 1 }.item(), Some(item));
     }
 }

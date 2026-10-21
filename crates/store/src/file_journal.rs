@@ -13,11 +13,13 @@ use nene_docket_application::key_record::KeyRecord;
 use nene_docket_application::ledger_snapshot::LedgerSnapshot;
 use nene_docket_core::account_id::AccountId;
 use nene_docket_core::admin_command::AdminCommand;
+use nene_docket_core::attachment::Attachment;
 use nene_docket_core::item_id::ItemId;
 use nene_docket_core::op::Op;
 use nene_docket_core::permissions::Permissions;
 
 use crate::administration;
+use crate::attachment_store;
 use crate::journal_file;
 use crate::journal_folder::JournalFolder;
 use crate::journal_version::JournalVersion;
@@ -416,6 +418,42 @@ impl JournalPort for FileJournal {
         self.administer_and_reload(commands)
             .map_err(|_failure| JournalFailure::PermissionsUnwritable)
     }
+
+    fn copy_attachment(
+        &mut self,
+        item: ItemId,
+        sequence: u32,
+        source: &str,
+    ) -> Result<Attachment, JournalFailure> {
+        attachment_store::copy_in(self.folder.root(), item, sequence, Path::new(source)).map_err(
+            |failure| match failure {
+                StoreFailure::CannotReadAttachment => JournalFailure::AttachmentUnreadable,
+                StoreFailure::Io(_)
+                | StoreFailure::UnknownDocketVersion(_)
+                | StoreFailure::BadDocketFile
+                | StoreFailure::BadJournalName(_)
+                | StoreFailure::BadKeyFile(_)
+                | StoreFailure::BadPermissionsFile
+                | StoreFailure::UnverifiedPermissions
+                | StoreFailure::NoDocket
+                | StoreFailure::NotTheOwner
+                | StoreFailure::KeyMismatch
+                | StoreFailure::BadIndex
+                | StoreFailure::BadSnapshot
+                | StoreFailure::CannotWriteAttachment => JournalFailure::AttachmentUnwritable,
+            },
+        )
+    }
+
+    fn attachment_is_intact(&self, item: ItemId, attachment: &Attachment) -> bool {
+        attachment_store::is_intact(self.folder.root(), item, attachment)
+    }
+
+    fn attachment_path(&self, item: ItemId, attachment: &Attachment) -> String {
+        attachment_store::path_of(self.folder.root(), item, attachment)
+            .to_string_lossy()
+            .into_owned()
+    }
 }
 
 #[cfg(test)]
@@ -638,6 +676,31 @@ mod tests {
             !FileJournal::open(&root, "Team", &owner)
                 .unwrap()
                 .is_resumed()
+        );
+        fs::remove_dir_all(&root).unwrap();
+    }
+
+    #[test]
+    fn attachments_are_copied_checked_and_located_through_the_port() {
+        let root = temp("attachments");
+        let owner = account(ME, 1);
+        let mut mine = FileJournal::open(&root, "Team", &owner).unwrap();
+        let source = root.join("memo.txt");
+        fs::write(&source, b"hello").unwrap();
+        let item = ItemId::new(ME, 1);
+        let attachment = mine
+            .copy_attachment(item, 1, source.to_str().unwrap())
+            .unwrap();
+        assert_eq!(attachment.name(), "memo.txt");
+        assert_eq!(attachment.bytes(), 5);
+        assert!(mine.attachment_is_intact(item, &attachment));
+        let path = mine.attachment_path(item, &attachment);
+        assert!(path.ends_with("1-memo.txt"), "{path}");
+        fs::write(&path, b"HELLO").unwrap();
+        assert!(!mine.attachment_is_intact(item, &attachment));
+        assert_eq!(
+            mine.copy_attachment(item, 2, root.join("missing").to_str().unwrap()),
+            Err(JournalFailure::AttachmentUnreadable)
         );
         fs::remove_dir_all(&root).unwrap();
     }

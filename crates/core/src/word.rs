@@ -1,5 +1,6 @@
 //! 画面に出す文言の名前（FR-019）。UI に文字列を書かず、`wording` の表から言語ごとの文字列を引く（ARC-001）。
 
+use crate::attachment_word::AttachmentWord;
 use crate::field::Field;
 use crate::item_state::ItemState;
 
@@ -100,4 +101,6 @@ pub enum Word {
     Succeeded,
     /// 履歴: 持ち主を替えた（名前が続く）。
     OwnerChanged,
+    /// 添付に関わる語（FR-021）。
+    Attachment(AttachmentWord),
 }

@@ -309,6 +309,7 @@ mod tests {
 
     use nene_docket_core::account_id::AccountId;
     use nene_docket_core::admin_command::AdminCommand;
+    use nene_docket_core::attachment::Attachment;
     use nene_docket_core::field_value::FieldValue;
     use nene_docket_core::item::Item;
     use nene_docket_core::item_state::ItemState;
@@ -408,6 +409,28 @@ mod tests {
 
         fn administer(&mut self, _commands: &[AdminCommand]) -> Result<(), JournalFailure> {
             Ok(())
+        }
+
+        fn copy_attachment(
+            &mut self,
+            _item: ItemId,
+            sequence: u32,
+            source: &str,
+        ) -> Result<Attachment, JournalFailure> {
+            Ok(Attachment::new(
+                sequence,
+                String::from(source),
+                0,
+                [0_u8; 32],
+            ))
+        }
+
+        fn attachment_is_intact(&self, _item: ItemId, _attachment: &Attachment) -> bool {
+            true
+        }
+
+        fn attachment_path(&self, _item: ItemId, attachment: &Attachment) -> String {
+            attachment.file_name()
         }
     }
 

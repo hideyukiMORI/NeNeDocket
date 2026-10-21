@@ -35,7 +35,7 @@ impl fmt::Display for LaunchFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Usage => formatter.write_str(
-                "usage: nene-docket [FOLDER] [--permissions on|off] [--allow ACCOUNT] [--disallow ACCOUNT] [--group NAME ACCOUNT] [--ungroup NAME ACCOUNT] [--succeed NEW OLD] [--owner ACCOUNT] [--audit]",
+                "usage: nene-docket [FOLDER] [--permissions on|off] [--allow ACCOUNT] [--disallow ACCOUNT] [--group NAME ACCOUNT] [--ungroup NAME ACCOUNT] [--succeed NEW OLD] [--owner ACCOUNT] [--audit] [--attach ITEM PATH]",
             ),
             Self::Adapter(failure) => fmt::Display::fmt(failure, formatter),
             Self::Store(failure) => fmt::Display::fmt(failure, formatter),

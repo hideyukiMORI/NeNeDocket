@@ -2,6 +2,7 @@
 //!
 //! 翻訳は短く、窓の中に収める（FR-014）。言語を足すときは `Language` と、ここの関数を 1 つ足す。
 
+use crate::attachment_word::AttachmentWord;
 use crate::field::Field;
 use crate::item_state::ItemState;
 use crate::language::Language;
@@ -76,6 +77,22 @@ const fn japanese(word: Word) -> &'static str {
         Word::Ungrouped => "グループから外した",
         Word::Succeeded => "引き継ぎ",
         Word::OwnerChanged => "持ち主を替えた",
+        Word::Attachment(word) => japanese_attachment(word),
+    }
+}
+
+const fn japanese_attachment(word: AttachmentWord) -> &'static str {
+    match word {
+        AttachmentWord::Attachments => "添付",
+        AttachmentWord::Path => "パス",
+        AttachmentWord::Attach => "添付する",
+        AttachmentWord::Detach => "外す",
+        AttachmentWord::Size => "大きさ",
+        AttachmentWord::Attached => "添付した",
+        AttachmentWord::Detached => "添付を外した",
+        AttachmentWord::CannotRead => "添付のファイルを読めません",
+        AttachmentWord::CannotWrite => "添付の写しを置けません",
+        AttachmentWord::Altered => "中身が記録と合いません",
     }
 }
 
@@ -136,6 +153,22 @@ const fn english(word: Word) -> &'static str {
         Word::Ungrouped => "removed from a group",
         Word::Succeeded => "succession",
         Word::OwnerChanged => "changed the owner",
+        Word::Attachment(word) => english_attachment(word),
+    }
+}
+
+const fn english_attachment(word: AttachmentWord) -> &'static str {
+    match word {
+        AttachmentWord::Attachments => "Attachments",
+        AttachmentWord::Path => "Path",
+        AttachmentWord::Attach => "Attach",
+        AttachmentWord::Detach => "Detach",
+        AttachmentWord::Size => "Size",
+        AttachmentWord::Attached => "attached",
+        AttachmentWord::Detached => "detached",
+        AttachmentWord::CannotRead => "cannot read the file to attach",
+        AttachmentWord::CannotWrite => "cannot store the attachment",
+        AttachmentWord::Altered => "contents differ from the record",
     }
 }
 
@@ -195,6 +228,22 @@ const fn simplified_chinese(word: Word) -> &'static str {
         Word::Ungrouped => "移出了组",
         Word::Succeeded => "继承",
         Word::OwnerChanged => "更换了所有者",
+        Word::Attachment(word) => simplified_chinese_attachment(word),
+    }
+}
+
+const fn simplified_chinese_attachment(word: AttachmentWord) -> &'static str {
+    match word {
+        AttachmentWord::Attachments => "附件",
+        AttachmentWord::Path => "路径",
+        AttachmentWord::Attach => "添加附件",
+        AttachmentWord::Detach => "移除",
+        AttachmentWord::Size => "大小",
+        AttachmentWord::Attached => "添加了附件",
+        AttachmentWord::Detached => "移除了附件",
+        AttachmentWord::CannotRead => "无法读取要附加的文件",
+        AttachmentWord::CannotWrite => "无法保存附件",
+        AttachmentWord::Altered => "内容与记录不符",
     }
 }
 
@@ -254,6 +303,22 @@ const fn traditional_chinese(word: Word) -> &'static str {
         Word::Ungrouped => "移出了群組",
         Word::Succeeded => "繼承",
         Word::OwnerChanged => "更換了擁有者",
+        Word::Attachment(word) => traditional_chinese_attachment(word),
+    }
+}
+
+const fn traditional_chinese_attachment(word: AttachmentWord) -> &'static str {
+    match word {
+        AttachmentWord::Attachments => "附件",
+        AttachmentWord::Path => "路徑",
+        AttachmentWord::Attach => "新增附件",
+        AttachmentWord::Detach => "移除",
+        AttachmentWord::Size => "大小",
+        AttachmentWord::Attached => "新增了附件",
+        AttachmentWord::Detached => "移除了附件",
+        AttachmentWord::CannotRead => "無法讀取要附加的檔案",
+        AttachmentWord::CannotWrite => "無法保存附件",
+        AttachmentWord::Altered => "內容與記錄不符",
     }
 }
 
@@ -313,6 +378,21 @@ const fn korean(word: Word) -> &'static str {
         Word::Ungrouped => "그룹에서 제거함",
         Word::Succeeded => "인계",
         Word::OwnerChanged => "소유자를 변경함",
+        Word::Attachment(word) => korean_attachment(word),
+    }
+}
+
+const fn korean_attachment(word: AttachmentWord) -> &'static str {
+    match word {
+        AttachmentWord::Attachments | AttachmentWord::Attach => "첨부",
+        AttachmentWord::Path => "경로",
+        AttachmentWord::Detach => "제거",
+        AttachmentWord::Size => "크기",
+        AttachmentWord::Attached => "첨부함",
+        AttachmentWord::Detached => "첨부를 제거함",
+        AttachmentWord::CannotRead => "첨부할 파일을 읽을 수 없습니다",
+        AttachmentWord::CannotWrite => "첨부를 저장할 수 없습니다",
+        AttachmentWord::Altered => "내용이 기록과 다릅니다",
     }
 }
 
@@ -373,6 +453,22 @@ const fn spanish(word: Word) -> &'static str {
         Word::Ungrouped => "quitó de un grupo",
         Word::Succeeded => "sucesión",
         Word::OwnerChanged => "cambió el propietario",
+        Word::Attachment(word) => spanish_attachment(word),
+    }
+}
+
+const fn spanish_attachment(word: AttachmentWord) -> &'static str {
+    match word {
+        AttachmentWord::Attachments => "Adjuntos",
+        AttachmentWord::Path => "Ruta",
+        AttachmentWord::Attach => "Adjuntar",
+        AttachmentWord::Detach => "Quitar",
+        AttachmentWord::Size => "Tamaño",
+        AttachmentWord::Attached => "adjuntó",
+        AttachmentWord::Detached => "quitó un adjunto",
+        AttachmentWord::CannotRead => "no se puede leer el archivo a adjuntar",
+        AttachmentWord::CannotWrite => "no se puede guardar el adjunto",
+        AttachmentWord::Altered => "el contenido no coincide con el registro",
     }
 }
 
@@ -381,7 +477,7 @@ mod tests {
     use super::*;
 
     /// 全部の語（`Word` の閉じた集合を 1 か所で列挙する。増えたらここも増える）。
-    const WORDS: [Word; 55] = [
+    const WORDS: [Word; 65] = [
         Word::All,
         Word::StateName(ItemState::Open),
         Word::StateName(ItemState::InProgress),
@@ -437,6 +533,16 @@ mod tests {
         Word::Ungrouped,
         Word::Succeeded,
         Word::OwnerChanged,
+        Word::Attachment(AttachmentWord::Attachments),
+        Word::Attachment(AttachmentWord::Path),
+        Word::Attachment(AttachmentWord::Attach),
+        Word::Attachment(AttachmentWord::Detach),
+        Word::Attachment(AttachmentWord::Size),
+        Word::Attachment(AttachmentWord::Attached),
+        Word::Attachment(AttachmentWord::Detached),
+        Word::Attachment(AttachmentWord::CannotRead),
+        Word::Attachment(AttachmentWord::CannotWrite),
+        Word::Attachment(AttachmentWord::Altered),
     ];
 
     #[test]
