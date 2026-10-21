@@ -10,28 +10,29 @@ use crate::response::Response;
 use crate::text_align::TextAlign;
 use crate::text_caret::TextCaret;
 use crate::text_edit::TextEdit;
+use crate::ui_scale::UiScale;
 
-/// 縁と文字の間。
+/// 縁と文字の間（1x）。
 pub const PADDING_PX: u16 = 6;
 
-/// 欄の中に収まる行の数（1 以上）。
+/// 欄の中に収まる行の数（1 以上）。縁と文字の間は `scale` を掛ける。
 #[must_use]
-pub fn visible_lines(rect: PixelRect, line_px: u16) -> usize {
-    usize::from(rect.inset(PADDING_PX).height() / line_px.max(1)).max(1)
+pub fn visible_lines(rect: PixelRect, line_px: u16, scale: UiScale) -> usize {
+    usize::from(rect.inset(scale.px(PADDING_PX)).height() / line_px.max(1)).max(1)
 }
 
 /// 複数行の欄。フォーカスがあれば強調の縁で、カーソルと選択を行ごとに描く。
-/// `line_px` は 1 行の高さ、`first` は最初に見せる行（0 から）。
+/// `line_px` は 1 行の高さ（倍率を掛けた後）、`first` は最初に見せる行（0 から）、縁と文字の間は `scale` を掛ける（FR-016）。
 #[must_use]
 pub fn text_area(
     rect: PixelRect,
     edit: &TextEdit,
     response: Response,
-    (line_px, first): (u16, usize),
+    (line_px, first, scale): (u16, usize, UiScale),
 ) -> Vec<DrawCommand> {
     let (text, caret) = edit.display();
     let caret = response.focused().then_some(caret);
-    let inner = rect.inset(PADDING_PX);
+    let inner = rect.inset(scale.px(PADDING_PX));
     let visible = usize::from(inner.height() / line_px.max(1)).max(1);
     let mut commands = alloc::vec![
         DrawCommand::Fill {
@@ -128,7 +129,7 @@ mod tests {
     #[test]
     fn each_line_is_its_own_text_and_only_the_caret_line_has_a_bar() {
         let edit = TextEdit::showing("ab\ncd\n");
-        let shown = lines(&text_area(RECT, &edit, focused(), (16, 0)));
+        let shown = lines(&text_area(RECT, &edit, focused(), (16, 0, UiScale::Single)));
         assert_eq!(shown.len(), 3);
         assert_eq!(shown[0], (String::from("ab"), None));
         assert_eq!(shown[1], (String::from("cd"), None));
@@ -137,7 +138,7 @@ mod tests {
             RECT,
             &edit,
             Response::new(ResponsePhase::Idle, false, false),
-            (16, 0),
+            (16, 0, UiScale::Single),
         );
         assert!(lines(&unfocused).iter().all(|(_, caret)| caret.is_none()));
         assert_eq!(unfocused.len(), 7);
@@ -157,13 +158,18 @@ mod tests {
             });
         }
         assert_eq!(edit.caret(), TextCaret::new(1, 7));
-        let shown = lines(&text_area(RECT, &edit, focused(), (16, 0)));
+        let shown = lines(&text_area(RECT, &edit, focused(), (16, 0, UiScale::Single)));
         assert_eq!(shown[0].1, Some(TextCaret::new(1, 2)));
         assert_eq!(shown[1].1, Some(TextCaret::new(2, 0).without_bar()));
         assert_eq!(shown[2].1, Some(TextCaret::new(1, 0).without_bar()));
         // 逆向き（カーソルが後ろ）。
         let forward = TextEdit::showing("ab\ncd\nef").applied(KeyIntent::SelectAll);
-        let all = lines(&text_area(RECT, &forward, focused(), (16, 0)));
+        let all = lines(&text_area(
+            RECT,
+            &forward,
+            focused(),
+            (16, 0, UiScale::Single),
+        ));
         assert_eq!(all[0].1, Some(TextCaret::new(2, 0).without_bar()));
         assert_eq!(all[2].1, Some(TextCaret::new(2, 0)));
     }
@@ -172,9 +178,12 @@ mod tests {
     fn the_first_line_is_honoured_and_the_visible_count_follows_the_rect() {
         let edit = TextEdit::showing("1\n2\n3\n4\n5\n6");
         // 60 - 12 = 48 の高さに 16 の行は 3 つ。
-        assert_eq!(visible_lines(RECT, 16), 3);
-        assert_eq!(visible_lines(PixelRect::new(0, 0, 10, 10), 16), 1);
-        let shown = lines(&text_area(RECT, &edit, focused(), (16, 3)));
+        assert_eq!(visible_lines(RECT, 16, UiScale::Single), 3);
+        assert_eq!(
+            visible_lines(PixelRect::new(0, 0, 10, 10), 16, UiScale::Single),
+            1
+        );
+        let shown = lines(&text_area(RECT, &edit, focused(), (16, 3, UiScale::Single)));
         assert_eq!(
             shown
                 .iter()
@@ -182,10 +191,26 @@ mod tests {
                 .collect::<Vec<&str>>(),
             ["4", "5", "6"]
         );
-        let top = lines(&text_area(RECT, &edit, focused(), (16, 0)));
+        let top = lines(&text_area(RECT, &edit, focused(), (16, 0, UiScale::Single)));
         assert_eq!(top.first().map(|(text, _)| text.as_str()), Some("1"));
         assert_eq!(top.len(), 3);
         // カーソルは 6 行目で見えていないので棒は出ない。
         assert!(top.iter().all(|(_, caret)| caret.is_none()));
+    }
+
+    #[test]
+    fn double_scale_doubles_the_padding() {
+        // 60 - 24 = 36 の高さに 16 の行は 2 つ。
+        assert_eq!(visible_lines(RECT, 16, UiScale::Double), 2);
+        let commands = text_area(
+            RECT,
+            &TextEdit::showing("ab"),
+            focused(),
+            (16, 0, UiScale::Double),
+        );
+        assert!(matches!(
+            commands.get(3),
+            Some(DrawCommand::Text { rect, .. }) if *rect == PixelRect::new(12, 12, 176, 16)
+        ));
     }
 }

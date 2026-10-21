@@ -277,7 +277,7 @@ impl AttachmentsPane {
             self.px(PADDING_PX),
         ));
         let path = interaction.probe(ATTACH_PATH, *field, true);
-        commands.extend(text_field::text_field(*field, &self.path, path));
+        commands.extend(text_field::text_field(*field, &self.path, path, self.scale));
         let attach = interaction.probe(ATTACH, *attach_rect, true);
         if attach.clicked() {
             actions.extend(self.take_path());
@@ -316,7 +316,7 @@ impl AttachmentsPane {
         self.scroll = Self::scrolled(
             interaction,
             (ATTACHMENTS_SCROLL, track, area),
-            (self.scroll, self.px(ROW_PX)),
+            (self.scroll, self.px(ROW_PX), self.scale),
             commands,
         );
     }
@@ -483,7 +483,8 @@ impl AttachmentsPane {
             area.width().saturating_sub(self.px(SCROLL_WIDTH_PX)),
             area.height(),
         );
-        let visible = u32::try_from(text_area::visible_lines(field, line_px)).unwrap_or(u32::MAX);
+        let visible =
+            u32::try_from(text_area::visible_lines(field, line_px, self.scale)).unwrap_or(u32::MAX);
         let lines = u32::try_from(edit.line_count()).unwrap_or(u32::MAX);
         self.view_scroll = self.view_scroll.resized(
             lines.saturating_mul(u32::from(line_px)),
@@ -495,12 +496,12 @@ impl AttachmentsPane {
             field,
             edit,
             Response::new(ResponsePhase::Idle, false, false),
-            (line_px, first),
+            (line_px, first, self.scale),
         ));
         self.view_scroll = Self::scrolled(
             interaction,
             (VIEW_SCROLL, track, area),
-            (self.view_scroll, line_px),
+            (self.view_scroll, line_px, self.scale),
             commands,
         );
     }
@@ -553,7 +554,7 @@ impl AttachmentsPane {
         self.view_scroll = Self::scrolled(
             interaction,
             (VIEW_SCROLL, track, area),
-            (self.view_scroll, self.px(ROW_PX)),
+            (self.view_scroll, self.px(ROW_PX), self.scale),
             commands,
         );
     }
@@ -685,11 +686,11 @@ impl AttachmentsPane {
         Vec::new()
     }
 
-    /// つまみのドラッグとホイール（ポインタが `area` の上にあるときだけ）。動かした後の状態を返す。
+    /// つまみのドラッグとホイール（ポインタが `area` の上にあるときだけ）。動かした後の状態を返す。`scale` はスクロールバーの寸法に掛ける。
     fn scrolled(
         interaction: &mut Interaction,
         (id, track, area): (WidgetId, PixelRect, PixelRect),
-        (state, step_px): (ScrollState, u16),
+        (state, step_px, scale): (ScrollState, u16, UiScale),
         commands: &mut Vec<DrawCommand>,
     ) -> ScrollState {
         let mut state = state;
@@ -709,7 +710,7 @@ impl AttachmentsPane {
                 .saturating_mul(i32::from(step_px));
             state = state.scrolled_by(wheel);
         }
-        commands.extend(scroll_bar::scroll_bar(track, state, response));
+        commands.extend(scroll_bar::scroll_bar(track, state, response, scale));
         state
     }
 

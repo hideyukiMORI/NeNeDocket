@@ -242,7 +242,7 @@ impl DocketScreen {
             assignee: TextEdit::empty(),
             due: TextEdit::empty(),
             labels: TextEdit::empty(),
-            body: BodyPane::hidden(),
+            body: BodyPane::hidden(environment.scale()),
             members: MembersPane::hidden(environment.scale()),
             attachments: AttachmentsPane::hidden(environment.scale()),
             altered_cache: Vec::new(),
@@ -369,21 +369,21 @@ impl DocketScreen {
         ] = boxes;
         commands.extend(select_box::select_box(
             filter_rect,
-            &self.filter_options(),
-            self.filter,
+            (&self.filter_options(), self.filter),
             filter_response,
+            self.scale,
         ));
         commands.extend(select_box::select_box(
             state_rect,
-            &self.state_options(),
-            self.state,
+            (&self.state_options(), self.state),
             state_response,
+            self.scale,
         ));
         commands.extend(select_box::select_box(
             language_rect,
-            &self.language_options(),
-            self.language_select,
+            (&self.language_options(), self.language_select),
             language_response,
+            self.scale,
         ));
     }
 
@@ -1727,7 +1727,12 @@ impl DocketScreen {
             add_rect,
         ] = Self::rects(toolbar);
         let search = self.interaction.probe(SEARCH, search_rect, true);
-        commands.extend(text_field::text_field(search_rect, &self.search, search));
+        commands.extend(text_field::text_field(
+            search_rect,
+            &self.search,
+            search,
+            self.scale,
+        ));
         let filter = self.interaction.probe(FILTER, filter_rect, true);
         if filter.clicked() {
             self.filter = self.filter.toggled();
@@ -1738,9 +1743,9 @@ impl DocketScreen {
         }
         commands.extend(checkbox::checkbox(
             done_rect,
-            self.word(Word::ShowDone),
-            self.show_done,
+            (self.word(Word::ShowDone), self.show_done),
             done,
+            self.scale,
         ));
         self.probe_pane_toggles(
             [history_rect, body_rect, members_rect, attachments_rect],
@@ -1751,7 +1756,12 @@ impl DocketScreen {
             self.language_select = self.language_select.toggled();
         }
         let theme = self.interaction.probe(THEME, theme_rect, true);
-        commands.extend(text_field::text_field(theme_rect, &self.theme_edit, theme));
+        commands.extend(text_field::text_field(
+            theme_rect,
+            &self.theme_edit,
+            theme,
+            self.scale,
+        ));
         let add = self.interaction.probe(ADD, add_rect, true);
         if add.clicked() {
             self.add_item();
@@ -1769,9 +1779,9 @@ impl DocketScreen {
         }
         commands.extend(checkbox::checkbox(
             history_rect,
-            self.word(Word::History),
-            self.history.is_shown(),
+            (self.word(Word::History), self.history.is_shown()),
             history,
+            self.scale,
         ));
         let body = self.interaction.probe(BODY_TOGGLE, body_rect, true);
         if body.clicked() {
@@ -1779,9 +1789,12 @@ impl DocketScreen {
         }
         commands.extend(checkbox::checkbox(
             body_rect,
-            self.word(Word::FieldName(Field::Body)),
-            self.body.is_shown(),
+            (
+                self.word(Word::FieldName(Field::Body)),
+                self.body.is_shown(),
+            ),
             body,
+            self.scale,
         ));
         let members = self.interaction.probe(MEMBERS_TOGGLE, members_rect, true);
         if members.clicked() {
@@ -1789,9 +1802,9 @@ impl DocketScreen {
         }
         commands.extend(checkbox::checkbox(
             members_rect,
-            self.word(Word::Members),
-            self.members.is_shown(),
+            (self.word(Word::Members), self.members.is_shown()),
             members,
+            self.scale,
         ));
         let attachments = self
             .interaction
@@ -1801,9 +1814,12 @@ impl DocketScreen {
         }
         commands.extend(checkbox::checkbox(
             attachments_rect,
-            self.word(Word::Attachment(AttachmentWord::Attachments)),
-            self.attachments.is_shown(),
+            (
+                self.word(Word::Attachment(AttachmentWord::Attachments)),
+                self.attachments.is_shown(),
+            ),
             attachments,
+            self.scale,
         ));
     }
 
@@ -1827,7 +1843,12 @@ impl DocketScreen {
                 .zip([title_rect, assignee_rect, due_rect, labels_rect])
         {
             let response = self.interaction.probe(Self::slot_id(slot), rect, true);
-            commands.extend(text_field::text_field(rect, self.slot(slot), response));
+            commands.extend(text_field::text_field(
+                rect,
+                self.slot(slot),
+                response,
+                self.scale,
+            ));
         }
         let state = self.interaction.probe(STATE, state_rect, true);
         if state.clicked() {
@@ -2072,7 +2093,12 @@ impl DocketScreen {
                 .saturating_mul(i32::from(self.px(ROW_PX)));
             self.scroll = self.scroll.scrolled_by(wheel);
         }
-        commands.extend(scroll_bar::scroll_bar(track, self.scroll, response));
+        commands.extend(scroll_bar::scroll_bar(
+            track,
+            self.scroll,
+            response,
+            self.scale,
+        ));
     }
 }
 
