@@ -18,10 +18,10 @@ cargo --version
 command -v cargo-deny >/dev/null 2>&1 || cargo install cargo-deny --locked
 command -v cargo-llvm-cov >/dev/null 2>&1 || cargo install cargo-llvm-cov --locked
 
-# 表示の確認（Xvfb の上で窓を撮る）に要る。apt が使えない環境では黙って飛ばす。
+# 表示の確認（Xvfb の上で窓を撮る）と Windows の exe（mingw-w64・make build-windows）に要る。apt が使えない環境では黙って飛ばす。
 if command -v apt-get >/dev/null 2>&1 && [ "$(id -u)" = "0" ]; then
   missing=""
-  for package in libcairo2-dev pkg-config xvfb imagemagick x11-apps x11-utils xdotool xcompmgr; do
+  for package in libcairo2-dev pkg-config xvfb imagemagick x11-apps x11-utils xdotool xcompmgr mingw-w64; do
     dpkg -s "$package" >/dev/null 2>&1 || missing="$missing $package"
   done
   if [ -n "$missing" ]; then
