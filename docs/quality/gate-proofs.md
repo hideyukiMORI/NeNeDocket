@@ -969,7 +969,23 @@ Xvfb（`:106`・`scratchpad/dnd.sh`・送り手は scratchpad の `xdnd-send`（
 
 🔴 **正直に:** ファイルシステムそのものの壊れ（`EIO`）・`.tmp` の残骸・空き容量ゼロは試していない（#81）。壊れた行の位置を人に見せる手段はまだ無い。
 
-## 45. 再現
+## 45. Issue #75 — SMB の遅延: 他人の読み直しとスナップショットの書きをフレームから外す・共有の実測の道具（2026-10-21）
+
+同じコンテナ。store に `scanner`（スレッド・頼みは 1 つに溜める）と `scan`（結果）。`FileJournal::refresh` は「届いていれば受け取り、次を頼み、50 ms だけ待つ」になった（ローカルの台帳なら同じ刻みで届く・遅い共有では次の刻みへ回る・最初の 1 回だけは結果を待ち、起動の画面に他人の課題が揃う）。最初の試作は待たない形で、Xvfb で相手の変更が次の刻みまで眠って最大 6 秒かかったので 50 ms の待ちを足した。鍵と `permissions.v1.txt` の読み直しもスレッドの側。スナップショットの書き（300 万操作で 0.5〜0.9 秒）は別スレッドで、次の書きと `drop` で待つ。テストは `refresh_settled`（頼んで待つ）。`--probe-share <フォルダ>` で `stat`・末尾の読み・追記 ＋ `sync_data`・一時名からの rename の 1 回あたりを測る（`store::share_probe`）。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 423 件（store 65: `share_probe` と、`refresh_settled` に直した読み直しのテスト） |
+| `make conformance` | 違反なし（CNF-012: `std::time` は store の中だけ・CNF-003: `Scan` と `Scanner` を分けた） |
+
+`--probe-share`（このコンテナのローカルディスク・20 回の平均）: stat 0.00 ms / read tail 0.07 ms / append+sync 0.89 ms / rename 0.37 ms。
+
+Xvfb（2300×700・2 プロセスを横に並べる・読み直しの刻み 3 秒）: alice が追加して 4 秒後に bob の窓に `From A`（[screenshots/2026-10-21-share-01-b-sees-a.png](screenshots/2026-10-21-share-01-b-sees-a.png)）、bob が追加して 4 秒後に alice の窓に `From B`（[screenshots/2026-10-21-share-02-a-sees-b.png](screenshots/2026-10-21-share-02-a-sees-b.png)）。待たない試作では 2 枚目が届いていなかった。
+
+🔴 **正直に:** 施主の共有（NAS）ではまだ測っていない（QLT-013）。読み直しの間隔の自動調整は入れていない（頼みを 1 つに溜めるので、遅い共有では合図が重なっても 1 回の読みにまとまる）。追記 ＋ `sync_data` は今もフレームの中（操作ごと・ローカルで 0.9 ms・SMB では 10〜50 ms になりうる。SPECIFICATION 第 2 節の「2 秒にまとめる」は未実装）。
+
+## 46. 再現
 
 ```bash
 make prove

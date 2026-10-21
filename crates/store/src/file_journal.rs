@@ -4,6 +4,7 @@
 
 use std::collections::BTreeMap;
 use std::path::{Path, PathBuf};
+use std::thread::{self, JoinHandle};
 
 use nene_docket_application::account::Account;
 use nene_docket_application::admission_report::AdmissionReport;
@@ -30,6 +31,8 @@ use crate::other_journals::OtherJournals;
 use crate::own_journal::{self, OwnJournal};
 use crate::permissions_store;
 use crate::resumed_snapshot::{Resumed, journal_number, remember};
+use crate::scan::Scan;
+use crate::scanner::Scanner;
 use crate::snapshot_file::{self, Index, StoredSnapshot};
 use crate::store_failure::StoreFailure;
 use crate::verifier::{self, Verifier};
@@ -58,6 +61,12 @@ pub struct FileJournal {
     resumed_from_snapshot: bool,
     journals: Vec<JournalName>,
     index: Index,
+    /// 他人のジャーナルを読むスレッド（Issue #75）。
+    scanner: Scanner,
+    /// 書いている途中のスナップショット（別のスレッド・終わりは次の checkpoint か drop で待つ）。
+    checkpoint_writer: Option<JoinHandle<Result<(), StoreFailure>>>,
+    /// 最初の読み直しは待つ（起動の画面に他人の課題が揃うように）。以後は待たない。
+    settle_first: bool,
 }
 
 impl FileJournal {
@@ -97,20 +106,17 @@ impl FileJournal {
         let (mut journals, other_offsets, mut index) = resumed.into_parts();
         let others = OtherJournals::from_offsets(account.id(), other_offsets);
         let own_journal = journal_number(&mut journals, (account.id(), own_version));
-        let mut pending = Vec::new();
-        for (position, entry) in read.into_located_entries() {
-            match verifier::admit(verifier.as_ref(), account.id(), entry) {
-                Ok(op) => {
-                    remember(&mut index, &op, own_journal, position);
-                    pending.push(op);
-                }
-                Err(_failure) => own_unverified = own_unverified.saturating_add(1),
-            }
-        }
+        let (pending, unverified) = admit_own(
+            read.into_located_entries(),
+            (verifier.as_ref(), account.id()),
+            (&mut index, own_journal),
+        );
+        own_unverified = own_unverified.saturating_add(unverified);
         if verifier.is_some() && stored.is_none() {
             own_unverified =
                 own_unverified.saturating_add(Self::count_unsigned_own(&folder, account.id())?);
         }
+        let scanner = Scanner::start_for(&folder, &others, (&keys, verifier.as_ref()));
         Ok(Self {
             folder,
             account: account.clone(),
@@ -126,6 +132,9 @@ impl FileJournal {
             resumed: stored.map(StoredSnapshot::into_ledger),
             journals,
             index,
+            scanner,
+            checkpoint_writer: None,
+            settle_first: true,
         })
     }
 
@@ -193,23 +202,47 @@ impl FileJournal {
         self.resumed_from_snapshot
     }
 
+    /// スレッドの結果を取り込む（読み位置・壊れた行・鍵と検証器・索引）。失敗があれば真。
+    fn absorb_scan(&mut self, scan: Scan, ops: &mut Vec<Op>) -> bool {
+        let ((fresh, failure), (others, keys, verifier)) = scan.into_parts();
+        self.others = others;
+        self.keys = keys;
+        self.verifier = verifier;
+        for (name, offset, op) in fresh {
+            let number = journal_number(&mut self.journals, name);
+            remember(&mut self.index, &op, number, offset);
+            ops.push(op);
+        }
+        failure.is_some()
+    }
+
+    /// 読みを頼み、その結果を待ってから返す（テストと `--attach` のように今の状態が要るとき）。
+    ///
+    /// # Errors
+    ///
+    /// 他人のジャーナルを読めない。
+    pub fn refresh_settled(&mut self) -> Result<Vec<Op>, JournalFailure> {
+        self.refresh_with(Scanner::wait)
+    }
+
+    /// 書いている途中のスナップショットがあれば待つ（テストと、確実に書き終えたいとき）。
+    ///
+    /// # Errors
+    ///
+    /// 書けなかった。
+    pub fn finish_checkpoint(&mut self) -> Result<(), StoreFailure> {
+        match self.checkpoint_writer.take() {
+            Some(writer) => writer
+                .join()
+                .map_err(|_panicked| StoreFailure::BadSnapshot)?,
+            None => Ok(()),
+        }
+    }
+
     /// 索引にある操作の数。
     #[must_use]
     pub fn indexed_ops(&self) -> usize {
         self.index.values().map(Vec::len).sum()
-    }
-
-    /// `keys/` と権限を読み直す（他人が参加した・持ち主が権限を変えた）。
-    fn reload_verifier(&mut self) -> Result<(), StoreFailure> {
-        let owner = self
-            .folder
-            .docket()
-            .owner()
-            .filter(|_| self.verifier.is_some());
-        let (keys, verifier) = verifier::load_if_enabled(self.folder.root(), owner)?;
-        self.keys = keys;
-        self.verifier = verifier;
-        Ok(())
     }
 
     /// 権限を書き、`docket.v1.txt` と検証器を読み直す。有効・無効が変われば自分のジャーナルを版を変えて開き直す。
@@ -229,6 +262,11 @@ impl FileJournal {
             self.own = own;
         }
         self.verifier = verifier;
+        self.scanner = Scanner::start_for(
+            &self.folder,
+            &self.others,
+            (&self.keys, self.verifier.as_ref()),
+        );
         Ok(())
     }
 
@@ -303,8 +341,67 @@ impl FileJournal {
             ),
             self.index.clone(),
         );
-        snapshot_file::write(self.folder.root(), self.account.id(), &stored)
+        // 🔴 書くのは別のスレッド（300 万操作で 0.5〜0.9 秒・フレームを止めない・Issue #75）。前の書きが終わっていなければ待つ。
+        self.finish_checkpoint()?;
+        let (root, account) = (self.folder.root().to_path_buf(), self.account.id());
+        self.checkpoint_writer = Some(thread::spawn(move || {
+            snapshot_file::write(&root, account, &stored)
+        }));
+        Ok(())
     }
+
+    /// 届いていた分を受け取り、次の読みを頼み、50 ms だけ待つ。
+    /// ローカルの台帳なら 50 ms の中で届くので同じ刻みで画面に出る。遅い共有では待たずに次の刻みへ回す（Issue #75）。
+    fn refresh_now(&mut self) -> Result<Vec<Op>, JournalFailure> {
+        self.refresh_with(Scanner::wait_briefly)
+    }
+
+    /// 届いていた分を受け取り、次の読みを頼み、`wait` の分だけ待って受け取る。
+    fn refresh_with<F: Fn(&Scanner) -> Option<Scan>>(
+        &mut self,
+        wait: F,
+    ) -> Result<Vec<Op>, JournalFailure> {
+        let mut ops = core::mem::take(&mut self.pending);
+        let mut failed = false;
+        for scan in self.scanner.take() {
+            failed |= self.absorb_scan(scan, &mut ops);
+        }
+        self.scanner.request();
+        if let Some(scan) = wait(&self.scanner) {
+            failed |= self.absorb_scan(scan, &mut ops);
+        }
+        if failed {
+            return Err(JournalFailure::Unreadable);
+        }
+        Ok(ops)
+    }
+}
+
+impl Drop for FileJournal {
+    /// 窓を閉じた後に書いているスナップショットを待つ（プロセスの終わりで切れないため）。
+    fn drop(&mut self) {
+        let _finished = self.finish_checkpoint();
+    }
+}
+
+/// 起動時に読んだ自分の行を検証器に通し、索引に入れる。通った操作と、通らなかった数。
+fn admit_own(
+    entries: Vec<(u64, crate::journal_read::Entry)>,
+    (verifier, account): (Option<&Verifier>, AccountId),
+    (index, own_journal): (&mut Index, u8),
+) -> (Vec<Op>, usize) {
+    let mut pending = Vec::new();
+    let mut unverified = 0_usize;
+    for (position, entry) in entries {
+        match verifier::admit(verifier, account, entry) {
+            Ok(op) => {
+                remember(index, &op, own_journal, position);
+                pending.push(op);
+            }
+            Err(_failure) => unverified = unverified.saturating_add(1),
+        }
+    }
+    (pending, unverified)
 }
 
 /// `permissions.v1.txt` の署名（無ければ `None`）。スナップショットが権限の変更をまたがないための印。
@@ -330,26 +427,18 @@ impl JournalPort for FileJournal {
             .map_err(|_failure| JournalFailure::Unwritable)
     }
 
+    /// 起動時に読んだ自分の分と、スレッドから届いていた他人の分を返し、次の読みを頼む（待たない・Issue #75）。
+    /// 最初の 1 回だけは結果を待つ（起動の画面に他人の課題が揃うように）。
     fn refresh(&mut self) -> Result<Vec<Op>, JournalFailure> {
-        let mut ops = core::mem::take(&mut self.pending);
-        self.reload_verifier()
-            .map_err(|_failure| JournalFailure::Unreadable)?;
-        let fresh = self
-            .others
-            .refresh_located(&self.folder, self.verifier.as_ref())
-            .map_err(|_failure| JournalFailure::Unreadable)?;
-        for (name, offset, op) in fresh {
-            let number = journal_number(&mut self.journals, name);
-            remember(&mut self.index, &op, number, offset);
-            ops.push(op);
+        if core::mem::take(&mut self.settle_first) {
+            return self.refresh_settled();
         }
-        Ok(ops)
+        self.refresh_now()
     }
 
     fn snapshot(&mut self) -> Option<LedgerSnapshot> {
         self.resumed.take()
     }
-
     fn ops_of(&self, item: ItemId) -> Result<Vec<Op>, JournalFailure> {
         self.read_ops_of(item)
             .map_err(|_failure| JournalFailure::Unreadable)
@@ -548,7 +637,7 @@ mod tests {
         let root = temp("refresh");
         let me = account(ME, 1);
         let mut first = FileJournal::open(&root, "Team", &me).unwrap();
-        assert!(first.refresh().unwrap().is_empty());
+        assert!(first.refresh_settled().unwrap().is_empty());
         assert!(!first.is_signed());
         assert_eq!(first.admission(), AdmissionReport::open());
         assert_eq!(first.names(), [(ME, String::from("u1"))]);
@@ -558,7 +647,7 @@ mod tests {
 
         let mut again = FileJournal::open(&root, "Team", &me).unwrap();
         assert_eq!(again.folder().name(), "Team");
-        assert_eq!(again.refresh().unwrap(), vec![create(1, ME)]);
+        assert_eq!(again.refresh_settled().unwrap(), vec![create(1, ME)]);
         let theirs = again
             .folder()
             .journal_directory()
@@ -566,8 +655,8 @@ mod tests {
         let mut line = crate::journal_record::encode(&create(2, OTHER));
         line.push('\n');
         fs::write(&theirs, line).unwrap();
-        assert_eq!(again.refresh().unwrap(), vec![create(2, OTHER)]);
-        assert!(again.refresh().unwrap().is_empty());
+        assert_eq!(again.refresh_settled().unwrap(), vec![create(2, OTHER)]);
+        assert!(again.refresh_settled().unwrap().is_empty());
         assert_eq!(again.rejected_lines(), 0);
         fs::write(&theirs, "garbage\n").unwrap();
         fs::remove_dir_all(&root).unwrap();
@@ -582,10 +671,10 @@ mod tests {
             .journal_directory()
             .join(own_journal::file_name(OTHER, JournalVersion::One));
         fs::write(&theirs, "v1\tnot a record\n").unwrap();
-        assert!(journal.refresh().unwrap().is_empty());
+        assert!(journal.refresh_settled().unwrap().is_empty());
         assert_eq!(journal.rejected_lines(), 1);
         fs::remove_dir_all(&root).unwrap();
-        assert_eq!(journal.refresh(), Err(JournalFailure::Unreadable));
+        assert_eq!(journal.refresh_settled(), Err(JournalFailure::Unreadable));
         assert_eq!(journal.append(&create(1, ME)), Ok(()));
     }
 
@@ -611,17 +700,17 @@ mod tests {
         docket_with_permissions(&root, &owner, OTHER);
         let mut mine = FileJournal::open(&root, "Team", &owner).unwrap();
         assert!(mine.is_signed());
-        assert!(mine.refresh().unwrap().is_empty());
+        assert!(mine.refresh_settled().unwrap().is_empty());
         // 版 1 の自分の行は読まず、捨てたものとして数える。
         assert_eq!(mine.admission().unverified_lines(), 1);
         assert!(mine.admission().may_edit());
         mine.append(&create(2, ME)).unwrap();
         mine.sync().unwrap();
         let mut theirs = FileJournal::open(&root, "Team", &editor).unwrap();
-        assert_eq!(theirs.refresh().unwrap(), vec![create(2, ME)]);
+        assert_eq!(theirs.refresh_settled().unwrap(), vec![create(2, ME)]);
         theirs.append(&create(3, OTHER)).unwrap();
         theirs.sync().unwrap();
-        assert_eq!(mine.refresh().unwrap(), vec![create(3, OTHER)]);
+        assert_eq!(mine.refresh_settled().unwrap(), vec![create(3, OTHER)]);
         assert_eq!(
             mine.names(),
             [(ME, String::from("u1")), (OTHER, String::from("u2"))]
@@ -629,13 +718,13 @@ mod tests {
         // 引き継ぎ（ADR 0013 の 3）: 古い ID は新しい名前で出る。鍵の無い ID へ辿れば自分の名前のまま。
         let newer = AccountId::new(0x44);
         administration::apply(&root, &owner, &[AdminCommand::Succeed(newer, OTHER)]).unwrap();
-        mine.refresh().unwrap();
+        mine.refresh_settled().unwrap();
         assert_eq!(
             mine.names(),
             [(ME, String::from("u1")), (OTHER, String::from("u2"))]
         );
         FileJournal::open(&root, "Team", &account(newer, 4)).unwrap();
-        mine.refresh().unwrap();
+        mine.refresh_settled().unwrap();
         assert_eq!(
             mine.names(),
             [
@@ -657,6 +746,7 @@ mod tests {
         mine.append(&op).unwrap();
         mine.sync().unwrap();
         mine.checkpoint(&ledger.snapshot()).unwrap();
+        mine.finish_checkpoint().unwrap();
         mine
     }
 
@@ -678,7 +768,7 @@ mod tests {
         let mut again = FileJournal::open(&root, "Team", &owner).unwrap();
         assert!(again.is_resumed());
         assert_eq!(again.snapshot().map(|s| s.docket().len()), Some(2));
-        assert_eq!(again.refresh().unwrap(), vec![create(5, OTHER)]);
+        assert_eq!(again.refresh_settled().unwrap(), vec![create(5, OTHER)]);
         assert_eq!(again.indexed_ops(), 3);
         // 索引から課題の操作を引ける（同じ課題を 2 度作った 2 行）。新しい順の読みと全部の読みも。
         assert_eq!(
@@ -807,7 +897,7 @@ mod tests {
             theirs.administer(&[AdminCommand::Permissions(false)]),
             Err(JournalFailure::PermissionsUnwritable)
         );
-        assert_eq!(theirs.refresh().unwrap(), vec![create(1, ME)]);
+        assert_eq!(theirs.refresh_settled().unwrap(), vec![create(1, ME)]);
         mine.administer(&[AdminCommand::Permissions(false)])
             .unwrap();
         assert!(!mine.is_signed());
@@ -831,12 +921,12 @@ mod tests {
         strangers.append(&create(4, stranger.id())).unwrap();
         strangers.sync().unwrap();
         let mut mine = FileJournal::open(&root, "Team", &owner).unwrap();
-        assert_eq!(mine.refresh().unwrap(), vec![create(3, OTHER)]);
+        assert_eq!(mine.refresh_settled().unwrap(), vec![create(3, OTHER)]);
         assert_eq!(mine.admission().unverified_lines(), 2);
         // 持ち主が編集者に加えれば、次に開いたときから通る。
         administration::apply(&root, &owner, &[AdminCommand::Allow(stranger.id())]).unwrap();
         let mut reopened = FileJournal::open(&root, "Team", &owner).unwrap();
-        let all = reopened.refresh().unwrap();
+        let all = reopened.refresh_settled().unwrap();
         assert!(all.contains(&create(4, stranger.id())));
         assert_eq!(all.len(), 2);
         // 改竄: 編集者の行の値を書き換え、検査和だけ合わせ直す。
@@ -855,7 +945,7 @@ mod tests {
             ),
         )
         .unwrap();
-        assert!(reopened.refresh().unwrap().is_empty());
+        assert!(reopened.refresh_settled().unwrap().is_empty());
         assert_eq!(reopened.admission().unverified_lines(), 2);
         // 同じ ID の別の鍵。
         let twin = FileJournal::open(&root, "Team", &account(OTHER, 9)).unwrap();

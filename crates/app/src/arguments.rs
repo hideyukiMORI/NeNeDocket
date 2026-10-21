@@ -27,6 +27,7 @@ pub(crate) struct Arguments {
     admin: Vec<AdminCommand>,
     audit: bool,
     attach: Vec<(ItemId, String)>,
+    probe_share: bool,
 }
 
 impl Arguments {
@@ -39,6 +40,7 @@ impl Arguments {
             admin: Vec::new(),
             audit: false,
             attach: Vec::new(),
+            probe_share: false,
         };
         while let Some(word) = arguments.next() {
             if !word.starts_with('-') {
@@ -47,6 +49,10 @@ impl Arguments {
             }
             if word == "--audit" {
                 parsed.audit = true;
+                continue;
+            }
+            if word == "--probe-share" {
+                parsed.probe_share = true;
                 continue;
             }
             if word == "--attach" {
@@ -103,6 +109,11 @@ impl Arguments {
     }
 
     /// 添付する課題とパス。空なら無し。
+    /// 共有の速さを測って終わるか（`--probe-share`・Issue #75）。
+    pub(crate) const fn probe_share(&self) -> bool {
+        self.probe_share
+    }
+
     pub(crate) fn attach(&self) -> &[(ItemId, String)] {
         &self.attach
     }

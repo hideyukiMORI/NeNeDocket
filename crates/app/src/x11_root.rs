@@ -14,6 +14,7 @@ use nene_docket_application::ledger::Ledger;
 use nene_docket_application::ports::Ports;
 use nene_docket_store::administration;
 use nene_docket_store::file_journal::FileJournal;
+use nene_docket_store::share_probe;
 use nene_docket_ui_x11::atoms;
 use nene_docket_ui_x11::display::Display;
 use nene_docket_ui_x11::docket_window::DocketWindow;
@@ -51,6 +52,9 @@ pub(crate) fn run(arguments: &Arguments) -> Result<(), LaunchFailure> {
     }
     if !arguments.attach().is_empty() {
         return attach_files(&folder, &account, arguments.attach());
+    }
+    if arguments.probe_share() {
+        return print_probe(&folder);
     }
     let journal = FileJournal::open(&folder, &Arguments::docket_name(&folder), &account)?;
     let settings = saved_settings::remember(settings, &folder)?;
@@ -101,6 +105,22 @@ fn print_audit(folder: &Path, account: &Account, language: Language) -> Result<(
     print!(
         "{}",
         audit_report::text(&ops, &ports.journal().names(), language)
+    );
+    Ok(())
+}
+
+/// 共有フォルダの速さを標準出力に出す（`--probe-share`・Issue #75）。
+// 🔴 標準出力へ書いてよいのは合成ルートだけ（RS-014）。この #[expect] が宣言そのものである。
+#[expect(
+    clippy::print_stdout,
+    reason = "RS-014: 端末への出力は合成ルートだけが行う"
+)]
+fn print_probe(folder: &Path) -> Result<(), LaunchFailure> {
+    let probe = share_probe::measure(folder, 20)?;
+    println!(
+        "share probe ({}; 20 rounds): {}",
+        folder.display(),
+        probe.describe()
     );
     Ok(())
 }

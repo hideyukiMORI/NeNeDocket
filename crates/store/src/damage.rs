@@ -121,7 +121,7 @@ mod tests {
     /// 開いて読み直し、届いた操作と壊れた行の数。
     fn reopen(root: &Path) -> (Vec<Op>, usize) {
         let mut journal = FileJournal::open(root, "Team", &account(ME, 1)).unwrap();
-        let ops = journal.refresh().unwrap();
+        let ops = journal.refresh_settled().unwrap();
         (ops, journal.rejected_lines())
     }
 
@@ -251,23 +251,23 @@ mod tests {
         let root = temp("stall");
         let theirs = docket_with_two_writers(&root);
         let mut mine = FileJournal::open(&root, "Team", &account(ME, 1)).unwrap();
-        mine.refresh().unwrap();
+        mine.refresh_settled().unwrap();
         let mut partial = fs::read(&theirs).unwrap();
         partial.extend_from_slice(b"v1\t9\t0000");
         fs::write(&theirs, &partial).unwrap();
         for _ in 0_u32..3 {
-            mine.refresh().unwrap();
+            mine.refresh_settled().unwrap();
             assert_eq!(mine.rejected_lines(), 0);
         }
-        mine.refresh().unwrap();
+        mine.refresh_settled().unwrap();
         assert_eq!(mine.rejected_lines(), 1);
-        mine.refresh().unwrap();
+        mine.refresh_settled().unwrap();
         assert_eq!(mine.rejected_lines(), 1, "2 度は数えない");
         // 書き手が続きを書いた: 壊れた行として読まれ、「止まった」の数えは消える（1 のまま）。
         let mut finished = fs::read(&theirs).unwrap();
         finished.extend_from_slice(b"0000\n");
         fs::write(&theirs, &finished).unwrap();
-        mine.refresh().unwrap();
+        mine.refresh_settled().unwrap();
         assert_eq!(mine.rejected_lines(), 1);
         assert!(FileJournal::open(&root, "Team", &account(ME, 1)).is_ok());
         let _cleaned = fs::remove_dir_all(&root);
