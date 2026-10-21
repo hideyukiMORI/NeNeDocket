@@ -2,11 +2,13 @@
 
 /// 文字の添字で表したカーソルと選択の起点。UI がフォントで画素の位置に直す（ADR 0006）。
 /// 複数行の欄で選択が行をまたぐとき、カーソルの無い行には棒を描かない（`bar`）。
+/// 確定前の文字列（IME・FR-015）の範囲には下線を引く（`underline`・始まりと終わり（含まない）の文字の添字）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct TextCaret {
     cursor: usize,
     anchor: usize,
     bar: bool,
+    underline: Option<(usize, usize)>,
 }
 
 impl TextCaret {
@@ -17,7 +19,23 @@ impl TextCaret {
             cursor,
             anchor,
             bar: true,
+            underline: None,
         }
+    }
+
+    /// `start` から `end`（含まない）の文字に下線を引くもの（確定前の文字列）。
+    #[must_use]
+    pub const fn with_underline(self, start: usize, end: usize) -> Self {
+        Self {
+            underline: Some((start, end)),
+            ..self
+        }
+    }
+
+    /// 下線を引く範囲（始まりと、含まない終わり）。
+    #[must_use]
+    pub const fn underline(self) -> Option<(usize, usize)> {
+        self.underline
     }
 
     /// 棒を描かないもの（選択だけ）。
@@ -88,5 +106,15 @@ mod tests {
         assert!(forward.shows_bar());
         assert!(!forward.without_bar().shows_bar());
         assert_eq!(forward.without_bar().end(), 5);
+    }
+
+    #[test]
+    fn an_underline_marks_the_composing_range_and_survives_dropping_the_bar() {
+        let plain = TextCaret::new(3, 3);
+        assert_eq!(plain.underline(), None);
+        let composing = plain.with_underline(1, 3);
+        assert_eq!(composing.underline(), Some((1, 3)));
+        assert_eq!(composing.without_bar().underline(), Some((1, 3)));
+        assert_ne!(composing, plain);
     }
 }

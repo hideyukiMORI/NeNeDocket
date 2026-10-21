@@ -86,12 +86,18 @@ impl Display {
     /// 押された鍵を意図に読み替える。反応しない鍵は `None`。
     #[must_use]
     pub fn key_intent(&self, key: &KeyPressEvent) -> Option<KeyIntent> {
-        let modifiers = Modifiers {
-            shift: key.state.contains(KeyButMask::SHIFT),
-            control: key.state.contains(KeyButMask::CONTROL),
-        };
+        let modifiers = modifiers_of(key);
         let keysym = self.key_map.keysym(key.detail, modifiers.shift)?;
         key_input::intent_of(keysym, modifiers)
+    }
+
+    /// 押された鍵が貼り付け（Ctrl+V）か。
+    #[must_use]
+    pub fn paste_requested(&self, key: &KeyPressEvent) -> bool {
+        let modifiers = modifiers_of(key);
+        self.key_map
+            .keysym(key.detail, modifiers.shift)
+            .is_some_and(|keysym| key_input::is_paste(keysym, modifiers))
     }
 
     /// 接続。
@@ -123,5 +129,13 @@ impl Display {
     #[must_use]
     pub const fn visual(&self) -> WindowVisual {
         self.visual
+    }
+}
+
+/// 鍵のイベントの修飾鍵。
+fn modifiers_of(key: &KeyPressEvent) -> Modifiers {
+    Modifiers {
+        shift: key.state.contains(KeyButMask::SHIFT),
+        control: key.state.contains(KeyButMask::CONTROL),
     }
 }

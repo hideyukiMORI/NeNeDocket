@@ -248,11 +248,28 @@ fn draw_text(
     set_paint(context, palette, paint);
     context.move_to(left, baseline);
     context.show_text(text)?;
+    if let Some((start, end)) = caret.and_then(TextCaret::underline) {
+        draw_underline(context, (left, top + font.height()), text, (start, end))?;
+    }
     if let Some(caret) = caret.filter(|caret| caret.shows_bar()) {
         let x = left + prefix_advance(context, text, caret.cursor())?;
         context.rectangle(x.floor(), top, 1.0_f64, font.height());
         context.fill()?;
     }
+    Ok(())
+}
+
+/// 確定前の文字列の下線（1 画素・いまの色）。`bottom` は文字の下端。
+fn draw_underline(
+    context: &Context,
+    (left, bottom): (f64, f64),
+    text: &str,
+    (start, end): (usize, usize),
+) -> Result<(), UiFailure> {
+    let from = left + prefix_advance(context, text, start)?;
+    let to = left + prefix_advance(context, text, end)?;
+    context.rectangle(from.floor(), bottom.floor() - 1.0_f64, to - from, 1.0_f64);
+    context.fill()?;
     Ok(())
 }
 
@@ -385,6 +402,33 @@ mod tests {
         let selection = count(&mut canvas, pixel_of(Paint::Selection));
         assert!(ink > 20, "{ink}");
         assert!(selection > 20, "{selection}");
+    }
+
+    #[test]
+    fn an_underline_adds_ink_below_the_composing_characters() {
+        let plain = DrawCommand::Text {
+            rect: PixelRect::new(4, 0, 92, 40),
+            text: String::from("abcdef"),
+            align: TextAlign::Start,
+            paint: Paint::Ink,
+            caret: Some(TextCaret::new(3, 3)),
+        };
+        let underlined = DrawCommand::Text {
+            rect: PixelRect::new(4, 0, 92, 40),
+            text: String::from("abcdef"),
+            align: TextAlign::Start,
+            paint: Paint::Ink,
+            caret: Some(TextCaret::new(3, 3).with_underline(1, 4)),
+        };
+        let background = DrawCommand::Fill {
+            rect: BOUNDS,
+            paint: Paint::Surface,
+        };
+        let mut without = render(vec![background.clone(), plain]);
+        let mut with = render(vec![background, underlined]);
+        let before = count(&mut without, pixel_of(Paint::Ink));
+        let after = count(&mut with, pixel_of(Paint::Ink));
+        assert!(after > before + 10, "{before} -> {after}");
     }
 
     #[test]

@@ -349,7 +349,7 @@ impl Pen {
         }
     }
 
-    /// 矩形の中に 1 行。縦は中央、横は寄せに従う。カーソルがあれば選択を塗り、文字を描き、カーソルの線を置く。
+    /// 矩形の中に 1 行。縦は中央、横は寄せに従う。カーソルがあれば選択を塗り、文字を描き、確定前の下線とカーソルの線を置く。
     #[expect(
         unsafe_code,
         reason = "RS-010: Direct2D の DrawTextLayout を呼ぶ（ADR 0002 の 4）"
@@ -370,6 +370,7 @@ impl Pen {
         };
         let top = f32::from(rect.y()) + (f32::from(rect.height()) - line.height()) / 2.0;
         let top = (top + line.ascent()).floor() - line.ascent();
+        let bottom = top + line.height();
         if let Some(caret) = caret.filter(|caret| caret.has_selection()) {
             let start = left + prefix_advance(line.layout(), text, caret.start())?;
             let end = left + prefix_advance(line.layout(), text, caret.end())?;
@@ -377,15 +378,9 @@ impl Pen {
                 left: start,
                 top,
                 right: end,
-                bottom: top + line.height(),
+                bottom,
             };
-            // SAFETY: 描画は paint の中で呼ばれる。selection はこの関数の局所。
-            unsafe {
-                self.target.FillRectangle(
-                    &raw const selection,
-                    &self.brush(palette, Paint::Selection)?,
-                );
-            }
+            self.fill_f(selection, &self.brush(palette, Paint::Selection)?);
         }
         let brush = self.brush(palette, paint)?;
         let origin = Vector2 { X: left, Y: top };
@@ -394,20 +389,40 @@ impl Pen {
             self.target
                 .DrawTextLayout(origin, line.layout(), &brush, D2D1_DRAW_TEXT_OPTIONS_NONE);
         }
+        if let Some((start, end)) = caret.and_then(TextCaret::underline) {
+            let from = (left + prefix_advance(line.layout(), text, start)?).floor();
+            let to = left + prefix_advance(line.layout(), text, end)?;
+            let underline = D2D_RECT_F {
+                left: from,
+                top: bottom.floor() - 1.0,
+                right: to,
+                bottom: bottom.floor(),
+            };
+            self.fill_f(underline, &brush);
+        }
         if let Some(caret) = caret.filter(|caret| caret.shows_bar()) {
             let x = (left + prefix_advance(line.layout(), text, caret.cursor())?).floor();
             let cursor_line = D2D_RECT_F {
                 left: x,
                 top,
                 right: x + 1.0,
-                bottom: top + line.height(),
+                bottom,
             };
-            // SAFETY: 描画は paint の中で呼ばれる。cursor_line はこの関数の局所。
-            unsafe {
-                self.target.FillRectangle(&raw const cursor_line, &brush);
-            }
+            self.fill_f(cursor_line, &brush);
         }
         Ok(())
+    }
+
+    /// 浮動小数の矩形を塗る（選択・カーソルの棒・確定前の下線）。
+    #[expect(
+        unsafe_code,
+        reason = "RS-010: Direct2D の FillRectangle を呼ぶ（ADR 0002 の 4）"
+    )]
+    fn fill_f(&self, area: D2D_RECT_F, brush: &ID2D1Brush) {
+        // SAFETY: 描画は paint の中で呼ばれる。area はこの関数の局所。
+        unsafe {
+            self.target.FillRectangle(&raw const area, brush);
+        }
     }
 
     /// 字の形式（家族と大きさ）。

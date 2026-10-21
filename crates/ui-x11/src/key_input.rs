@@ -30,6 +30,9 @@ const UPPER_Z: u32 = 0x5a;
 /// `XK_y` / `XK_Y`。Ctrl と一緒なら Redo（FR-005）。
 const LOWER_Y: u32 = 0x79;
 const UPPER_Y: u32 = 0x59;
+/// `XK_v` / `XK_V`。Ctrl と一緒なら貼り付け（クリップボード・FR-015 の逃げ道）。
+const LOWER_V: u32 = 0x76;
+const UPPER_V: u32 = 0x56;
 
 /// 押されている修飾鍵。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -65,6 +68,12 @@ pub fn intent_of(keysym: u32, modifiers: Modifiers) -> Option<KeyIntent> {
         0x20..=0x7e | 0xa0..=0xff => char::from_u32(keysym).map(KeyIntent::Char),
         _ => None,
     }
+}
+
+/// Ctrl+V（貼り付け）か。意図にはならず、UI がクリップボードの変換を求める。
+#[must_use]
+pub const fn is_paste(keysym: u32, modifiers: Modifiers) -> bool {
+    modifiers.control && matches!(keysym, LOWER_V | UPPER_V)
 }
 
 const fn moved(to: CursorMove, extend: bool) -> KeyIntent {
@@ -123,6 +132,16 @@ mod tests {
         assert_eq!(intent_of(UPPER_Y, CONTROL), Some(KeyIntent::Redo));
         assert_eq!(intent_of(LOWER_Z, PLAIN), Some(KeyIntent::Char('z')));
         assert_eq!(intent_of(0x62, CONTROL), None);
+    }
+
+    #[test]
+    fn control_v_is_paste_and_nothing_else_is() {
+        assert!(is_paste(LOWER_V, CONTROL));
+        assert!(is_paste(UPPER_V, CONTROL));
+        assert!(!is_paste(LOWER_V, PLAIN));
+        assert!(!is_paste(LOWER_Z, CONTROL));
+        assert_eq!(intent_of(LOWER_V, CONTROL), None);
+        assert_eq!(intent_of(LOWER_V, PLAIN), Some(KeyIntent::Char('v')));
     }
 
     #[test]

@@ -70,7 +70,7 @@ impl TextEdit {
     #[must_use]
     pub fn applied_in_area(&self, intent: KeyIntent) -> Self {
         match intent {
-            KeyIntent::Enter => self.inserted("\n"),
+            KeyIntent::Enter | KeyIntent::Char('\n') => self.inserted("\n"),
             KeyIntent::Up => self.moved_by_line(-1_i8),
             KeyIntent::Down => self.moved_by_line(1_i8),
             KeyIntent::Char(_)
@@ -126,9 +126,11 @@ impl TextEdit {
     }
 
     /// 鍵の意図を適用した状態。入力欄が扱わない意図（Enter・Esc・Tab・上下）では変わらない。
+    /// 改行の字（貼り付け・IME の確定で届く）は 1 行の欄では空白にする（複数行の欄は [`Self::applied_in_area`]）。
     #[must_use]
     pub fn applied(&self, intent: KeyIntent) -> Self {
         match intent {
+            KeyIntent::Char('\n') => self.inserted(" "),
             KeyIntent::Char(character) => {
                 let mut inserted = String::new();
                 inserted.push(character);
@@ -179,7 +181,11 @@ impl TextEdit {
         let shown = self.without_selection().inserted(preedit.text());
         let base = self.without_selection().caret.cursor();
         let cursor = base.saturating_add(preedit.cursor());
-        (shown.text, TextCaret::new(cursor, cursor))
+        let end = base.saturating_add(preedit.char_count());
+        (
+            shown.text,
+            TextCaret::new(cursor, cursor).with_underline(base, end),
+        )
     }
 
     /// 文字数。
@@ -365,7 +371,7 @@ mod tests {
         let composing = edit.with_preedit(Some(Preedit::new("にほ", 1)));
         let (shown, caret) = composing.display();
         assert_eq!(shown, "aにほb");
-        assert_eq!(caret, TextCaret::new(2, 2));
+        assert_eq!(caret, TextCaret::new(2, 2).with_underline(1, 3));
         assert_eq!(composing.text(), "ab");
         assert_eq!(composing.preedit().map(Preedit::text), Some("にほ"));
         let committed = composing.inserted("日本");
@@ -381,6 +387,14 @@ mod tests {
         let composing = selected.with_preedit(Some(Preedit::new("x", 1)));
         assert_eq!(composing.display().0, "x");
         assert_eq!(composing.inserted("y").text(), "y");
+    }
+
+    #[test]
+    fn a_newline_character_becomes_a_space_in_a_field_and_a_line_break_in_an_area() {
+        let edit = TextEdit::showing("ab").applied(KeyIntent::Char('\n'));
+        assert_eq!(edit.text(), "ab ");
+        let area = TextEdit::showing("ab").applied_in_area(KeyIntent::Char('\n'));
+        assert_eq!(area.text(), "ab\n");
     }
 
     #[test]

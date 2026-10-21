@@ -27,7 +27,7 @@
 | 過去の時点の再現（FR-006 後半） | ✅ Issue #39。履歴の行の上にポインタを置くと、表の選んだ行と本文の段がその時点の値になる（gate-proofs 第 27 節） |
 | 課題の履歴の段（FR-006） | ✅ Issue #18。いつ（UTC）・誰が（ID の先頭 4 桁）・何を・何から何へ。Undo の行は控えめな色（gate-proofs 第 17 節） |
 | adapters-windows / ui-win32（Windows の窓・ADR 0009） | 🟡 Issue #22。`x86_64-pc-windows-gnu` の clippy 0 件・exe 1.9 MB。**Windows では未実行**（施主の Windows で確かめる・gate-proofs 第 19 節） |
-| IME の方式（FR-015） | ❌ ADR 未。コンテナには IM サーバ（fcitx / ibus）が無く XIM を測れない。施主の WSLg で測る |
+| IME の方式（FR-015） | 🟡 Issue #80・[ADR 0020](../adr/0020-japanese-input-ime-paths.md) 受理。Windows は IMM32（`WM_IME_COMPOSITION`・候補の窓は欄の下・**実機で未確認**）、X11 は当面 Ctrl+V の貼り付け（Xvfb で確認・gate-proofs 第 46 節）。XIM の自前実装は施主の WSLg で測ってから |
 | 署名と権限（FR-010） | ✅ Issue #29・[ADR 0010](../adr/0010-signatures-and-permissions.md) 受理。core に `ed25519-dalek`、`account.v2.txt` に秘密鍵、台帳の `keys/` と `permissions.v1.txt`、ジャーナル版 2（署名付き）。持ち主はコマンドライン（`--permissions on` / `--allow` / `--group`）。Xvfb で 3 アカウント（gate-proofs 第 22 節） |
 | 鍵の交代と持ち主の交代（ADR 0013） | ✅ Issue #51・[ADR 0013](../adr/0013-key-rotation-and-one-key-per-machine.md) 受理。`--succeed NEW OLD` で引き継ぎ（古い ID の履歴は新しい名前・参加者の段から消える）、`--owner ACCOUNT` で持ち主の交代（前の持ち主の署名 ＋ `handover`・新しい持ち主が開くと署名し直す）。鍵を失くした持ち主は `docket.v1.txt` を手で直す（gate-proofs 第 32 節）。引き継ぎは参加者の段の編集行の「引き継ぎ先」からも（Issue #54・第 34 節）。新しい ID は古い ID の編集者・グループを受け継ぐ |
 | 監査（FR-020） | ✅ Issue #56・[ADR 0014](../adr/0014-administration-is-journaled-for-audit.md) 受理。権限の変更も `admin` の行としてジャーナルに追記（署名付き）。履歴の段は課題を選んでいなければ台帳全体の時系列、`--audit` でテキスト。読んだ記録は残さない（gate-proofs 第 36 節） |
@@ -47,13 +47,13 @@
 - ✅ #77 壊れたファイルへの耐性: 壊し方 × 形の表（docs/design）を store の `damage` で試す。切れた行に改行を足してから追記・止まった書きかけを数える・スナップショットに検査和（gate-proofs 第 44 節）
 - #78 壁時計のずれ: 地方時の表示・ずれの印・期限の「今日」・mtime 不使用の検査
 - #79 Windows のファイルロック: 共有モード・上書き rename の再試行・ウイルス対策
-- #80 日本語入力: Windows は `WM_IME_COMPOSITION`、X11 は XIM の ADR と貼り付けの逃げ道
+- 🟡 #80 日本語入力: ADR 0020。Windows は IMM32（確定前の文字列を欄に・候補の窓は欄の下）、X11 は Ctrl+V の貼り付け、確定前は下線。残り: 施主の Windows での確認・WSLg で XIM が届くかの実測（gate-proofs 第 46 節）
 - #81 OS のフリーズ・停電・強制終了・スリープ復帰: 止まり方の表と戻ったときの約束
 
 1. **ruleset（main の保護・squash-only・`check` を必須）を施主が GitHub で設定する。** 設定したら gate-proofs に記録し、GIT-002 / GIT-004 を active に。PR は harness の枝 `claude/cloud-session-qus6l5` から squash で merge している（件名は PR のタイトル・GIT-003 の形）
 2. PDF のビューワーは保留（ADR 0019 の再提案の条件: 施主が依存の重さと `deny.toml` の緩和を受け入れる・`hayro` の重複が消える・実運用で OS のビューワーでは足りないと分かる）
 3. 持ち主の交代はコマンドラインのまま（施主の決定）。引き継ぎを取り消す経路は無い（要るなら Issue）
-3. **IME の実測は施主の WSLg で**: fcitx5 か ibus を入れ、`XMODIFIERS=@im=fcitx` で XIM の preedit が x11rb の窓に届く経路（XIM プロトコルの自前実装か、IM サーバの D-Bus か）を決める ADR
+3. **XIM の実測は施主の WSLg で**: fcitx5 を入れ、`XMODIFIERS=@im=fcitx` で XIM サーバ（`XIM_SERVERS` と `_XIM_XCONNECT`）が x11rb の窓から届くかを見る。届けば XIM の自前実装の Issue（ADR 0020 の 3）
 5. 環境の setup script（環境の設定）に DEVELOPMENT_WORKFLOW 第 9 節の行を置く。リポジトリ側のフック（`.claude/hooks/session-start.sh`）には `mingw-w64` を足した（Issue #24）
 6. **施主の Windows で exe を動かす**（Issue #22 の受け入れ）。見えた欠陥は Issue にする
 
@@ -65,7 +65,7 @@
 - 権限を有効にしなければ、なりすましは防げない（ファイルを直接編集すれば）。有効にすると、それより前の版 1 の履歴は捨てられて数に出る（ADR 0010）。秘密鍵は設定フォルダの平文。権限の記録（ADR 0014）は書いた人の言い分で、`permissions.v1.txt` と突き合わせない。読んだ記録は残さない
 - SMB の上で本当に壊れないかは、施主の共有で確かめるまで「動く」と書かない（QLT-013）
 - アクセシビリティは無い（ADR 0002）
-- Windows 版は組み立てただけで、Windows で動かしていない（ADR 0009・gate-proofs 第 19.3 節）。IME の確定前の文字列（`WM_IME_COMPOSITION`）と起動後の dpi の変化はまだ
+- Windows 版は組み立てただけで、Windows で動かしていない（ADR 0009・gate-proofs 第 19.3 節）。IME の確定前の文字列（`WM_IME_COMPOSITION`・Issue #80）も組み立てただけ。起動後の dpi の変化はまだ
 - アカウントと設定の読み書きは adapters-x11 と adapters-windows に 2 度ある（adapters は store に依存できない。ADR 0009）
 - `make lint-windows` は X11 の 2 クレートだけを外す（`app` は Windows の合成ルートで組む）
 - `xdotool windowclose` は WM の無い Xvfb では `WM_DELETE_WINDOW` を送らず窓を消す。閉じる要求の経路は WSLg で確かめる
