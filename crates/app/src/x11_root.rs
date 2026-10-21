@@ -72,7 +72,7 @@ pub(crate) fn run(arguments: &Arguments) -> Result<(), LaunchFailure> {
     let settings = saved_settings::remember(settings, &folder)?;
     let display = Display::connect()?;
     let mut screen = screen_on(&display, journal, &account, &settings)?;
-    let mut window = DocketWindow::open(&display)?;
+    let mut window = DocketWindow::open(&display, screen.scale())?;
     let ticker = RefreshTicker::start(
         window.window(),
         atoms::REFRESH_NAME,
@@ -138,7 +138,7 @@ fn print_bench(
     drop(first);
     let mut screen = screen_on(&display, journal_in(folder, account)?, account, settings)?;
     let reopened = watch.elapsed();
-    let mut window = DocketWindow::open(&display)?;
+    let mut window = DocketWindow::open(&display, screen.scale())?;
     let laps = bench_loop::run(&display, &mut window, &mut screen, &watch)?;
     let bounds = window.bounds();
     let report = BenchReport::new(

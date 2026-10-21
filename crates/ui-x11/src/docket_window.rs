@@ -7,6 +7,7 @@ use nene_docket_application::stopwatch_port::StopwatchPort;
 use nene_docket_core::language::Language;
 use nene_docket_core::pixel_point::PixelPoint;
 use nene_docket_core::pixel_rect::PixelRect;
+use nene_docket_core::ui_scale::UiScale;
 use x11rb::connection::Connection;
 use x11rb::protocol::xproto::{
     AtomEnum, ClientMessageEvent, ConnectionExt as _, CreateGCAux, CreateWindowAux, EventMask,
@@ -26,7 +27,7 @@ use crate::ui_failure::UiFailure;
 
 /// 窓の題。
 const TITLE: &str = "NeNe Docket";
-/// 最初の大きさ。
+/// 最初の大きさ（1x）。倍率を掛け、根の窓に収めて使う（Issue #93）。
 const INITIAL_WIDTH: u16 = 1360;
 const INITIAL_HEIGHT: u16 = 600;
 
@@ -48,14 +49,16 @@ pub struct DocketWindow<'d> {
 }
 
 impl<'d> DocketWindow<'d> {
-    /// 窓を作って表示する。
+    /// 窓を作って表示する。大きさは 1x の初期の大きさに `scale` を掛け、根の窓に収めたもの。
     ///
     /// # Errors
     ///
     /// X の要求が失敗した。
-    pub fn open(display: &'d Display) -> Result<Self, UiFailure> {
+    pub fn open(display: &'d Display, scale: UiScale) -> Result<Self, UiFailure> {
         let connection = display.connection();
         let screen = display.screen()?;
+        let width = scale.fit(INITIAL_WIDTH, screen.width_in_pixels);
+        let height = scale.fit(INITIAL_HEIGHT, screen.height_in_pixels);
         let visual = display.visual();
         let attributes = CreateWindowAux::new()
             .background_pixel(screen.white_pixel)
@@ -74,8 +77,8 @@ impl<'d> DocketWindow<'d> {
             screen.root,
             0,
             0,
-            INITIAL_WIDTH,
-            INITIAL_HEIGHT,
+            width,
+            height,
             0,
             WindowClass::INPUT_OUTPUT,
             visual.visual(),
@@ -86,7 +89,7 @@ impl<'d> DocketWindow<'d> {
             display,
             window,
             gc,
-            bounds: PixelRect::new(0, 0, INITIAL_WIDTH, INITIAL_HEIGHT),
+            bounds: PixelRect::new(0, 0, width, height),
             font: None,
             surfaces: SurfaceCache::empty(),
             drops: DropTarget::idle(),
