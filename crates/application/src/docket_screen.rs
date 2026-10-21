@@ -1492,12 +1492,30 @@ impl DocketScreen {
     /// 一定の回数ごとに、台帳が変わっていればスナップショットを書く（ADR 0015）。
     fn refresh(&mut self) {
         self.absorb_others();
+        self.retry_unwritten();
         self.reload_editor(false);
         self.refreshes = self.refreshes.saturating_add(1);
         if self.refreshes.is_multiple_of(CHECKPOINT_EVERY)
             && self.checkpointed != self.ledger.generation()
         {
             self.checkpoint();
+        }
+    }
+
+    /// 書けていない操作を古い順に書き直し、通れば書けない知らせを消す（読み直しの刻み・Issue #99）。
+    /// 書くものが無ければ store は何もしない（健全な台帳では刻みの I/O は増えない）。
+    /// 他人のジャーナルを読めない間は試さない（切れた共有を開き直すと画面のスレッドが止まり得る・読みはスレッド・#75）。
+    fn retry_unwritten(&mut self) {
+        if self.read_failure.is_some() {
+            return;
+        }
+        match self.ports.journal_mut().sync() {
+            Ok(()) => {
+                self.write_failure = self
+                    .write_failure
+                    .filter(|failure| *failure != JournalFailure::Unwritable);
+            }
+            Err(failure) => self.write_failure = Some(failure),
         }
     }
 
@@ -2161,8 +2179,10 @@ mod tests {
         synced: Rc<RefCell<usize>>,
         checkpoints: Rc<RefCell<Vec<LedgerSnapshot>>>,
         fail_write: bool,
-        /// 共有が切れている（途中で戻せる・Issue #100）。スナップショットを書けない。
+        /// 共有が切れている（途中で戻せる・Issue #100 / #99）。追記・同期・スナップショットを書けない。
         outage: Rc<Cell<bool>>,
+        /// 切れている間に追記した操作（store の真似: 次の追記・同期で古い順に書く）。
+        unwritten: Rc<RefCell<Vec<Op>>>,
         fail_read: bool,
         rejected: usize,
         admission: AdmissionReport,
@@ -2179,6 +2199,7 @@ mod tests {
                 checkpoints: Rc::default(),
                 fail_write: false,
                 outage: Rc::default(),
+                unwritten: Rc::default(),
                 fail_read: false,
                 rejected: 0,
                 admission: AdmissionReport::open(),
@@ -2187,17 +2208,34 @@ mod tests {
         }
     }
 
+    impl FakeJournal {
+        fn flush_unwritten(&self) {
+            let unwritten = core::mem::take(&mut *self.unwritten.borrow_mut());
+            self.seen.borrow_mut().extend(unwritten.iter().cloned());
+            self.written.borrow_mut().extend(unwritten);
+        }
+    }
+
     impl JournalPort for FakeJournal {
         fn append(&mut self, op: &Op) -> Result<(), JournalFailure> {
             if self.fail_write {
                 return Err(JournalFailure::Unwritable);
             }
+            if self.outage.get() {
+                self.unwritten.borrow_mut().push(op.clone());
+                return Err(JournalFailure::Unwritable);
+            }
+            self.flush_unwritten();
             self.written.borrow_mut().push(op.clone());
             self.seen.borrow_mut().push(op.clone());
             Ok(())
         }
 
         fn sync(&mut self) -> Result<(), JournalFailure> {
+            if self.outage.get() && !self.unwritten.borrow().is_empty() {
+                return Err(JournalFailure::Unwritable);
+            }
+            self.flush_unwritten();
             *self.synced.borrow_mut() += 1;
             Ok(())
         }
@@ -2912,11 +2950,65 @@ mod tests {
     }
 
     #[test]
-    fn an_unwritten_op_keeps_its_notice_and_no_checkpoint_is_tried_meanwhile() {
+    fn unwritten_ops_are_written_in_order_on_a_refresh_tick_and_the_notice_clears() {
+        let journal = FakeJournal::default();
+        let outage = Rc::clone(&journal.outage);
+        let unwritten = Rc::clone(&journal.unwritten);
+        outage.set(true);
+        let (mut screen, spy) = screen_with(journal);
+        click(&mut screen, ADD_X, TOOLBAR_Y);
+        click(&mut screen, ADD_X, TOOLBAR_Y);
+        ticks(&mut screen, 1);
+        assert_eq!(unwritten.borrow().len(), 2);
+        assert_eq!(
+            screen.notices(),
+            alloc::vec![Notice::Journal(JournalFailure::Unwritable)]
+        );
+        // 共有が戻る。利用者の操作を待たずに、次の刻みで古い順に書く。
+        outage.set(false);
+        ticks(&mut screen, 1);
+        assert!(unwritten.borrow().is_empty());
+        let written: Vec<OpKind> = spy
+            .written
+            .borrow()
+            .iter()
+            .map(|op| op.kind().clone())
+            .collect();
+        assert_eq!(
+            written,
+            [
+                OpKind::Create(ItemId::new(ME, 1)),
+                OpKind::Create(ItemId::new(ME, 2))
+            ]
+        );
+        assert!(screen.notices().is_empty());
+    }
+
+    #[test]
+    fn unwritten_ops_wait_while_the_others_cannot_be_read() {
         let journal = FakeJournal {
-            fail_write: true,
+            fail_read: true,
             ..FakeJournal::default()
         };
+        let outage = Rc::clone(&journal.outage);
+        let unwritten = Rc::clone(&journal.unwritten);
+        outage.set(true);
+        let (mut screen, _) = screen_with(journal);
+        click(&mut screen, ADD_X, TOOLBAR_Y);
+        outage.set(false);
+        ticks(&mut screen, 1);
+        assert_eq!(unwritten.borrow().len(), 1);
+        assert!(
+            screen
+                .notices()
+                .contains(&Notice::Journal(JournalFailure::Unwritable))
+        );
+    }
+
+    #[test]
+    fn an_unwritten_op_keeps_its_notice_and_no_checkpoint_is_tried_meanwhile() {
+        let journal = FakeJournal::default();
+        journal.outage.set(true);
         let checkpoints = Rc::clone(&journal.checkpoints);
         let (mut screen, _) = screen_with(journal);
         click(&mut screen, ADD_X, TOOLBAR_Y);

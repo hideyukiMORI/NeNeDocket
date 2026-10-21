@@ -771,6 +771,27 @@ mod tests {
         let _cleaned = std::fs::remove_dir_all(&root);
     }
 
+    /// 読み直しの刻みの同期（Issue #99）: 操作を待たずに書き直し、他の参加者に届く。書くものが無ければ同期は何も書かない。
+    #[test]
+    fn a_sync_alone_writes_the_unwritten_ops_and_the_others_see_them() {
+        let root = temp("unwritten-tick");
+        let mut mine = FileJournal::open(&root, "Team", &account(ME, 1)).unwrap();
+        let mut theirs = FileJournal::open(&root, "Team", &account(OTHER, 2)).unwrap();
+        assert!(theirs.refresh_settled().unwrap().is_empty());
+        mine.own_mut().fail_next(2);
+        assert_eq!(mine.append(&create(1, ME)), Err(JournalFailure::Unwritable));
+        // 切れている間の刻み: 1 度開き直して試し、駄目なら残す。
+        mine.own_mut().fail_next(2);
+        assert_eq!(mine.sync(), Err(JournalFailure::Unwritable));
+        assert_eq!(mine.unwritten(), 1);
+        mine.sync().unwrap();
+        assert_eq!(mine.unwritten(), 0);
+        assert!(!mine.own_mut().is_dirty());
+        mine.sync().unwrap();
+        assert_eq!(theirs.refresh_settled().unwrap(), [create(1, ME)]);
+        let _cleaned = std::fs::remove_dir_all(&root);
+    }
+
     #[test]
     fn temporaries_of_my_account_and_the_owners_files_are_discarded_on_open() {
         let root = temp("leftovers");

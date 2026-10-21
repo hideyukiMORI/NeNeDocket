@@ -25,7 +25,8 @@ pub trait JournalPort {
     /// 書けない。
     fn append(&mut self, op: &Op) -> Result<(), JournalFailure>;
 
-    /// 追記を記憶装置に確実に書く。
+    /// 追記を記憶装置に確実に書く。書けていない操作があれば先に古い順に書き直す。
+    /// 読み直しの刻みごとにも呼ばれる（Issue #99）ので、書くもの・同期するものが無ければ何もしない（I/O をしない）。
     ///
     /// # Errors
     ///
