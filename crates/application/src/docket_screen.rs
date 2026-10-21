@@ -2641,6 +2641,15 @@ mod tests {
         let frame = idle(&mut screen);
         assert!(texts(&frame).iter().any(|text| text == "Anyone may edit"));
         assert!(texts(&frame).iter().any(|text| text == "Permissions"));
+        // グループに入っていれば役に添える。
+        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        screen
+            .ports
+            .journal_mut()
+            .administer(&[AdminCommand::Group(String::from("qa"), OTHER)])
+            .unwrap();
+        let grouped = texts(&idle(&mut screen));
+        assert!(grouped.iter().any(|text| text == "Editor (qa)"));
         keys(&mut screen, &[KeyIntent::Escape]);
         keys(&mut screen, &[KeyIntent::Tab; 6]);
         keys(&mut screen, &[KeyIntent::Char(' ')]);

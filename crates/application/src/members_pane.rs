@@ -1,4 +1,4 @@
-//! 参加者の段（FR-009）。表の下に、台帳に参加したアカウントの名前・ID・役。持ち主は行を押して編集者を切り替え、「権限」で有効・無効を切り替える（FR-010）。
+//! 参加者の段（FR-009）。表の下に、台帳に参加したアカウントの名前・ID・役（グループがあれば `役 (qa, dev)`）。持ち主は行を押して編集者を切り替え、「権限」で有効・無効を切り替える（FR-010）。
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -120,7 +120,7 @@ impl MembersPane {
             let texts = [
                 String::from(member.name()),
                 member.short_id(),
-                String::from(wording::text(language, member.role().word())),
+                role_text(language, member),
             ];
             for (cell, text) in table.cells(rect).into_iter().zip(texts) {
                 commands.push(Self::cell_text(
@@ -241,10 +241,19 @@ impl MembersPane {
             caret: None,
         }
     }
-
     /// 「権限」のチェックの ID（鍵で押すとき）。
     #[must_use]
     pub const fn permissions_toggle() -> WidgetId {
         PERMISSIONS_TOGGLE
+    }
+}
+
+/// 役の文字列。グループに入っていれば `編集者 (qa, dev)`。
+fn role_text(language: Language, member: &Member) -> String {
+    let role = wording::text(language, member.role().word());
+    if member.groups().is_empty() {
+        String::from(role)
+    } else {
+        alloc::format!("{role} ({})", member.groups().join(", "))
     }
 }
