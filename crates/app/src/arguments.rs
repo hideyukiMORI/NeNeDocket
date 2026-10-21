@@ -2,7 +2,8 @@
 //!
 //! `nene-docket [FOLDER]` で台帳を開く。フォルダが無ければ設定の最近の台帳（FR-012）、それも無ければ `./docket`。
 //! 持ち主は `--permissions on|off` / `--allow <account>` / `--disallow <account>` / `--group <name> <account>` /
-//! `--ungroup <name> <account>` で権限を変える（FR-010・ADR 0010）。これらがあれば画面は開かず、書いて終わる。
+//! `--ungroup <name> <account>` で権限を変える（FR-010・ADR 0010）。`--succeed <新 account> <旧 account>` で
+//! 引き継ぎ、`--owner <account>` で持ち主の交代（ADR 0013）。これらがあれば画面は開かず、書いて終わる。
 
 use std::path::{Path, PathBuf};
 
@@ -45,6 +46,10 @@ impl Arguments {
                 "--ungroup" => {
                     AdminCommand::Ungroup(name(&mut arguments)?, account(&mut arguments)?)
                 }
+                "--succeed" => {
+                    AdminCommand::Succeed(account(&mut arguments)?, account(&mut arguments)?)
+                }
+                "--owner" => AdminCommand::Owner(account(&mut arguments)?),
                 _ => return Err(LaunchFailure::Usage),
             };
             parsed.admin.push(command);
@@ -130,6 +135,7 @@ mod tests {
     fn admin_flags_are_read_in_order_with_the_folder_anywhere() {
         let id = AccountId::new(7);
         let hex = id.hex();
+        let other = AccountId::new(8).hex();
         let parsed = parse(&[
             "--permissions",
             "on",
@@ -144,6 +150,11 @@ mod tests {
             &hex,
             "--disallow",
             &hex,
+            "--succeed",
+            &hex,
+            &other,
+            "--owner",
+            &other,
         ])
         .unwrap();
         assert_eq!(parsed.folder_or(None), Path::new("/srv/team"));
@@ -155,6 +166,8 @@ mod tests {
                 AdminCommand::Group(String::from("qa"), id),
                 AdminCommand::Ungroup(String::from("qa"), id),
                 AdminCommand::Disallow(id),
+                AdminCommand::Succeed(id, AccountId::new(8)),
+                AdminCommand::Owner(AccountId::new(8)),
             ]
         );
         assert_eq!(
@@ -177,6 +190,9 @@ mod tests {
             vec!["--group", "", &hex],
             vec!["--group", "a:b", &hex],
             vec!["--ungroup", "--allow", &hex],
+            vec!["--succeed", &hex],
+            vec!["--succeed", &hex, "zz"],
+            vec!["--owner"],
         ] {
             assert!(
                 matches!(parse(&words), Err(LaunchFailure::Usage)),

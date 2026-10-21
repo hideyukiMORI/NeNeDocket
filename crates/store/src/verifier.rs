@@ -38,24 +38,26 @@ impl Verifier {
     }
 
     /// 台帳のフォルダから読む。`permissions.v1.txt` が無ければ持ち主だけ。あれば持ち主の鍵で本物と確かめる。
+    /// 持ち主の交代の直後（`handover`）は前の持ち主の鍵で確かめる（ADR 0013 の 4）。
     ///
     /// # Errors
     ///
-    /// 読めない・形が違う・署名が通らない・持ち主の鍵が `keys/` に無い。
+    /// 読めない・形が違う・署名が通らない・署名した人の鍵が `keys/` に無い。
     pub fn load(root: &Path, owner: AccountId, keys: &[KeyRecord]) -> Result<Self, StoreFailure> {
         let permissions = match permissions_store::read(root)? {
             None => Permissions::owner_only(owner),
-            Some((permissions, signature)) => {
+            Some(reading) => {
+                let signer = reading.handover().unwrap_or(owner);
                 let key = keys
                     .iter()
-                    .find(|record| record.id() == owner)
+                    .find(|record| record.id() == signer)
                     .ok_or(StoreFailure::UnverifiedPermissions)?;
-                if permissions.owner() != owner
-                    || !permissions_file::is_authentic(&permissions, &signature, &key.public())
+                if reading.permissions().owner() != owner
+                    || !permissions_file::is_authentic(&reading, &key.public())
                 {
                     return Err(StoreFailure::UnverifiedPermissions);
                 }
-                permissions
+                reading.into_permissions()
             }
         };
         Ok(Self::new(permissions, keys))
@@ -245,7 +247,7 @@ mod tests {
         let (_, only) = load_if_enabled(&root, Some(OWNER)).unwrap();
         assert_eq!(only.unwrap().permissions(), &Permissions::owner_only(OWNER));
         let permissions = Permissions::owner_only(OWNER).allowing(EDITOR);
-        permissions_store::write(&root, &permissions, owner.key()).unwrap();
+        permissions_store::write(&root, &permissions, owner.key(), None).unwrap();
         key_file::ensure_own(&root, &owner).unwrap();
         let (keys, loaded) = load_if_enabled(&root, Some(OWNER)).unwrap();
         assert_eq!(keys.len(), 1);
@@ -254,11 +256,37 @@ mod tests {
     }
 
     #[test]
+    fn right_after_a_handover_the_previous_owners_signature_is_accepted() {
+        let root = scratch("verifier-handover");
+        let previous = account(OWNER, 1);
+        let next = account(EDITOR, 2);
+        key_file::ensure_own(&root, &previous).unwrap();
+        key_file::ensure_own(&root, &next).unwrap();
+        let handed = Permissions::owner_only(OWNER).handed_to(EDITOR);
+        permissions_store::write(&root, &handed, previous.key(), Some(OWNER)).unwrap();
+        let (_, loaded) = load_if_enabled(&root, Some(EDITOR)).unwrap();
+        assert_eq!(loaded.unwrap().permissions(), &handed);
+        // 前の持ち主の鍵で署名したのに handover が無い。
+        permissions_store::write(&root, &handed, previous.key(), None).unwrap();
+        assert!(matches!(
+            load_if_enabled(&root, Some(EDITOR)),
+            Err(StoreFailure::UnverifiedPermissions)
+        ));
+        // handover の名が署名した鍵と違う。
+        permissions_store::write(&root, &handed, previous.key(), Some(STRANGER)).unwrap();
+        assert!(matches!(
+            load_if_enabled(&root, Some(EDITOR)),
+            Err(StoreFailure::UnverifiedPermissions)
+        ));
+        let _cleaned = std::fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn loading_refuses_a_file_without_the_owners_key_or_signature() {
         let root = scratch("verifier-refused");
         let owner = account(OWNER, 1);
         let permissions = Permissions::owner_only(OWNER).allowing(EDITOR);
-        permissions_store::write(&root, &permissions, owner.key()).unwrap();
+        permissions_store::write(&root, &permissions, owner.key(), None).unwrap();
         // 持ち主の鍵が keys/ に無い。
         assert!(matches!(
             load_if_enabled(&root, Some(OWNER)),
@@ -266,13 +294,14 @@ mod tests {
         ));
         key_file::ensure_own(&root, &owner).unwrap();
         // 持ち主でない鍵で署名し直した。
-        permissions_store::write(&root, &permissions, account(EDITOR, 2).key()).unwrap();
+        permissions_store::write(&root, &permissions, account(EDITOR, 2).key(), None).unwrap();
         assert!(matches!(
             load_if_enabled(&root, Some(OWNER)),
             Err(StoreFailure::UnverifiedPermissions)
         ));
         // 持ち主の欄が違う。
-        permissions_store::write(&root, &Permissions::owner_only(EDITOR), owner.key()).unwrap();
+        permissions_store::write(&root, &Permissions::owner_only(EDITOR), owner.key(), None)
+            .unwrap();
         assert!(matches!(
             load_if_enabled(&root, Some(OWNER)),
             Err(StoreFailure::UnverifiedPermissions)

@@ -1729,13 +1729,17 @@ mod tests {
                         AdminCommand::Allow(_)
                         | AdminCommand::Disallow(_)
                         | AdminCommand::Group(..)
-                        | AdminCommand::Ungroup(..),
+                        | AdminCommand::Ungroup(..)
+                        | AdminCommand::Succeed(..)
+                        | AdminCommand::Owner(_),
                         None,
                     ) => None,
                     (AdminCommand::Allow(id), Some(p)) => Some(p.allowing(*id)),
                     (AdminCommand::Disallow(id), Some(p)) => Some(p.disallowing(*id)),
                     (AdminCommand::Group(name, id), Some(p)) => Some(p.grouped(name, *id)),
                     (AdminCommand::Ungroup(name, id), Some(p)) => Some(p.ungrouped(name, *id)),
+                    (AdminCommand::Succeed(new, old), Some(p)) => Some(p.succeeding(*new, *old)),
+                    (AdminCommand::Owner(new), Some(p)) => Some(p.handed_to(*new)),
                 };
             }
             Ok(())

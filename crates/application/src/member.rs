@@ -1,4 +1,5 @@
 //! 台帳に参加したアカウント 1 人（FR-009）。`keys/` の名前と、権限から決まる役と、入っているグループ。
+//! 引き継がれた ID（ADR 0013）は、引き継いだ ID が同じ人なので出さない。
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -21,11 +22,14 @@ pub struct Member {
 }
 
 impl Member {
-    /// `keys/` の名前と権限（無ければ誰でも編集）から、ID の順に並べる。
+    /// `keys/` の名前と権限（無ければ誰でも編集）から、ID の順に並べる。引き継がれた ID は出さない。
     #[must_use]
     pub fn list(names: &[(AccountId, String)], permissions: Option<&Permissions>) -> Vec<Self> {
         let mut members: Vec<Self> = names
             .iter()
+            .filter(|(id, _)| {
+                permissions.is_none_or(|permissions| permissions.resolved(*id) == *id)
+            })
             .map(|(id, name)| Self {
                 id: *id,
                 name: name.clone(),
@@ -136,5 +140,17 @@ mod tests {
             MemberRole::Anyone.word(),
             nene_docket_core::word::Word::Anyone
         );
+    }
+
+    #[test]
+    fn a_succeeded_id_is_left_out_and_the_successor_carries_its_role() {
+        let permissions = Permissions::owner_only(OWNER)
+            .allowing(EDITOR)
+            .succeeding(EDITOR, VIEWER);
+        let members = Member::list(&names(), Some(&permissions));
+        let listed: Vec<AccountId> = members.iter().map(Member::id).collect();
+        assert_eq!(listed, [EDITOR, OWNER]);
+        assert_eq!(members[0].role(), MemberRole::Editor);
+        assert_eq!(Member::list(&names(), None).len(), 3);
     }
 }

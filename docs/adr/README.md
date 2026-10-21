@@ -28,7 +28,7 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0010](0010-signatures-and-permissions.md) | 権限を有効にした台帳では、操作の行に Ed25519 の署名を付け、読み手が公開鍵で検証する | 受理（Issue #29） |
 | [0011](0011-ui-language-is-a-versioned-setting.md) | 表示言語は 6 言語の閉じた集合で、文言は core の 1 表から出し、希望は版付きの設定に残して OS の観測値で解決する | 受理 |
 | [0012](0012-theme-model-and-builtin-colorschemes.md) | 配色は nene-nib の組み込み 125 テーマを写し、台帳の 8 色は本文の 3 色から整数の補間で導く。希望は設定に残し `system` は OS の明暗に従う | 受理 |
-| [0013](0013-key-rotation-and-one-key-per-machine.md) | 鍵は 1 台に 1 つ。同じ人の 2 台目は別のアカウントで、鍵の交代は持ち主が署名した引き継ぎで表す | 提案（施主の判断待ち） |
+| [0013](0013-key-rotation-and-one-key-per-machine.md) | 鍵は 1 台に 1 つ。同じ人の 2 台目は別のアカウントで、鍵の交代は持ち主が署名した引き継ぎで表す | 受理（Issue #51） |
 
 ## これから書くもの（Issue が立ったら）
 

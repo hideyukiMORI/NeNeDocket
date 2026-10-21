@@ -1,6 +1,6 @@
 # いまのタスク — NeNe Docket
 
-> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #48 まで）。
+> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #51 まで）。
 
 ## 状態
 
@@ -29,6 +29,7 @@
 | adapters-windows / ui-win32（Windows の窓・ADR 0009） | 🟡 Issue #22。`x86_64-pc-windows-gnu` の clippy 0 件・exe 1.9 MB。**Windows では未実行**（施主の Windows で確かめる・gate-proofs 第 19 節） |
 | IME の方式（FR-015） | ❌ ADR 未。コンテナには IM サーバ（fcitx / ibus）が無く XIM を測れない。施主の WSLg で測る |
 | 署名と権限（FR-010） | ✅ Issue #29・[ADR 0010](../adr/0010-signatures-and-permissions.md) 受理。core に `ed25519-dalek`、`account.v2.txt` に秘密鍵、台帳の `keys/` と `permissions.v1.txt`、ジャーナル版 2（署名付き）。持ち主はコマンドライン（`--permissions on` / `--allow` / `--group`）。Xvfb で 3 アカウント（gate-proofs 第 22 節） |
+| 鍵の交代と持ち主の交代（ADR 0013） | ✅ Issue #51・[ADR 0013](../adr/0013-key-rotation-and-one-key-per-machine.md) 受理。`--succeed NEW OLD` で引き継ぎ（古い ID の履歴は新しい名前・参加者の段から消える）、`--owner ACCOUNT` で持ち主の交代（前の持ち主の署名 ＋ `handover`・新しい持ち主が開くと署名し直す）。鍵を失くした持ち主は `docket.v1.txt` を手で直す（gate-proofs 第 32 節） |
 | FR-017 の実測（1 万件・1 年分の併合） | ✅ Issue #24。30 万操作・45 MB を 0.6〜0.7 秒で併合（gate-proofs 第 20 節）。スナップショットはまだ要らない |
 | CI の `check`（`make ci`）と commit-msg フック | ✅ PR #3 で CI が動き、枝名で落ちた（gate-proofs 第 10 節）。QLT-005・GIT-001・GIT-003 を active に |
 | ruleset（main の保護・squash-only） | 未設定。施主が GitHub で設定したら gate-proofs に記録する |
@@ -36,7 +37,7 @@
 ## 次に行うこと
 
 1. **ruleset（main の保護・squash-only・`check` を必須）を施主が GitHub で設定する。** 設定したら gate-proofs に記録し、GIT-002 / GIT-004 を active に。PR は harness の枝 `claude/cloud-session-qus6l5` から squash で merge している（件名は PR のタイトル・GIT-003 の形）
-2. **施主が ADR 0013（鍵の交代・2 台目）を受理・却下する。** 受理なら `succeeds` と `--owner` の Issue。グループを画面から変える。段の高さの調整
+2. グループを画面から変える。引き継ぎと持ち主の交代を画面から（いまはコマンドラインだけ）。段の高さの調整
 3. **IME の実測は施主の WSLg で**: fcitx5 か ibus を入れ、`XMODIFIERS=@im=fcitx` で XIM の preedit が x11rb の窓に届く経路（XIM プロトコルの自前実装か、IM サーバの D-Bus か）を決める ADR
 4. スナップショットの ADR は、1 年分の併合が 1 秒を超えてから（いまは 0.7 秒）
 5. 環境の setup script（環境の設定）に DEVELOPMENT_WORKFLOW 第 9 節の行を置く。リポジトリ側のフック（`.claude/hooks/session-start.sh`）には `mingw-w64` を足した（Issue #24）
@@ -45,7 +46,7 @@
 ## 残る穴
 
 - 本文の同時編集は項目単位で勝敗が付く（ADR 0004）。文字単位の併合はしない
-- 同じアカウントを 2 台で同時に開くことは守らない（`KeyMismatch` で示すだけ）。鍵の交代と 2 台目の扱いは [ADR 0013](../adr/0013-key-rotation-and-one-key-per-machine.md) を提案（Issue #45・施主の判断待ち）
+- 同じアカウントを 2 台で同時に開くことは守らない（`KeyMismatch` で示すだけ）。2 台目は別の ID で参加し、鍵の交代は持ち主の `--succeed`、持ち主の鍵の紛失は `docket.v1.txt` を手で直す（[ADR 0013](../adr/0013-key-rotation-and-one-key-per-machine.md)・Issue #51）。署名の外の経路なので、フォルダを書ける人は持ち主を名乗れる（ADR 0010 の守る相手と同じ）
 - 権限を有効にしなければ、なりすましは防げない（ファイルを直接編集すれば）。有効にすると、それより前の版 1 の履歴は捨てられて数に出る（ADR 0010）。秘密鍵は設定フォルダの平文
 - SMB の上で本当に壊れないかは、施主の共有で確かめるまで「動く」と書かない（QLT-013）
 - アクセシビリティは無い（ADR 0002）

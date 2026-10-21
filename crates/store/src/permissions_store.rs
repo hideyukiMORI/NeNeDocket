@@ -5,8 +5,9 @@ use std::io;
 use std::path::Path;
 
 use nene_docket_application::permissions_file;
+use nene_docket_application::permissions_reading::PermissionsReading;
+use nene_docket_core::account_id::AccountId;
 use nene_docket_core::permissions::Permissions;
-use nene_docket_core::signature::Signature;
 use nene_docket_core::signing_key::SigningKey;
 
 use crate::store_failure::StoreFailure;
@@ -19,7 +20,7 @@ pub const FILE_NAME: &str = "permissions.v1.txt";
 /// # Errors
 ///
 /// 読めない・形が違う。
-pub fn read(root: &Path) -> Result<Option<(Permissions, Signature)>, StoreFailure> {
+pub fn read(root: &Path) -> Result<Option<PermissionsReading>, StoreFailure> {
     match fs::read_to_string(root.join(FILE_NAME)) {
         Ok(text) => permissions_file::parse(&text)
             .map(Some)
@@ -29,7 +30,8 @@ pub fn read(root: &Path) -> Result<Option<(Permissions, Signature)>, StoreFailur
     }
 }
 
-/// 持ち主の鍵で署名して書く（上書き。ジャーナルでない）。
+/// 署名して書く（上書き。ジャーナルでない）。`signer` は持ち主の鍵。持ち主の交代の直後は前の持ち主の鍵で、
+/// `handover` にその ID（ADR 0013 の 4）。
 ///
 /// # Errors
 ///
@@ -37,20 +39,19 @@ pub fn read(root: &Path) -> Result<Option<(Permissions, Signature)>, StoreFailur
 pub fn write(
     root: &Path,
     permissions: &Permissions,
-    owner: &SigningKey,
+    signer: &SigningKey,
+    handover: Option<AccountId>,
 ) -> Result<(), StoreFailure> {
     fs::create_dir_all(root)?;
     fs::write(
         root.join(FILE_NAME),
-        permissions_file::encode(permissions, owner),
+        permissions_file::encode(permissions, signer, handover),
     )?;
     Ok(())
 }
 
 #[cfg(test)]
 mod tests {
-    use nene_docket_core::account_id::AccountId;
-
     use super::*;
 
     #[test]
@@ -63,14 +64,11 @@ mod tests {
         assert!(read(&root).unwrap().is_none());
         let key = SigningKey::from_bytes(&[8_u8; 32]);
         let permissions = Permissions::owner_only(AccountId::new(1)).allowing(AccountId::new(2));
-        write(&root, &permissions, &key).unwrap();
-        let (read_back, signature) = read(&root).unwrap().unwrap();
-        assert_eq!(read_back, permissions);
-        assert!(permissions_file::is_authentic(
-            &read_back,
-            &signature,
-            &key.public()
-        ));
+        write(&root, &permissions, &key, Some(AccountId::new(3))).unwrap();
+        let reading = read(&root).unwrap().unwrap();
+        assert_eq!(reading.permissions(), &permissions);
+        assert_eq!(reading.handover(), Some(AccountId::new(3)));
+        assert!(permissions_file::is_authentic(&reading, &key.public()));
         fs::write(root.join(FILE_NAME), "version = 1\n").unwrap();
         assert!(matches!(read(&root), Err(StoreFailure::BadPermissionsFile)));
         let _cleaned = fs::remove_dir_all(&root);

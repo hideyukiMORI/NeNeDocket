@@ -17,4 +17,8 @@ pub enum AdminCommand {
     Group(String, AccountId),
     /// グループから外す（空になれば消える）。
     Ungroup(String, AccountId),
+    /// 新しい ID が古い ID を引き継ぐ（新, 旧・ADR 0013 の 3）。
+    Succeed(AccountId, AccountId),
+    /// 持ち主を替える（ADR 0013 の 4）。今の持ち主だけができ、前の持ち主は編集者に残る。
+    Owner(AccountId),
 }
