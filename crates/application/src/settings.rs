@@ -1,4 +1,4 @@
-//! 再起動をまたいで残す設定（FR-012）。最近開いた台帳・他人のジャーナルを読み直す間隔・表示言語・配色・表の列の幅と順。
+//! 再起動をまたいで残す設定（FR-012）。最近開いた台帳・他人のジャーナルを読み直す間隔・表示言語・配色・表の列の幅と順・段の高さ・時刻の見せ方。
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 use nene_docket_core::language_choice::LanguageChoice;
 use nene_docket_core::theme_choice::ThemeChoice;
 
+use crate::clock_choice::ClockChoice;
 use crate::column_order::ColumnOrder;
 use crate::column_widths::ColumnWidths;
 use crate::pane_height::PaneHeight;
@@ -25,6 +26,7 @@ pub struct Settings {
     columns: ColumnWidths,
     order: ColumnOrder,
     pane: PaneHeight,
+    clock: ClockChoice,
 }
 
 impl Settings {
@@ -39,6 +41,7 @@ impl Settings {
             columns: ColumnWidths::initial(),
             order: ColumnOrder::initial(),
             pane: PaneHeight::Auto,
+            clock: ClockChoice::Local,
         }
     }
 
@@ -114,6 +117,18 @@ impl Settings {
     #[must_use]
     pub const fn pane(&self) -> PaneHeight {
         self.pane
+    }
+
+    /// 時刻の見せ方を変えた設定（Issue #78）。
+    #[must_use]
+    pub fn with_clock(self, clock: ClockChoice) -> Self {
+        Self { clock, ..self }
+    }
+
+    /// 時刻の見せ方（地方時か UTC か）。
+    #[must_use]
+    pub const fn clock(&self) -> ClockChoice {
+        self.clock
     }
 
     /// 最近開いた台帳。新しいものが先。

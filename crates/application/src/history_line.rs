@@ -17,6 +17,7 @@ use nene_docket_core::wall_clock::WallClock;
 use nene_docket_core::word::Word;
 use nene_docket_core::wording;
 
+use crate::clock_display::ClockDisplay;
 use crate::history_change::HistoryChange;
 use crate::item_number;
 
@@ -115,9 +116,9 @@ impl HistoryLine {
         lines
     }
 
-    /// 表の 3 列: いつ（UTC）・誰が・何を。台帳全体の行は課題の番号を、Undo の追記は表示言語の印を頭に付ける。
+    /// 表の 3 列: いつ（`display` の時差で・ずれた時計には印）・誰が・何を。台帳全体の行は課題の番号を、Undo の追記は表示言語の印を頭に付ける。
     #[must_use]
-    pub fn columns(&self, language: Language) -> [String; 3] {
+    pub fn columns(&self, language: Language, display: ClockDisplay) -> [String; 3] {
         let who = self.who.clone();
         let mark = if self.undo {
             wording::text(language, Word::UndoMark)
@@ -125,7 +126,7 @@ impl HistoryLine {
             ""
         };
         let change = format!("{}{mark}{}", self.prefix, self.change.describe(language));
-        [self.when.text(), who, change]
+        [display.text_of(self.when), who, change]
     }
 
     /// 壁時計。
@@ -217,6 +218,11 @@ mod tests {
 
     use super::*;
 
+    /// テストの見せ方: UTC・いまは遠い未来（どの操作にもずれの印が付かない）。
+    fn utc() -> ClockDisplay {
+        ClockDisplay::utc(WallClock::new(4_000_000_000))
+    }
+
     const A: AccountId = AccountId::new(0xAB00);
     const B: AccountId = AccountId::new(0xCD00);
 
@@ -280,7 +286,7 @@ mod tests {
         let lines = HistoryLine::lines(&ops, item, &names);
         let columns: Vec<[String; 3]> = lines
             .iter()
-            .map(|line| line.columns(Language::English))
+            .map(|line| line.columns(Language::English, utc()))
             .collect();
         assert_eq!(columns.len(), 6);
         assert_eq!(columns[0], ["1970-01-01 00:06", "0000", "deleted"]);
@@ -311,7 +317,7 @@ mod tests {
     fn changes_of(lines: &[HistoryLine]) -> Vec<String> {
         lines
             .iter()
-            .map(|line| line.columns(Language::English)[2].clone())
+            .map(|line| line.columns(Language::English, utc())[2].clone())
             .collect()
     }
 
@@ -340,7 +346,7 @@ mod tests {
         assert_eq!(changes[1], "succession: beth ← ann");
         assert_eq!(changes[2], "added to a group: qa: ann");
         assert_eq!(changes[3], "added an editor: ann");
-        assert_eq!(lines[1].columns(Language::English)[1], "beth");
+        assert_eq!(lines[1].columns(Language::English, utc())[1], "beth");
         assert!(matches!(
             lines[0].change(),
             HistoryChange::Administered { subject, .. } if subject.is_empty()
@@ -370,7 +376,7 @@ mod tests {
         assert_eq!(lines[2].snapshot().map(Item::title), Some("b"));
         assert!(lines[0].snapshot().is_some_and(Item::is_deleted));
         assert_eq!(
-            lines[1].columns(Language::Japanese)[2],
+            lines[1].columns(Language::Japanese, utc())[2],
             "取り消し: 題名 : b -> a"
         );
     }

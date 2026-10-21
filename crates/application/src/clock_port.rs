@@ -6,4 +6,9 @@ use nene_docket_core::wall_clock::WallClock;
 pub trait ClockPort {
     /// いま。
     fn now(&self) -> WallClock;
+
+    /// この機械の地方時と UTC の差（分・東が正）。表示にだけ使う（Issue #78）。知らないアダプタは 0（UTC）。
+    fn offset_minutes(&self) -> i32 {
+        0
+    }
 }

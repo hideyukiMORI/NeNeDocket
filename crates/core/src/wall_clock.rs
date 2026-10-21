@@ -22,11 +22,20 @@ impl WallClock {
         self.seconds
     }
 
-    /// `YYYY-MM-DD HH:MM`（UTC）。時差は知らない（アダプタが無い）。
+    /// `YYYY-MM-DD HH:MM`（UTC）。
     #[must_use]
     pub fn text(self) -> String {
-        let days = self.seconds.div_euclid(SECONDS_PER_DAY);
-        let second_of_day = self.seconds.rem_euclid(SECONDS_PER_DAY);
+        self.text_at(0)
+    }
+
+    /// `YYYY-MM-DD HH:MM`。UTC との差（分・東が正）を足した地方時で出す（時差はアダプタが知る・Issue #78）。
+    #[must_use]
+    pub fn text_at(self, offset_minutes: i32) -> String {
+        let shifted = self
+            .seconds
+            .saturating_add(i64::from(offset_minutes).saturating_mul(60));
+        let days = shifted.div_euclid(SECONDS_PER_DAY);
+        let second_of_day = shifted.rem_euclid(SECONDS_PER_DAY);
         let (year, month, day) = civil_from_days(days);
         let hour = second_of_day / 3_600;
         let minute = (second_of_day % 3_600) / 60;
@@ -65,5 +74,14 @@ mod tests {
         assert_eq!(WallClock::new(1_700_000_000).text(), "2023-11-14 22:13");
         assert_eq!(WallClock::new(951_782_400).text(), "2000-02-29 00:00");
         assert_eq!(WallClock::new(-1).text(), "1969-12-31 23:59");
+    }
+
+    #[test]
+    fn the_offset_shifts_the_shown_time_across_the_day_boundary() {
+        let late = WallClock::new(1_700_000_000);
+        assert_eq!(late.text(), "2023-11-14 22:13");
+        assert_eq!(late.text_at(540), "2023-11-15 07:13");
+        assert_eq!(late.text_at(-330), "2023-11-14 16:43");
+        assert_eq!(late.text_at(0), late.text());
     }
 }

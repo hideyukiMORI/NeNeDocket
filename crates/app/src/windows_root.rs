@@ -9,6 +9,7 @@ use nene_docket_adapters_windows::saved_settings::{self, SettingsStore};
 use nene_docket_adapters_windows::system_clock::SystemClock;
 use nene_docket_application::administration_log;
 use nene_docket_application::audit_report;
+use nene_docket_application::clock_display::ClockDisplay;
 use nene_docket_application::docket_screen::DocketScreen;
 use nene_docket_application::environment::Environment;
 use nene_docket_application::ledger::Ledger;
@@ -46,6 +47,7 @@ pub(crate) fn run(arguments: &Arguments) -> Result<(), LaunchFailure> {
             &folder,
             &account,
             settings.language().resolve(locale::read()),
+            ClockDisplay::of(settings.clock(), &SystemClock::observed()),
         );
     }
     if !arguments.attach().is_empty() {
@@ -58,7 +60,7 @@ pub(crate) fn run(arguments: &Arguments) -> Result<(), LaunchFailure> {
     let settings = saved_settings::remember(settings, &folder)?;
     let ports = Ports::new(
         Box::new(journal),
-        Box::new(SystemClock),
+        Box::new(SystemClock::observed()),
         Box::new(SettingsStore::in_config_directory()?),
         Box::new(ExternalOpener),
     );
@@ -87,12 +89,17 @@ fn record_administration(
     clippy::print_stdout,
     reason = "RS-014: 端末への出力は合成ルートだけが行う"
 )]
-fn print_audit(folder: &Path, account: &Account, language: Language) -> Result<(), LaunchFailure> {
+fn print_audit(
+    folder: &Path,
+    account: &Account,
+    language: Language,
+    display: ClockDisplay,
+) -> Result<(), LaunchFailure> {
     let (_ledger, ports) = open_ledger(folder, account)?;
     let ops = ports.journal().all_ops()?;
     print!(
         "{}",
-        audit_report::text(&ops, &ports.journal().names(), language)
+        audit_report::text(&ops, &ports.journal().names(), language, display)
     );
     Ok(())
 }
@@ -151,7 +158,7 @@ fn open_ledger(folder: &Path, account: &Account) -> Result<(Ledger, Ports), Laun
     }
     let ports = Ports::new(
         Box::new(journal),
-        Box::new(SystemClock),
+        Box::new(SystemClock::observed()),
         Box::new(SettingsStore::in_config_directory()?),
         Box::new(ExternalOpener),
     );

@@ -25,7 +25,7 @@
 | 参加者の段と画面からの権限（FR-009 / FR-010） | ✅ Issue #33。名前・ID・役。持ち主は「権限」のチェックで有効・無効を切り替え、行を押して選ぶと編集行（「編集者」のチェック・グループの欄 `,` 区切り）が出る（Issue #53）。グループは役の欄にも出る（Issue #47）（gate-proofs 第 24・30・33 節） |
 | 履歴から選び直す・上書きの通知（FR-008） | ✅ Issue #35。履歴の `Set` の行を押すとその値を新しい `Set` で追記。欄を読み込んだ後に他人が変えた値を上書きすると通知（gate-proofs 第 25 節） |
 | 過去の時点の再現（FR-006 後半） | ✅ Issue #39。履歴の行の上にポインタを置くと、表の選んだ行と本文の段がその時点の値になる（gate-proofs 第 27 節） |
-| 課題の履歴の段（FR-006） | ✅ Issue #18。いつ（UTC）・誰が（ID の先頭 4 桁）・何を・何から何へ。Undo の行は控えめな色（gate-proofs 第 17 節） |
+| 課題の履歴の段（FR-006） | ✅ Issue #18。いつ（地方時・設定で UTC・ずれた時計は `⚠`・Issue #78）・誰が（ID の先頭 4 桁）・何を・何から何へ。Undo の行は控えめな色（gate-proofs 第 17 節） |
 | adapters-windows / ui-win32（Windows の窓・ADR 0009） | 🟡 Issue #22。`x86_64-pc-windows-gnu` の clippy 0 件・exe 1.9 MB。**Windows では未実行**（施主の Windows で確かめる・gate-proofs 第 19 節） |
 | IME の方式（FR-015） | 🟡 Issue #80・[ADR 0020](../adr/0020-japanese-input-ime-paths.md) 受理。Windows は IMM32（`WM_IME_COMPOSITION`・候補の窓は欄の下・**実機で未確認**）、X11 は当面 Ctrl+V の貼り付け（Xvfb で確認・gate-proofs 第 46 節）。XIM の自前実装は施主の WSLg で測ってから |
 | 署名と権限（FR-010） | ✅ Issue #29・[ADR 0010](../adr/0010-signatures-and-permissions.md) 受理。core に `ed25519-dalek`、`account.v2.txt` に秘密鍵、台帳の `keys/` と `permissions.v1.txt`、ジャーナル版 2（署名付き）。持ち主はコマンドライン（`--permissions on` / `--allow` / `--group`）。Xvfb で 3 アカウント（gate-proofs 第 22 節） |
@@ -45,7 +45,7 @@
 - 🟡 #75 SMB の遅延: 他人の読み直しとスナップショットの書きをスレッドへ（`scanner`・`refresh` は待たない）、`--probe-share` で共有を測る道具。残り: 施主の NAS での実測・追記 ＋ sync の 2 秒まとめ（gate-proofs 第 45 節）
 - 🟡 #76 NAS の癖: 8 行の表（docs/design・避けた / 検出して示す / 許容と明記）、CNF-015（ファイルの時刻を使わない）、名前は小文字の ASCII のテスト。残り: 施主の NAS での確認（機種・SMB の版・`--probe-share`・2 台と 3 台目・gate-proofs 第 49 節）
 - ✅ #77 壊れたファイルへの耐性: 壊し方 × 形の表（docs/design）を store の `damage` で試す。切れた行に改行を足してから追記・止まった書きかけを数える・スナップショットに検査和（gate-proofs 第 44 節）
-- #78 壁時計のずれ: 地方時の表示・ずれの印・期限の「今日」・mtime 不使用の検査
+- 🟡 #78 壁時計のずれ: 履歴と `--audit` は地方時（設定 `clock = local|utc`・版 6）、5 分以上先の時計に `⚠`、期限の「今日」の約束、mtime は CNF-015（#76）。残り: 施主の 2 台の時計をずらした確認（gate-proofs 第 50 節）
 - 🟡 #79 Windows のファイルロック: `retry`（50 ms × 5 回）と `replace_file`（一時名 → rename）に全部の置き換えを通し、自分のジャーナルは `FILE_SHARE_DELETE` を外す（docs/design）。残り: 施主の Windows での 3 つの手順（gate-proofs 第 47 節）
 - 🟡 #80 日本語入力: ADR 0020。Windows は IMM32（確定前の文字列を欄に・候補の窓は欄の下）、X11 は Ctrl+V の貼り付け、確定前は下線。残り: 施主の Windows での確認・WSLg で XIM が届くかの実測（gate-proofs 第 46 節）
 - 🟡 #81 OS のフリーズ・停電・強制終了・スリープ復帰: 止まり方の表（docs/design・8 行にテスト）、追記に失敗した操作は覚えて書き直す・ハンドルの開き直し・`.tmp` の残骸は自分の分だけ捨てる。残り: 施主の実機の 3 手順（gate-proofs 第 48 節）

@@ -21,7 +21,7 @@
 | `keys/<id>.txt` | `BadKeyFile` で止めて示す | 同左（16 進の公開鍵が読めない） | 同左 | 同左 | `damage::tests`（空）・`key_file::tests` |
 | `permissions.v1.txt` | `BadPermissionsFile` / `UnverifiedPermissions` で止めて示す | 署名が合わず `UnverifiedPermissions` | 同左 | `BadPermissionsFile` | `permissions_store::tests`・`verifier::tests` |
 | 添付の写し `attachments/` | SHA-256 が合わず `⚠` | 同左 | 同左 | 同左 | `attachment_store::tests` |
-| `account.v2.txt`・`settings.v5.txt`（マシンのファイル・adapters） | 読めなければ起動を止めて示す（Issue #16） | 同左 | 同左 | 同左 | `account_file` / `settings_file` のテスト |
+| `account.v2.txt`・`settings.v6.txt`（マシンのファイル・adapters） | 読めなければ起動を止めて示す（Issue #16） | 同左 | 同左 | 同左 | `account_file` / `settings_file` のテスト |
 
 ## まだ
 

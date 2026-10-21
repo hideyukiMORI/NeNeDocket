@@ -1,5 +1,5 @@
 //! 台帳全体の時系列をテキストにする（監査・ADR 0014）。`nene-docket <フォルダ> --audit` が標準出力に出す。
-//! 1 行 1 操作: `<いつ UTC>\t<誰が>\t<何を>`（課題の操作は番号が頭に付く）。古いものが先。
+//! 1 行 1 操作: `<いつ（地方時・設定で UTC）>\t<誰が>\t<何を>`（課題の操作は番号が頭に付く）。古いものが先。
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -8,6 +8,7 @@ use nene_docket_core::account_id::AccountId;
 use nene_docket_core::language::Language;
 use nene_docket_core::op::Op;
 
+use crate::clock_display::ClockDisplay;
 use crate::history_line::HistoryLine;
 
 /// 欄の区切り。
@@ -15,7 +16,12 @@ const SEPARATOR: char = '\t';
 
 /// 全部の操作を古い順に。空なら空文字列。
 #[must_use]
-pub fn text<'a, I>(ops: I, names: &[(AccountId, String)], language: Language) -> String
+pub fn text<'a, I>(
+    ops: I,
+    names: &[(AccountId, String)],
+    language: Language,
+    display: ClockDisplay,
+) -> String
 where
     I: IntoIterator<Item = &'a Op>,
 {
@@ -24,7 +30,7 @@ where
     let rows: Vec<String> = lines
         .iter()
         .map(|line| {
-            let [when, who, change] = line.columns(language);
+            let [when, who, change] = line.columns(language, display);
             alloc::format!("{when}{SEPARATOR}{who}{SEPARATOR}{change}\n")
         })
         .collect();
@@ -61,9 +67,32 @@ mod tests {
         ];
         let names = [(A, String::from("alice"))];
         assert_eq!(
-            text(&ops, &names, Language::English),
+            text(
+                &ops,
+                &names,
+                Language::English,
+                ClockDisplay::utc(WallClock::new(120))
+            ),
             "1970-01-01 00:01\talice\t0000-1: created\n1970-01-01 00:02\talice\tturned permissions on\n"
         );
-        assert_eq!(text(&[], &names, Language::English), "");
+        // 地方時（+9 時間）で出し、自分の時計（-180 秒）より 5 分以上先の行（120 秒）には印が付く。
+        assert_eq!(
+            text(
+                &ops,
+                &names,
+                Language::English,
+                ClockDisplay::new(540, WallClock::new(-180))
+            ),
+            "1970-01-01 09:01\talice\t0000-1: created\n\u{26a0} 1970-01-01 09:02\talice\tturned permissions on\n"
+        );
+        assert_eq!(
+            text(
+                &[],
+                &names,
+                Language::English,
+                ClockDisplay::utc(WallClock::new(0))
+            ),
+            ""
+        );
     }
 }
