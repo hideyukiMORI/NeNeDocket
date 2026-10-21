@@ -24,6 +24,12 @@ const END: u32 = 0xff57;
 /// `XK_a` / `XK_A`。Ctrl と一緒なら全選択。
 const LOWER_A: u32 = 0x61;
 const UPPER_A: u32 = 0x41;
+/// `XK_z` / `XK_Z`。Ctrl と一緒なら Undo（FR-005）。
+const LOWER_Z: u32 = 0x7a;
+const UPPER_Z: u32 = 0x5a;
+/// `XK_y` / `XK_Y`。Ctrl と一緒なら Redo（FR-005）。
+const LOWER_Y: u32 = 0x79;
+const UPPER_Y: u32 = 0x59;
 
 /// 押されている修飾鍵。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -53,6 +59,8 @@ pub fn intent_of(keysym: u32, modifiers: Modifiers) -> Option<KeyIntent> {
         UP => Some(KeyIntent::Up),
         DOWN => Some(KeyIntent::Down),
         LOWER_A | UPPER_A if modifiers.control => Some(KeyIntent::SelectAll),
+        LOWER_Z | UPPER_Z if modifiers.control => Some(KeyIntent::Undo),
+        LOWER_Y | UPPER_Y if modifiers.control => Some(KeyIntent::Redo),
         _ if modifiers.control => None,
         0x20..=0x7e | 0xa0..=0xff => char::from_u32(keysym).map(KeyIntent::Char),
         _ => None,
@@ -111,6 +119,9 @@ mod tests {
         );
         assert_eq!(intent_of(LOWER_A, CONTROL), Some(KeyIntent::SelectAll));
         assert_eq!(intent_of(UPPER_A, CONTROL), Some(KeyIntent::SelectAll));
+        assert_eq!(intent_of(LOWER_Z, CONTROL), Some(KeyIntent::Undo));
+        assert_eq!(intent_of(UPPER_Y, CONTROL), Some(KeyIntent::Redo));
+        assert_eq!(intent_of(LOWER_Z, PLAIN), Some(KeyIntent::Char('z')));
         assert_eq!(intent_of(0x62, CONTROL), None);
     }
 

@@ -15,6 +15,7 @@ mod gathering;
 pub mod key_input;
 pub mod key_map;
 pub mod palette;
+mod pending_frame;
 mod pointer_tracker;
 mod transfer;
 pub mod ui_failure;

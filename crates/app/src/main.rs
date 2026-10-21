@@ -6,8 +6,13 @@
 
 use std::process::ExitCode;
 
+mod arguments;
+#[cfg(not(windows))]
+mod launch_failure;
 #[cfg(not(windows))]
 mod x11_root;
+
+use arguments::Arguments;
 
 #[cfg(not(windows))]
 use x11_root as root;
@@ -21,7 +26,7 @@ const VERSION: &str = env!("CARGO_PKG_VERSION");
     reason = "RS-014: 端末への出力は合成ルートだけが行う"
 )]
 fn main() -> ExitCode {
-    match root::run() {
+    match Arguments::parse(std::env::args().skip(1)).and_then(|arguments| root::run(&arguments)) {
         Ok(()) => ExitCode::SUCCESS,
         Err(failure) => {
             eprintln!("NeNe Docket {VERSION}: {failure}");

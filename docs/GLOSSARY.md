@@ -33,6 +33,12 @@
 | ポート（port） | 中核がプラットフォームを使うための型のある窓口 | `*Port`（application の `trait`） |
 | アダプタ（adapter） | ポートの実装。時計・乱数・クリップボード・画面・IME を中核へ渡す | adapters-x11 / adapters-windows |
 | ポートの束 | 合成ルートが中核へ渡すポートの組 | `Ports`（application） |
+| ジャーナルのポート | 自分のジャーナルへの追記・同期と、まだ渡していない操作の読み直し | `JournalPort`（application）・`FileJournal`（store） |
+| 台帳の状態 | 見た操作の列・併合した台帳・論理時計・Undo の束の持ち主。自分の操作を作り、他人の操作を取り込む | `Ledger`（application） |
+| Undo の束 | 自分の素の操作のうち生きているものと、戻されたもの。ジャーナルの順に `record` すれば組み直せる | `UndoStack`（application）・ADR 0004 の 4 |
+| 降格の文言（notice） | 書けない・読めない・宛先の無い操作・読めなかった行を、窓の下 1 行で示す | `Notice`（application）・FR-014 |
+| アカウント | このプロセスの ID と名前。設定フォルダの `account.v1.txt` | `Account` / `account_file`（application）・`saved_account`（adapters-x11）・ADR 0008 |
+| 読み直しの刻み | 他人のジャーナルを読み直す合図を、一定の間隔で窓へ送るスレッド | `RefreshTicker`（adapters-x11）・`atoms::REFRESH_NAME`（ui-x11）・ADR 0008 |
 | 合成ルート | 依存を結ぶ唯一の場所。端末と終了コードを持つ | `crates/app`（`main`） |
 | フレームの入力 | 窓の大きさ・ポインタ・押された鍵・確定前の文字列。UI が OS のイベントから作る | `FrameInput`（application） |
 | 表示フレーム | 最新の状態から生成する、描くための値の組（描画命令の列と倍率） | `DocketFrame`（application） |

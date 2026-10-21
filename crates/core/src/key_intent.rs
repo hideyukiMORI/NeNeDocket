@@ -34,4 +34,8 @@ pub enum KeyIntent {
     Up,
     /// 下へ。
     Down,
+    /// 元に戻す（Ctrl+Z）。
+    Undo,
+    /// やり直す（Ctrl+Y）。
+    Redo,
 }

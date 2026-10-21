@@ -108,6 +108,11 @@ impl Interaction {
         self.focus = None;
     }
 
+    /// フォーカスを部品に置く（追加した直後に題名の欄へ、など）。
+    pub fn focus_on(&mut self, id: WidgetId) {
+        self.focus = Some(id);
+    }
+
     /// フォーカスの持ち主。
     #[must_use]
     pub const fn focus(&self) -> Option<WidgetId> {

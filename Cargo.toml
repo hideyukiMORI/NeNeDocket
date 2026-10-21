@@ -5,6 +5,7 @@ members = [
     "crates/core",
     "crates/application",
     "crates/store",
+    "crates/adapters-x11",
     "crates/ui-x11",
     "crates/app",
     "xtask",

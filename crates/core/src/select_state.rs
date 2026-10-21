@@ -80,7 +80,9 @@ impl SelectState {
             | KeyIntent::Delete
             | KeyIntent::SelectAll
             | KeyIntent::Tab
-            | KeyIntent::BackTab => self,
+            | KeyIntent::BackTab
+            | KeyIntent::Undo
+            | KeyIntent::Redo => self,
         }
     }
 

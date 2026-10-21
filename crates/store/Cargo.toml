@@ -13,4 +13,5 @@ workspace = true
 
 # 🔴 内部は application と core だけ、外部クレートは 0（ARC-002 / ARC-013 / CNF-013）。
 [dependencies]
+nene-docket-application = { path = "../application" }
 nene-docket-core = { path = "../core" }

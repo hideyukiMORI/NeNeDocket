@@ -7,7 +7,7 @@
 Rust では層を**クレート**で表し、各クレートの `[dependencies]` が import 可能なものの全リストになる（ARC-002）。
 承認された向きの表は `xtask` の CNF-013 が持ち、マニフェストと照合する。
 
-🔴 クレートは具体的な責務とソースがある時だけ作る。**空の将来用モジュールは作らない。** Issue #9 の時点で在るのは `crates/core`・`crates/application`・`crates/store`・`crates/ui-x11`・`crates/app`・`xtask`。adapters と Windows の 2 クレートはまだ無い。
+🔴 クレートは具体的な責務とソースがある時だけ作る。**空の将来用モジュールは作らない。** Issue #11 の時点で在るのは `crates/core`・`crates/application`・`crates/store`・`crates/adapters-x11`・`crates/ui-x11`・`crates/app`・`xtask`。Windows の 2 クレートはまだ無い。
 
 ---
 
@@ -100,11 +100,13 @@ UI 状態・直列化・永続化・現在時刻を持たない。`#![no_std]`�
 ### `store`
 
 ジャーナルと設定ファイルの**形**と**置き場**。版と移行（ARC-009）、直列化の型、追記と同期（fsync）、他人のジャーナルの読み直し。
+application の `JournalPort` の実装（`FileJournal`）もここ。
 **決定性の禁止を適用しない 3 区画の 1 つ**（ARC-007）。CNF-012 の除外に明示する。外部クレート 0。
 
 ### `adapters-x11` / `adapters-windows`
 
 時計・乱数・クリップボード・画面・IME のポートを OS の API で実装する。取得値をその場で core の型へ変換する（ARC-008）。
+`adapters-x11` は壁時計（`SystemClock`）・アカウントの保存（`saved_account`・`/dev/urandom` の ID）・読み直しの刻み（`RefreshTicker`・スレッドが X の窓へ `ClientMessage` を送る。ADR 0008）を持つ。
 
 ### `ui-x11` / `ui-win32`
 

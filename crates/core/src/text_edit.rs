@@ -83,7 +83,9 @@ impl TextEdit {
             | KeyIntent::Tab
             | KeyIntent::BackTab
             | KeyIntent::Up
-            | KeyIntent::Down => self.clone(),
+            | KeyIntent::Down
+            | KeyIntent::Undo
+            | KeyIntent::Redo => self.clone(),
         }
     }
 
@@ -299,6 +301,8 @@ mod tests {
             KeyIntent::BackTab,
             KeyIntent::Up,
             KeyIntent::Down,
+            KeyIntent::Undo,
+            KeyIntent::Redo,
         ] {
             assert_eq!(edit.applied(intent), edit);
         }

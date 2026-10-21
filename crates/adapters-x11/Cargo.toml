@@ -1,0 +1,18 @@
+[package]
+name = "nene-docket-adapters-x11"
+description = "NeNe Docket のアダプタ（Linux）。壁時計・アカウントの保存と乱数の ID・読み直しの刻み。OS の資源に触れる 3 区画の 1 つ"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+# 🔴 内部は application と core だけ（ARC-002 / CNF-013）。外部は x11rb だけ（ADR 0002・読み直しの合図を窓へ送る）。
+[dependencies]
+nene-docket-application = { path = "../application" }
+nene-docket-core = { path = "../core" }
+x11rb = { version = "0.14.0", default-features = false }

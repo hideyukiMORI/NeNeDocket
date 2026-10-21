@@ -103,9 +103,20 @@ checksum = "32a66949e030da00e8c7d4434b251670a91556f4144941d37452769c25d58a53"
 name = "nene-docket"
 version = "0.1.0"
 dependencies = [
+ "nene-docket-adapters-x11",
  "nene-docket-application",
  "nene-docket-core",
+ "nene-docket-store",
  "nene-docket-ui-x11",
+]
+
+[[package]]
+name = "nene-docket-adapters-x11"
+version = "0.1.0"
+dependencies = [
+ "nene-docket-application",
+ "nene-docket-core",
+ "x11rb",
 ]
 
 [[package]]
@@ -123,6 +134,7 @@ version = "0.1.0"
 name = "nene-docket-store"
 version = "0.1.0"
 dependencies = [
+ "nene-docket-application",
  "nene-docket-core",
 ]
 
