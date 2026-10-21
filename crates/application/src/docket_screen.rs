@@ -137,7 +137,8 @@ impl DocketScreen {
         let toolbar = layout.row(self.px(ROW_PX), &self.toolbar_widths());
         let editor = layout.row(self.px(ROW_PX), &self.editor_widths());
         let (table_area, notice_rect) = self.split_notice(layout.remaining());
-        let table = self.table_layout(table_area);
+        let visible = self.visible_ids();
+        let table = self.table_layout(table_area, visible.len());
         let track = Self::track_of(table_area, self.px(SCROLL_WIDTH_PX));
         self.scroll = self
             .scroll
@@ -150,7 +151,7 @@ impl DocketScreen {
         }];
         let (filter_rect, filter_response) = self.probe_toolbar(&toolbar, &mut commands);
         let (state_rect, state_response) = self.probe_editor(&editor, &mut commands);
-        self.probe_table(&table, &mut commands);
+        self.probe_table(&table, &visible, &mut commands);
         self.probe_scroll(track, &mut commands);
         self.probe_filter_options(filter_rect);
         self.probe_state_options(state_rect);
@@ -230,6 +231,14 @@ impl DocketScreen {
     /// 絞り込んだ後の課題。表に出す順。
     #[must_use]
     pub fn visible_items(&self) -> Vec<&Item> {
+        self.visible_ids()
+            .into_iter()
+            .filter_map(|id| self.ledger.docket().item(id))
+            .collect()
+    }
+
+    /// 絞り込んだ後の課題の ID。表に出す順。1 フレームに 1 度だけ数える（FR-002）。
+    fn visible_ids(&self) -> Vec<ItemId> {
         let wanted = self
             .filter
             .chosen()
@@ -244,6 +253,7 @@ impl DocketScreen {
             .filter(|item| {
                 self.search.text().is_empty() || item.title().contains(self.search.text())
             })
+            .map(Item::id)
             .collect()
     }
 
@@ -301,10 +311,10 @@ impl DocketScreen {
         (table, Some(notice))
     }
 
-    fn table_layout(&self, remaining: PixelRect) -> TableLayout {
+    fn table_layout(&self, remaining: PixelRect, visible: usize) -> TableLayout {
         let width = remaining.width().saturating_sub(self.px(SCROLL_WIDTH_PX));
         let bounds = PixelRect::new(remaining.x(), remaining.y(), width, remaining.height());
-        let rows = u32::try_from(self.visible_items().len()).unwrap_or(u32::MAX);
+        let rows = u32::try_from(visible).unwrap_or(u32::MAX);
         TableLayout::new(bounds, self.px(ROW_PX), self.px(ROW_PX), rows).with_columns(alloc::vec![
             ColumnWidth::Fixed(self.px(NUMBER_WIDTH_PX)),
             ColumnWidth::Fill,
@@ -623,7 +633,12 @@ impl DocketScreen {
     }
 
     /// ヘッダと、見えている行だけ。行はクリックで選ぶ。
-    fn probe_table(&mut self, table: &TableLayout, commands: &mut Vec<DrawCommand>) {
+    fn probe_table(
+        &mut self,
+        table: &TableLayout,
+        visible: &[ItemId],
+        commands: &mut Vec<DrawCommand>,
+    ) {
         let header = table.header();
         commands.push(DrawCommand::Fill {
             rect: header,
@@ -642,10 +657,14 @@ impl DocketScreen {
             ));
         }
         commands.push(DrawCommand::Clip(table.body()));
-        let visible: Vec<Item> = self.visible_items().into_iter().cloned().collect();
         let mut chosen = None;
         for (index, rect) in table.visible_rows(self.scroll.offset()) {
-            let Some(item) = usize::try_from(index).ok().and_then(|i| visible.get(i)) else {
+            let Some(item) = usize::try_from(index)
+                .ok()
+                .and_then(|i| visible.get(i))
+                .and_then(|&id| self.ledger.docket().item(id))
+                .cloned()
+            else {
                 continue;
             };
             let response = if self.any_options_open() {
@@ -656,7 +675,7 @@ impl DocketScreen {
             if response.clicked() {
                 chosen = Some(item.id());
             }
-            self.row_commands((rect, table.cells(rect)), item, commands);
+            self.row_commands((rect, table.cells(rect)), &item, commands);
         }
         commands.push(DrawCommand::Unclip);
         if let Some(id) = chosen {

@@ -15,7 +15,7 @@
 | X11 の窓（application / ui-x11 / app・x11rb ＋ cairo-rs） | ✅ Issue #5・[ADR 0007](../adr/0007-japanese-font-family-chosen-at-startup.md)。Xvfb で表・検索・絞り込み・チェック・追加・スクロールを xdotool で駆動（gate-proofs 第 11 節）。1 万件の 1 フレーム 0.9 ms |
 | core の課題・操作・論理時計・併合（ADR 0004） | ✅ Issue #7。同じ操作の集合を別の順で読んでも同じ台帳になるテスト。region 99.58% |
 | store のジャーナル版 1（1 行 1 操作・CRC-32・追記と同期・読み直し・`docket.v1.txt`） | ✅ Issue #9。一時ディレクトリで 20 件のテスト。SMB の上は施主の共有で |
-| 画面とジャーナルの配線（`Ledger`・`Ports`・`FileJournal`・追加・題名・状態・削除・Ctrl+Z / Ctrl+Y・3 秒ごとの読み直し） | ✅ Issue #11・[ADR 0008](../adr/0008-account-file-and-refresh-tick.md)。Xvfb で 2 プロセスが同じフォルダを編集し、互いの変更が届いた（gate-proofs 第 14 節） |
+| 画面とジャーナルの配線（`Ledger`・`Ports`・`FileJournal`・追加・題名・状態・削除・Ctrl+Z / Ctrl+Y・3 秒ごとの読み直し） | ✅ Issue #11・[ADR 0008](../adr/0008-account-file-and-refresh-tick.md)。Xvfb で 2 プロセスが同じフォルダを編集し、互いの変更が届いた（gate-proofs 第 14 節）。併合した台帳で 1 万件の 1 フレーム 0.87 ms ＋ 0.70 ms |
 | adapters-x11（時計・アカウント・読み直しの刻み） | ✅ Issue #11 |
 | adapters-windows / ui-win32 | ❌ 無い |
 | IME の方式（FR-015） | ❌ ADR 未。コンテナには IM サーバ（fcitx / ibus）が無く XIM を測れない。施主の WSLg で測る |
@@ -28,7 +28,7 @@
 1. **PR #3（Issue #1 / #2 / #4）を merge する。** 枝は harness の `claude/cloud-session-qus6l5` で、CI の `make ci` は GIT-002 で落ちている（gate-proofs 第 10 節）。ruleset が無いので merge はできる。施主が squash の件名を PR のタイトル（GIT-003 の形）で付けて merge する。ruleset（main の保護・squash-only・`check` を必須）を設定したら gate-proofs に記録し、GIT-002 / GIT-004 を active に
 2. 署名の ADR と権限（FR-010）。担当・本文・期限・ラベルを画面から変える経路（FR-001 の残り）。設定ファイル（FR-012）に最近開いた台帳と読み直しの間隔を置く
 3. **IME の実測は施主の WSLg で**: fcitx5 か ibus を入れ、`XMODIFIERS=@im=fcitx` で XIM の preedit が x11rb の窓に届く経路（XIM プロトコルの自前実装か、IM サーバの D-Bus か）を決める ADR
-4. スナップショットの ADR（FR-017 を実測してから）。1 万件の表を併合した `Docket` で測り直す
+4. スナップショットの ADR（FR-017 を実測してから）
 5. 環境の setup script に `cargo-llvm-cov`・`xdotool`・`mingw-w64` を足す（DEVELOPMENT_WORKFLOW 第 9 節）
 
 ## 残る穴
