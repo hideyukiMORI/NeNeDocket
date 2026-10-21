@@ -85,6 +85,12 @@ impl HistoryLine {
     pub const fn is_undo(&self) -> bool {
         self.undo
     }
+
+    /// 何を（`Set` なら項目と前後の値。選び直しに使う・FR-008）。
+    #[must_use]
+    pub const fn change(&self) -> &HistoryChange {
+        &self.change
+    }
 }
 
 /// `keys/` にある名前、無ければ ID の先頭。
@@ -202,6 +208,18 @@ mod tests {
             ["1970-01-01 00:03", "beth", "State : Open -> Done"]
         );
         assert_eq!(columns[5][2], "created");
+    }
+
+    #[test]
+    fn lines_carry_the_change_the_time_and_the_language() {
+        let item = ItemId::new(A, 1);
+        let ops = sample_ops(item);
+        let lines = HistoryLine::lines(&ops, item, &[]);
+        assert_eq!(lines[5].change(), &HistoryChange::Created);
+        assert!(matches!(
+            lines[2].change(),
+            HistoryChange::Set { after, .. } if *after == FieldValue::Title(String::from("b"))
+        ));
         assert_eq!(lines[5].when(), WallClock::new(60));
         assert_eq!(
             lines[1].columns(Language::Japanese)[2],

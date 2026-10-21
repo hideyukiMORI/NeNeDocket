@@ -1,6 +1,6 @@
 # いまのタスク — NeNe Docket
 
-> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #33 まで）。
+> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #35 まで）。
 
 ## 状態
 
@@ -23,6 +23,7 @@
 | 表示言語 6 つと配色 125（FR-019 / FR-012 の見え） | ✅ Issue #27・[ADR 0011](../adr/0011-ui-language-is-a-versioned-setting.md) / [ADR 0012](../adr/0012-theme-model-and-builtin-colorschemes.md)。設定は版 2。Xvfb で日本語・简体中文・한국어・Español と dracula / solarized-light（gate-proofs 第 21 節）。翻訳と配色の見た目は施主の目を通していない |
 | 本文（複数行の欄・FR-001） | ✅ Issue #31。core の `text_area`、道具の段の「本文」、表の下の段（履歴と同時なら 1/4 ずつ）。検索は本文にも。Xvfb で 2 プロセス（gate-proofs 第 23 節） |
 | 参加者の段と画面からの権限（FR-009 / FR-010） | ✅ Issue #33。名前・ID・役。持ち主は「権限」のチェックと行の押下で編集者を切り替える。グループはコマンドラインだけ（gate-proofs 第 24 節） |
+| 履歴から選び直す・上書きの通知（FR-008） | ✅ Issue #35。履歴の `Set` の行を押すとその値を新しい `Set` で追記。欄を読み込んだ後に他人が変えた値を上書きすると通知（gate-proofs 第 25 節） |
 | 課題の履歴の段（FR-006） | ✅ Issue #18。いつ（UTC）・誰が（ID の先頭 4 桁）・何を・何から何へ。Undo の行は控えめな色（gate-proofs 第 17 節） |
 | adapters-windows / ui-win32（Windows の窓・ADR 0009） | 🟡 Issue #22。`x86_64-pc-windows-gnu` の clippy 0 件・exe 1.9 MB。**Windows では未実行**（施主の Windows で確かめる・gate-proofs 第 19 節） |
 | IME の方式（FR-015） | ❌ ADR 未。コンテナには IM サーバ（fcitx / ibus）が無く XIM を測れない。施主の WSLg で測る |
@@ -56,4 +57,4 @@
 - 設定の「列の幅と順」はまだ無い（列幅を変える経路ができてから）。見えは Issue #27 で入った
 - X11 では OS の明暗を観測できない（`system` はライト）。GNOME の `color-scheme` などを読む経路は別の Issue。利用者のテーマファイル（nene-nib の `.v1.theme`）もまだ
 - 翻訳（6 言語 × 31 語）と導出した配色の見た目は施主の確認待ち
-- 履歴の「いつ」は UTC（時差を知るアダプタが無い）、「誰が」は `keys/` の名前（無ければ ID の先頭 4 桁）。過去の時点の状態の再現（FR-006 後半）はまだ
+- 履歴の「いつ」は UTC（時差を知るアダプタが無い）、「誰が」は `keys/` の名前（無ければ ID の先頭 4 桁）。過去の時点の状態の再現（FR-006 後半）はまだ（履歴の行を押して 1 項目ずつ選び直せるだけ・Issue #35）

@@ -31,6 +31,8 @@ pub enum Notice {
     KeyMismatch,
     /// 自分はこの台帳の編集者でない。追記は読み手が捨てる。
     NotAnEditor,
+    /// 欄を読み込んだ後に他人が変えた値を上書きした（FR-008）。履歴で選び直せる。
+    Overwrote,
 }
 
 impl Notice {
@@ -50,6 +52,7 @@ impl Notice {
             Self::UnverifiedLines(count) => format!("{}: {count}", word(Word::UnverifiedLines)),
             Self::KeyMismatch => String::from(word(Word::KeyMismatch)),
             Self::NotAnEditor => String::from(word(Word::NotAnEditor)),
+            Self::Overwrote => String::from(word(Word::Overwrote)),
         }
     }
 }
@@ -72,6 +75,7 @@ mod tests {
             Notice::UnverifiedLines(3),
             Notice::KeyMismatch,
             Notice::NotAnEditor,
+            Notice::Overwrote,
         ];
         for language in Language::ALL {
             for notice in all {

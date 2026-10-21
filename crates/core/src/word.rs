@@ -76,4 +76,6 @@ pub enum Word {
     Permissions,
     /// 権限を書けない。
     CannotWritePermissions,
+    /// 他人の変更を上書きした（履歴で選び直せる・FR-008）。
+    Overwrote,
 }

@@ -23,7 +23,7 @@
 | 論理時計（clock） | 操作の全順序を決める数。Lamport 時計。壁時計は表示にだけ使う | `LogicalClock`（core） |
 | 壁時計（wall clock） | 人に見せる時刻。順序には使わない | `WallClock`（core・`ClockPort` から値として） |
 | 勝者（winner） | 同じ項目への操作のうち、全順序で最後のもの。負けた値は履歴に残る | `merge` の規則 |
-| 履歴（history） | 課題ごとの操作の列。勝者も敗者も含む | `merge::history`（core） |
+| 履歴（history） | 課題ごとの操作の列。勝者も敗者も含む。行を押すとその値を選び直す（FR-008） | `merge::history`（core） |
 | Undo の束 | 自分の操作のうち、まだ戻していないものと戻したもの | `UndoStack`（application） |
 | アカウント（account） | 台帳に書く人。ID・名前・署名する鍵 | `AccountId`（core）・`Account`（application）・`account.v2.txt`（adapters） |
 | 鍵（key） | アカウントの Ed25519 の鍵対。秘密鍵は設定フォルダ、公開鍵は台帳の `keys/<account>.v1.pub`（名前も） | `SigningKey` / `PublicKey`（core）・`KeyRecord`（application）・`key_file`（store）・ADR 0010 |
