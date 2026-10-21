@@ -396,7 +396,24 @@ Undo は逆の操作の**追記**で、ジャーナルは一度も書き換え�
 - SMB の上（施主の共有で）。2 プロセスは同じマシンの同じディレクトリ
 - IME（第 11.5 節と同じ）・WM のある環境・Windows
 
-## 15. 再現
+## 15. Issue #14 — 担当と期限を画面から変える（2026-10-21）
+
+同じコンテナ。application に `EditSlot`（題名・担当・期限の欄と項目の行き来）、`Notice::NotADate`。編集行は題名・担当・期限・状態・Delete の 5 列、表に期限の列。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `doc-check` | 差分なし・0 件・警告なし |
+| `make test` | 227 件（application 33、ほかは変わらず） |
+| `make conformance` | 違反なし（145 ファイル） |
+| `make coverage` | core ＋ application regions 99.53% |
+
+Xvfb（`:97`・1 プロセス）: `Add` → 題名 → Tab → 担当 `rina` → Tab → 期限に `next week` → Enter。
+窓の下に `due: not a date (YYYY-MM-DD), not saved` が出て、ジャーナルには `title` と `assignee` だけが追記された（[01-bad-date](screenshots/2026-10-21-fields-01-bad-date.png)）。
+Ctrl+A → `2026-11-30` → Enter で文言が消え、表の `Due` に出て、`due` が追記された（[02-fields](screenshots/2026-10-21-fields-02-fields.png)）。
+
+🔴 `xdotool type` はこのコンテナのロケールで日本語を打てない（`Invalid multi-byte sequence`）。日本語の表示は第 11.3 節で確かめてあり、今回は ASCII の題名で駆動した。
+
+## 16. 再現
 
 ```bash
 make prove
