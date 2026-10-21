@@ -1121,6 +1121,19 @@ A は既定の `%APPDATA%`、B は `APPDATA=C:\Users\info\WORKS\NeNeDocket\appda
 - 最初の自動の試しはスクリプトの文字コードを誤り（BOM なしの UTF-8 を Windows PowerShell 5.1 が CP932 で読んだ）、題名が化けた（`A縺ｮ蜷梧凾` 等）。アプリの不具合ではない。
 - 2 台の PC・NAS の上ではまだ測っていない（51 節の NAS の項）。
 
+### 51.5 ドラッグ＆ドロップと添付の段（文・CSV / TSV・画像・「開く」）
+
+見本（WSL で作って `samples\` に置いた）: `memo.txt`（日本語）・`list-utf8.csv`・`list-sjis.csv`（`iconv` で Shift_JIS）・`members.tsv`・`photo.png`（1600×1000）・`photo.jpg`（4000×3000・1,600,243 バイト）・`doc.pdf`（手で組んだ 1 ページ）。
+
+手順: エクスプローラーから `memo.txt` を表の 9fcb-1 の行へ → 「添付」の段を出す → 残りの 6 つをまとめて段へ → 1 つずつ選ぶ（CSV・TSV は表、PNG・JPEG はホイールで拡大・ドラッグで移動、PDF は「開く」）→ B でも 9fcb-1 の添付を見る。
+
+- **施主の報告:** 「全部想定通り」。
+- **ジャーナル:** A の `attach` が 7 行（52〜58 行目・連番 1〜7・大きさと SHA-256 と名前）。まとめて落とした 6 つはエクスプローラーの渡した順（`members.tsv`・`photo.jpg`・`photo.png`・`doc.pdf`・`list-sjis.csv`・`list-utf8.csv`）。
+- **写し:** `attachments\9fcb…-1\1-memo.txt` 〜 `7-list-utf8.csv`。7 つとも SHA-256 が元のファイルと一致した（WSL で `sha256sum`）。
+- **スクリーンショット（施主の操作の後に WSL から `PrintWindow` で撮った）:** A は JPEG を段の中に出している（[real-07](screenshots/2026-10-21-real-07-windows-attachment-jpeg.png)）。B の添付の段にも 7 つが同じ大きさ・SHA-256 で並ぶ（[real-08](screenshots/2026-10-21-real-08-windows-attachments-in-b.png)）。
+
+🔴 **正直に:** Shift_JIS の CSV を出した画面と拡大した JPEG の画面は撮っていない（施主の「想定通り」だけ）。JPEG が出るまでの秒数は測っていない。PDF が既定のアプリで開いたことは施主の報告だけが根拠。
+
 ## 52. 再現
 
 ```bash
