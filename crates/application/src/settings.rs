@@ -1,4 +1,4 @@
-//! 再起動をまたいで残す設定（FR-012）。最近開いた台帳・他人のジャーナルを読み直す間隔・表示言語・配色。
+//! 再起動をまたいで残す設定（FR-012）。最近開いた台帳・他人のジャーナルを読み直す間隔・表示言語・配色・表の列の幅。
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -6,18 +6,21 @@ use alloc::vec::Vec;
 use nene_docket_core::language_choice::LanguageChoice;
 use nene_docket_core::theme_choice::ThemeChoice;
 
+use crate::column_widths::ColumnWidths;
+
 /// 最近の台帳を覚える数。
 const RECENT_LIMIT: usize = 10;
 /// 読み直しの間隔の既定（秒・ADR 0004 の 8）。
 const DEFAULT_REFRESH_SECONDS: u64 = 3;
 
-/// 最近開いた台帳のフォルダ（新しいものが先）・読み直しの間隔（秒）・表示言語の希望・配色の希望。
+/// 最近開いた台帳のフォルダ（新しいものが先）・読み直しの間隔（秒）・表示言語の希望・配色の希望・列の幅。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Settings {
     recent: Vec<String>,
     refresh_seconds: u64,
     language: LanguageChoice,
     theme: ThemeChoice,
+    columns: ColumnWidths,
 }
 
 impl Settings {
@@ -29,6 +32,7 @@ impl Settings {
             refresh_seconds: DEFAULT_REFRESH_SECONDS,
             language: LanguageChoice::System,
             theme: ThemeChoice::System,
+            columns: ColumnWidths::initial(),
         }
     }
 
@@ -68,6 +72,18 @@ impl Settings {
     #[must_use]
     pub fn with_theme(self, theme: ThemeChoice) -> Self {
         Self { theme, ..self }
+    }
+
+    /// 列の幅を変えた設定。
+    #[must_use]
+    pub fn with_columns(self, columns: ColumnWidths) -> Self {
+        Self { columns, ..self }
+    }
+
+    /// 列の幅。
+    #[must_use]
+    pub const fn columns(&self) -> ColumnWidths {
+        self.columns
     }
 
     /// 最近開いた台帳。新しいものが先。
@@ -136,6 +152,17 @@ mod tests {
         assert_eq!(settings.refresh_seconds(), 1);
         assert_eq!(settings.language(), LanguageChoice::Fixed(Language::Korean));
         assert_eq!(settings.theme(), dracula);
+        assert_eq!(settings.columns(), ColumnWidths::initial());
+        assert_eq!(
+            settings
+                .clone()
+                .with_columns(
+                    ColumnWidths::initial().with(crate::table_column::TableColumn::Due, 200)
+                )
+                .columns()
+                .get(crate::table_column::TableColumn::Due),
+            Some(200)
+        );
         let changed = settings
             .with_language(LanguageChoice::System)
             .with_theme(ThemeChoice::System);
