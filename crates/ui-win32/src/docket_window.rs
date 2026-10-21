@@ -19,15 +19,20 @@ use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
     VK_CONTROL, VK_SHIFT,
 };
+use windows::Win32::UI::Shell::{
+    DragAcceptFiles, DragFinish, DragQueryFileW, DragQueryPoint, HDROP,
+};
 use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DispatchMessageW, GWLP_USERDATA,
     GetMessageW, GetWindowLongPtrW, IDC_ARROW, KillTimer, LoadCursorW, MSG, PostQuitMessage,
     RegisterClassExW, SW_SHOW, SetTimer, SetWindowLongPtrW, ShowWindow, TranslateMessage,
-    WINDOW_EX_STYLE, WM_CHAR, WM_DESTROY, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP,
-    WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_PAINT, WM_SIZE, WM_TIMER, WNDCLASSEXW,
-    WS_OVERLAPPEDWINDOW,
+    WINDOW_EX_STYLE, WM_CHAR, WM_DESTROY, WM_DROPFILES, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN,
+    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_PAINT, WM_SIZE, WM_TIMER,
+    WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
 };
 use windows::core::{PCWSTR, w};
+
+use nene_docket_core::pixel_point::PixelPoint;
 
 use crate::key_input::{self, Modifiers};
 use crate::win32_failure::Win32Failure;
@@ -75,6 +80,7 @@ pub fn run(screen: DocketScreen, refresh_seconds: u64) -> Result<(), Win32Failur
     let cell: AppCell = RefCell::new(WindowsApp::new(screen, HWND(ptr::null_mut())));
     let created = create(&raw const cell)?;
     cell.borrow_mut().attach(created);
+    accept_drops(created);
     let interval = u32::try_from(refresh_seconds.saturating_mul(MILLIS_PER_SECOND))
         .map_err(|_error| Win32Failure::GeometryOutOfRange)?;
     // SAFETY: 自分の窓にタイマーを結ぶ。手続きは無く、WM_TIMER で届く。
@@ -223,12 +229,70 @@ fn dispatch(
             app.refresh();
             Some(LRESULT(0))
         }
+        WM_DROPFILES => {
+            dropped(app, wparam);
+            Some(LRESULT(0))
+        }
         WM_DESTROY => {
             stop_timer(window);
             post_quit();
             Some(LRESULT(0))
         }
         _other => None,
+    }
+}
+
+/// 落とされたファイル（`WM_DROPFILES`）。位置（窓の座標）とパスの列を読んで、1 フレームにする。
+#[expect(
+    unsafe_code,
+    reason = "RS-010: Win32 の DragQueryPoint / DragQueryFileW / DragFinish を呼ぶ（ADR 0002 の 4）"
+)]
+fn dropped(app: &mut WindowsApp, wparam: WPARAM) {
+    let handle = HDROP(ptr::with_exposed_provenance_mut(wparam.0));
+    let mut point = POINT { x: 0, y: 0 };
+    // SAFETY: handle は WM_DROPFILES の wparam。point はこの関数の局所。
+    let located = unsafe { DragQueryPoint(handle, &raw mut point) }.as_bool();
+    // SAFETY: 同じ handle。u32::MAX は数を問う約束。
+    let count = unsafe { DragQueryFileW(handle, u32::MAX, None) };
+    let mut paths = Vec::new();
+    for index in 0..count {
+        // SAFETY: 長さを問い、その分（＋ 終端）の緩衝を渡す。
+        let length = unsafe { DragQueryFileW(handle, index, None) };
+        let mut buffer = vec![0_u16; usize::try_from(length).unwrap_or(0).saturating_add(1)];
+        // SAFETY: buffer は長さ ＋ 1 で、呼び出しの間生きている。
+        let written = unsafe { DragQueryFileW(handle, index, Some(&mut buffer)) };
+        let units = buffer
+            .get(..usize::try_from(written).unwrap_or(0))
+            .unwrap_or(&[]);
+        let text = String::from_utf16_lossy(units);
+        if !text.is_empty() {
+            paths.push(text);
+        }
+    }
+    // SAFETY: 読み終えた handle を OS に返す。
+    unsafe {
+        DragFinish(handle);
+    }
+    let (x, y) = if located {
+        (point.x, point.y)
+    } else {
+        (0_i32, 0_i32)
+    };
+    app.dropped(
+        PixelPoint::new(u16::try_from(x).unwrap_or(0), u16::try_from(y).unwrap_or(0)),
+        paths,
+    );
+}
+
+/// ファイルを落とせる窓にする（`DragAcceptFiles`）。
+#[expect(
+    unsafe_code,
+    reason = "RS-010: Win32 の DragAcceptFiles を呼ぶ（ADR 0002 の 4）"
+)]
+fn accept_drops(window: HWND) {
+    // SAFETY: 自分の窓に印を付けるだけ。
+    unsafe {
+        DragAcceptFiles(window, true);
     }
 }
 

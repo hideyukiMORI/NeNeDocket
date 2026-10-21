@@ -6,6 +6,7 @@ use nene_docket_application::docket_frame::DocketFrame;
 use nene_docket_application::docket_screen::DocketScreen;
 use nene_docket_application::frame_input::FrameInput;
 use nene_docket_core::key_intent::KeyIntent;
+use nene_docket_core::pixel_point::PixelPoint;
 use nene_docket_core::pixel_rect::PixelRect;
 use nene_docket_core::pointer_input::PointerInput;
 use windows::Win32::Foundation::HWND;
@@ -78,6 +79,13 @@ impl WindowsApp {
     /// `WM_CHAR` の UTF-16 の単位。字が完成すれば鍵にする。
     pub(crate) fn char_unit(&mut self, unit: u16) -> Option<char> {
         self.chars.push(unit)
+    }
+
+    /// 落とされたファイル（`WM_DROPFILES`・FR-021 の第 2 段）を 1 フレームにする。
+    pub(crate) fn dropped(&mut self, point: PixelPoint, paths: Vec<String>) {
+        let input = FrameInput::new(self.bounds, self.pointer.current()).with_drop(point, paths);
+        self.frame = Some(self.screen.step(&input));
+        self.invalidate();
     }
 
     /// 読み直しの合図（`WM_TIMER`）。

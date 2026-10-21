@@ -307,6 +307,7 @@ impl DocketScreen {
         self.scroll = self
             .scroll
             .resized(table.content_height(), u32::from(table.body().height()));
+        self.take_drop(input, (&table, &visible), attachments_area);
 
         self.interaction.begin(input.pointer());
         let mut commands = alloc::vec![DrawCommand::Fill {
@@ -950,25 +951,58 @@ impl DocketScreen {
             return;
         };
         match action {
-            AttachmentsAction::Attach(source) => {
-                let sequence = item.next_attachment();
-                match self
-                    .ports
-                    .journal_mut()
-                    .copy_attachment(item.id(), sequence, &source)
-                {
-                    Ok(attachment) => self.compose(OpKind::Attach {
-                        item: item.id(),
-                        attachment,
-                    }),
-                    Err(failure) => self.write_failure = Some(failure),
-                }
-            }
+            AttachmentsAction::Attach(source) => self.attach_file(item.id(), &source),
             AttachmentsAction::Detach(sequence) => self.compose(OpKind::Detach {
                 item: item.id(),
                 sequence,
             }),
             AttachmentsAction::Open(sequence) => self.open_attachment(&item, sequence),
+        }
+    }
+
+    /// ファイルを写してから `Attach` を追記する（FR-021）。連番はそのときの課題の次。写せなければ示す（FR-014）。
+    fn attach_file(&mut self, item: ItemId, source: &str) {
+        let sequence = self
+            .ledger
+            .docket()
+            .item(item)
+            .map_or(1, Item::next_attachment);
+        match self
+            .ports
+            .journal_mut()
+            .copy_attachment(item, sequence, source)
+        {
+            Ok(attachment) => self.compose(OpKind::Attach { item, attachment }),
+            Err(failure) => self.write_failure = Some(failure),
+        }
+    }
+
+    /// 落とされたファイル（FR-021 の第 2 段）。表の行ならその課題、添付の段なら選んでいる課題に添付し、その行を選んで段を出す。他の場所は何もしない。
+    fn take_drop(
+        &mut self,
+        input: &FrameInput,
+        (table, visible): (&TableLayout, &[ItemId]),
+        attachments_area: Option<PixelRect>,
+    ) {
+        let Some((point, paths)) = input.drop() else {
+            return;
+        };
+        let on_row = table
+            .row_at(self.scroll.offset(), point)
+            .and_then(|index| usize::try_from(index).ok())
+            .and_then(|index| visible.get(index).copied());
+        let on_pane = attachments_area
+            .filter(|area| area.contains(point))
+            .and(self.selected);
+        let Some(item) = on_row.or(on_pane) else {
+            return;
+        };
+        self.select(item);
+        if !self.attachments.is_shown() {
+            self.attachments.toggle();
+        }
+        for path in paths {
+            self.attach_file(item, path);
         }
     }
 
@@ -3496,6 +3530,57 @@ mod tests {
                 .contains(&Notice::Journal(JournalFailure::AttachmentUndecodable))
         );
         assert!(images(&idle(&mut broken)).is_empty());
+    }
+
+    fn drop_at(screen: &mut DocketScreen, x: u16, y: u16, paths: &[&str]) -> DocketFrame {
+        screen.step(&FrameInput::new(BOUNDS, PointerInput::absent()).with_drop(
+            PixelPoint::new(x, y),
+            paths.iter().map(|path| String::from(*path)).collect(),
+        ))
+    }
+
+    #[test]
+    fn dropping_files_on_a_row_attaches_them_to_that_issue_and_opens_the_pane() {
+        let (mut screen, spy) = screen(2);
+        drop_at(
+            &mut screen,
+            300,
+            SECOND_ROW_Y,
+            &["/tmp/a.png", "/tmp/b.txt"],
+        );
+        let second = ItemId::new(OTHER, 2);
+        assert_eq!(screen.selected(), Some(second));
+        assert!(screen.shows_attachments());
+        assert_eq!(attachment_names(&screen, second), ["a.png", "b.txt"]);
+        assert_eq!(spy.written.borrow().len(), 2);
+    }
+
+    #[test]
+    fn dropping_on_the_pane_targets_the_selected_issue_and_elsewhere_does_nothing() {
+        let (mut screen, spy) = screen(2);
+        drop_at(&mut screen, 500, TOOLBAR_Y, &["/tmp/x.txt"]);
+        assert!(spy.written.borrow().is_empty());
+        assert!(!screen.shows_attachments());
+        click(&mut screen, 100, FIRST_ROW_Y);
+        click(&mut screen, ATTACHMENTS_X, TOOLBAR_Y);
+        drop_at(&mut screen, 500, 360, &["/tmp/x.txt"]);
+        assert_eq!(attachment_names(&screen, ItemId::new(OTHER, 1)), ["x.txt"]);
+        // 読めないファイルは示す（他は添付される。最後に失敗した知らせが残る）。
+        drop_at(
+            &mut screen,
+            100,
+            FIRST_ROW_Y,
+            &["/tmp/y.txt", "/tmp/missing"],
+        );
+        assert!(
+            screen
+                .notices()
+                .contains(&Notice::Journal(JournalFailure::AttachmentUnreadable))
+        );
+        assert_eq!(
+            attachment_names(&screen, ItemId::new(OTHER, 1)),
+            ["x.txt", "y.txt"]
+        );
     }
 
     #[test]
