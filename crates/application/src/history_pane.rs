@@ -8,6 +8,7 @@ use nene_docket_core::draw_command::DrawCommand;
 use nene_docket_core::interaction::Interaction;
 use nene_docket_core::language::Language;
 use nene_docket_core::paint::Paint;
+use nene_docket_core::pixel_point::PixelPoint;
 use nene_docket_core::pixel_rect::PixelRect;
 use nene_docket_core::response_phase::ResponsePhase;
 use nene_docket_core::scroll_bar;
@@ -102,6 +103,15 @@ impl HistoryPane {
         let clicked = self.rows(interaction, (&table, lines, language), commands);
         self.scroll_bar(interaction, (track, area), commands);
         clicked
+    }
+
+    /// 点の下の行の添字（ポインタで再現する行・FR-006）。段の外・行の無い所は `None`。
+    #[must_use]
+    pub fn line_at(&self, area: PixelRect, count: usize, point: PixelPoint) -> Option<usize> {
+        self.table(area, count)
+            .row_at(self.scroll.offset(), point)
+            .and_then(|index| usize::try_from(index).ok())
+            .filter(|index| *index < count)
     }
 
     /// 1x の寸法に倍率を掛ける。

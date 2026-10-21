@@ -5,6 +5,7 @@ use alloc::vec::Vec;
 use nene_docket_core::draw_command::DrawCommand;
 use nene_docket_core::interaction::Interaction;
 use nene_docket_core::pixel_rect::PixelRect;
+use nene_docket_core::response::Response;
 use nene_docket_core::response_phase::ResponsePhase;
 use nene_docket_core::scroll_bar;
 use nene_docket_core::scroll_state::ScrollState;
@@ -72,12 +73,13 @@ impl BodyPane {
         self.scroll
     }
 
-    /// 段を問い合わせて描く。`(line_px, scale)` は 1 行の高さとスクロールバーの幅の倍率（1x の画素に掛ける）。
+    /// 段を問い合わせて描く。`line_px` は 1 行の高さ、`scroll_width` はスクロールバーの幅（物理画素）。
     /// フォーカスがあればカーソルの行が見えるように送り、ホイールはポインタが段の上にあるときだけ受ける。
+    /// `preview` があれば欄の代わりにその文字列を先頭から見せる（過去の時点の再現・FR-006）。
     pub fn probe(
         &mut self,
         interaction: &mut Interaction,
-        (area, line_px, scroll_width): (PixelRect, u16, u16),
+        (area, line_px, scroll_width, preview): (PixelRect, u16, u16, Option<&str>),
         commands: &mut Vec<DrawCommand>,
     ) {
         let field = PixelRect::new(
@@ -106,12 +108,20 @@ impl BodyPane {
         let track_response = interaction.probe(BODY_SCROLL, track, false);
         self.take_pointer(interaction, (track, area, line_px), track_response.phase());
         let first = usize::try_from(self.scroll.offset() / u32::from(line_px.max(1))).unwrap_or(0);
-        commands.extend(text_area::text_area(
-            field,
-            &self.edit,
-            response,
-            (line_px, first),
-        ));
+        match preview {
+            Some(text) => commands.extend(text_area::text_area(
+                field,
+                &TextEdit::showing(text),
+                Response::new(ResponsePhase::Idle, false, false),
+                (line_px, 0),
+            )),
+            None => commands.extend(text_area::text_area(
+                field,
+                &self.edit,
+                response,
+                (line_px, first),
+            )),
+        }
         commands.extend(scroll_bar::scroll_bar(track, self.scroll, track_response));
     }
 
@@ -186,7 +196,7 @@ mod tests {
         let mut interaction = Interaction::idle();
         interaction.begin(pointer);
         let mut commands = Vec::new();
-        pane.probe(&mut interaction, (AREA, 20, 12), &mut commands);
+        pane.probe(&mut interaction, (AREA, 20, 12, None), &mut commands);
         interaction.end();
         commands
     }
@@ -231,9 +241,16 @@ mod tests {
         let mut interaction = Interaction::idle();
         interaction.begin(press);
         let mut commands = Vec::new();
-        pane.probe(&mut interaction, (AREA, 20, 12), &mut commands);
+        pane.probe(&mut interaction, (AREA, 20, 12, None), &mut commands);
         interaction.end();
         assert_eq!(texts(&commands), ["2", "3", "4"]);
         assert_eq!(pane.scroll().offset(), 20);
+        // 再現の文字列は欄の代わりに先頭から。
+        let mut again = Interaction::idle();
+        again.begin(press);
+        let mut shown = Vec::new();
+        pane.probe(&mut again, (AREA, 20, 12, Some("x\ny")), &mut shown);
+        again.end();
+        assert_eq!(texts(&shown), ["x", "y"]);
     }
 }

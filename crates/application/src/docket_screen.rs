@@ -118,6 +118,8 @@ const LABELS_FIELD_WIDTH_PX: u16 = 140;
 const WHEEL_ROWS: i32 = 3;
 /// 番号の列に出す作成者の ID の桁数。
 const CREATOR_DIGITS: usize = 4;
+/// 過去の時点を再現している行の番号に付ける印。
+const PREVIEW_MARK: &str = "←";
 
 /// 絞り込みの候補の数。先頭は「すべて」、以降は [`ItemState::ALL`] の順。
 const FILTER_COUNT: usize = ItemState::ALL.len() + 1;
@@ -140,6 +142,8 @@ pub struct DocketScreen {
     members: MembersPane,
     /// 編集欄を読み込んだ時点の課題。確定のとき、他人がその後に変えていれば上書きと分かる（FR-008）。
     base: Option<Item>,
+    /// 履歴の行の上にポインタがあるとき、その時点の課題（表の行と本文の段に再現する・FR-006）。
+    preview: Option<Item>,
     bad_due: bool,
     /// 他人が変えた後に上書きした欄（FR-008）。別の行を選ぶまで示す。
     overwrote: Option<EditSlot>,
@@ -193,6 +197,7 @@ impl DocketScreen {
             body: BodyPane::hidden(),
             members: MembersPane::hidden(environment.scale()),
             base: None,
+            preview: None,
             bad_due: false,
             overwrote: None,
             state: SelectState::closed(ItemState::ALL.len(), 0),
@@ -232,6 +237,7 @@ impl DocketScreen {
         let editor = layout.row(self.px(ROW_PX), &self.editor_widths());
         let (table_area, notice_rect) = self.split_notice(layout.remaining());
         let (table_area, [body_area, members_area, history_area]) = self.split_panes(table_area);
+        self.preview = self.history_preview(history_area, input);
         let visible = self.visible_ids();
         let table = self.table_layout(table_area, visible.len());
         let track = Self::track_of(table_area, self.px(SCROLL_WIDTH_PX));
@@ -558,6 +564,18 @@ impl DocketScreen {
         (table, panes)
     }
 
+    /// ポインタの下の履歴の行の、その時点の課題（FR-006）。段が無い・行の上に無ければ `None`。
+    fn history_preview(&self, area: Option<PixelRect>, input: &FrameInput) -> Option<Item> {
+        let area = area?;
+        let point = input
+            .pointer()
+            .position()
+            .filter(|point| area.contains(*point))?;
+        let lines = self.history_lines();
+        let index = self.history.line_at(area, lines.len(), point)?;
+        lines.get(index).map(|line| line.snapshot().clone())
+    }
+
     /// 参加者の段。持ち主なら行の押下と「権限」のチェックを受け、権限を書く。
     fn probe_members(&mut self, area: Option<PixelRect>, commands: &mut Vec<DrawCommand>) {
         let Some(area) = area else {
@@ -604,9 +622,10 @@ impl DocketScreen {
             return;
         };
         let (line_px, scroll_width) = (self.px(BODY_LINE_PX), self.px(SCROLL_WIDTH_PX));
+        let preview = self.preview.as_ref().map(Item::body);
         self.body.probe(
             &mut self.interaction,
-            (area, line_px, scroll_width),
+            (area, line_px, scroll_width, preview),
             commands,
         );
     }
@@ -1339,16 +1358,32 @@ impl DocketScreen {
                 paint: Paint::Selection,
             });
         }
+        // 履歴の行の上にポインタがあれば、選んだ行はその時点の値で（控えめな色・番号に印）。
+        let past = self
+            .preview
+            .as_ref()
+            .filter(|_| self.selected == Some(item.id()));
+        let shown = past.unwrap_or(item);
+        let paint = if past.is_some() {
+            Paint::Muted
+        } else {
+            Paint::Ink
+        };
+        let number = if past.is_some() {
+            format!("{PREVIEW_MARK} {}", Self::number_text(item.id()))
+        } else {
+            Self::number_text(item.id())
+        };
         let texts = [
-            Self::number_text(item.id()),
-            item.title().to_owned(),
-            self.word(Word::StateName(item.state())).to_owned(),
-            item.assignee().to_owned(),
-            EditSlot::Due.text_of(item),
-            EditSlot::Labels.text_of(item),
+            number,
+            shown.title().to_owned(),
+            self.word(Word::StateName(shown.state())).to_owned(),
+            shown.assignee().to_owned(),
+            EditSlot::Due.text_of(shown),
+            EditSlot::Labels.text_of(shown),
         ];
         for (cell, text) in cells.into_iter().zip(texts) {
-            commands.push(Self::cell_text(cell, &text, Paint::Ink, self.px(MARGIN_PX)));
+            commands.push(Self::cell_text(cell, &text, paint, self.px(MARGIN_PX)));
         }
         commands.push(DrawCommand::Stroke {
             rect: PixelRect::new(rect.x(), rect.bottom(), rect.width(), 1),
@@ -2243,6 +2278,31 @@ mod tests {
         keys(&mut screen, &chars("!"));
         keys(&mut screen, &[KeyIntent::Enter]);
         assert!(screen.notices().is_empty());
+    }
+
+    #[test]
+    fn hovering_a_history_line_shows_the_item_as_it_was_then() {
+        let mut screen = screen_with_history();
+        // いまは In progress（Done を Undo した）。2 行目は「In progress -> Done」で、その直後は Done。
+        let now = texts(&idle(&mut screen));
+        assert!(now.iter().any(|text| text == "In progress"));
+        let hover = screen.step(&FrameInput::new(
+            BOUNDS,
+            PointerInput::new(
+                Some(PixelPoint::new(100, SECOND_HISTORY_Y)),
+                ButtonPhase::Idle,
+                0,
+            ),
+        ));
+        let shown = texts(&hover);
+        assert!(shown.iter().any(|text| text == "Done"));
+        assert!(shown.iter().any(|text| text.starts_with("← ")));
+        assert!(screen.preview.is_some());
+        // 離せば戻る。ジャーナルには何も足さない。
+        let back = texts(&idle(&mut screen));
+        assert!(back.iter().any(|text| text == "In progress"));
+        assert!(!back.iter().any(|text| text.starts_with("← ")));
+        assert!(screen.preview.is_none());
     }
 
     #[test]
