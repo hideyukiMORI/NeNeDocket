@@ -19,8 +19,9 @@ version = 2
 #      MIT — nene-docket の全クレート・cairo-rs・cairo-sys-rs・x11rb ほか（MIT OR Apache-2.0 の二重も MIT 側で数える）
 #      Apache-2.0 — x11rb / x11rb-protocol / bitflags / libc / system-deps など（MIT との二重）
 #      Apache-2.0 WITH LLVM-exception — rustix / linux-raw-sys / target-lexicon（三重）
-#    `windows` を足すときに Unicode-3.0（unicode-ident）が要るかを測り直す（nene-ruler の実測では要った）。
-allow = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception"]
+#      Unicode-3.0 — unicode-ident（windows の手続きマクロ windows-implement / windows-interface が引く syn の下。
+#        "(MIT OR Apache-2.0) AND Unicode-3.0" で、Unicode の文字表のデータに付く許諾。Issue #22・2026-10-21 実測・ADR 0009）
+allow = ["MIT", "Apache-2.0", "Apache-2.0 WITH LLVM-exception", "Unicode-3.0"]
 confidence-threshold = 0.8
 
 [bans]

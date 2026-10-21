@@ -1,9 +1,16 @@
 //! 起動できなかった理由。各区画の失敗を 1 つに畳み、`main` が 1 行で示す（RS-014 / ARC-006）。
+//! 画面とアダプタの失敗の型は OS ごとに違う（ADR 0002）。
 
 use core::fmt;
 
+#[cfg(windows)]
+use nene_docket_adapters_windows::adapter_failure::AdapterFailure;
+#[cfg(not(windows))]
 use nene_docket_adapters_x11::adapter_failure::AdapterFailure;
 use nene_docket_store::store_failure::StoreFailure;
+#[cfg(windows)]
+use nene_docket_ui_win32::win32_failure::Win32Failure as UiFailure;
+#[cfg(not(windows))]
 use nene_docket_ui_x11::ui_failure::UiFailure;
 
 /// 使い方の誤りと、各区画の失敗。
@@ -11,7 +18,7 @@ use nene_docket_ui_x11::ui_failure::UiFailure;
 pub(crate) enum LaunchFailure {
     /// 引数が使い方に合わない。
     Usage,
-    /// アダプタ（アカウント・刻み）。
+    /// アダプタ（アカウント・設定・刻み）。
     Adapter(AdapterFailure),
     /// 台帳のフォルダとジャーナル。
     Store(StoreFailure),
@@ -60,9 +67,21 @@ mod tests {
         );
         let wrapped: LaunchFailure = StoreFailure::BadDocketFile.into();
         assert!(wrapped.to_string().contains("docket.v1.txt"));
+        let adapter: LaunchFailure = AdapterFailure::NoConfigDirectory.into();
+        assert!(!adapter.to_string().is_empty());
+    }
+
+    #[cfg(not(windows))]
+    #[test]
+    fn the_x11_ui_failure_is_wrapped() {
         let ui: LaunchFailure = UiFailure::NoScreen.into();
         assert!(ui.to_string().contains("screen"));
-        let adapter: LaunchFailure = AdapterFailure::NoConfigDirectory.into();
-        assert!(adapter.to_string().contains("HOME"));
+    }
+
+    #[cfg(windows)]
+    #[test]
+    fn the_win32_ui_failure_is_wrapped() {
+        let ui: LaunchFailure = UiFailure::GeometryOutOfRange.into();
+        assert!(ui.to_string().contains("Windows"));
     }
 }

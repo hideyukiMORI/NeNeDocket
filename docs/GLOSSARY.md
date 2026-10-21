@@ -52,7 +52,8 @@
 | 編集状態 | 入力欄の文字列・カーソル・選択・確定前の文字列。位置は文字の添字 | `TextEdit`（core）。直前の拒否は `EditSession`（application） |
 | 確定前の文字列（preedit） | IME が組み立て中の文字列。確定で操作になる | `Preedit`（core）・`TextEdit::with_preedit` |
 | 描画命令 | core が出し UI が描く列。塗り・縁・文字（カーソルは文字の添字）・切り抜き。色は意味（`Paint`）で渡す | `DrawCommand` / `Paint`（core） |
-| 反映（render） | 描画命令を画素へ写す操作。UI 状態を変えてよい唯一の場所 | `render*`（ui-x11 / ui-win32） |
+| 反映（render） | 描画命令を画素へ写す操作。UI 状態を変えてよい唯一の場所 | `Canvas::render`（ui-x11）・`Pen::paint`（ui-win32） |
+| 見えの色（palette） | 色の意味（`Paint`）から 8 ビットの色へ。X11 と Windows が同じ表を使う | `palette::light` / `Rgb`（core） |
 | 隔離区画 | 可変性を許した唯一の場所 | ARC-005 の表 |
 | 規約検査（conformance） | NeNe Docket 固有の自作ゲート | `xtask`（CNF-NNN） |
 | 抑制 | `#[expect(lint, reason = "<規則 ID>: …")]`。理由付きで、発火しなくなれば落ちる | RS-019 |
