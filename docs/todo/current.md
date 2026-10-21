@@ -1,6 +1,6 @@
 # いまのタスク — NeNe Docket
 
-> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #20 まで）。
+> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #22 まで）。
 
 ## 状態
 
@@ -21,7 +21,7 @@
 | 設定ファイル（FR-012）: 最近の台帳と読み直しの間隔 | ✅ Issue #16。引数なしで最近の台帳を開く。読めない設定は起動を止めて示す（gate-proofs 第 16 節）。列の幅と順・見えはまだ |
 | ラベルを画面から変える（FR-001） | ✅ Issue #20。`,` 区切り。検索はラベルにも効く（gate-proofs 第 18 節） |
 | 課題の履歴の段（FR-006） | ✅ Issue #18。いつ（UTC）・誰が（ID の先頭 4 桁）・何を・何から何へ。Undo の行は控えめな色（gate-proofs 第 17 節） |
-| adapters-windows / ui-win32 | ❌ 無い |
+| adapters-windows / ui-win32（Windows の窓・ADR 0009） | 🟡 Issue #22。`x86_64-pc-windows-gnu` の clippy 0 件・exe 1.9 MB。**Windows では未実行**（施主の Windows で確かめる・gate-proofs 第 19 節） |
 | IME の方式（FR-015） | ❌ ADR 未。コンテナには IM サーバ（fcitx / ibus）が無く XIM を測れない。施主の WSLg で測る |
 | 署名と鍵の方式（FR-010） | ❌ ADR 未。権限の Issue で決める |
 | CI の `check`（`make ci`）と commit-msg フック | ✅ PR #3 で CI が動き、枝名で落ちた（gate-proofs 第 10 節）。QLT-005・GIT-001・GIT-003 を active に |
@@ -34,6 +34,7 @@
 3. **IME の実測は施主の WSLg で**: fcitx5 か ibus を入れ、`XMODIFIERS=@im=fcitx` で XIM の preedit が x11rb の窓に届く経路（XIM プロトコルの自前実装か、IM サーバの D-Bus か）を決める ADR
 4. スナップショットの ADR（FR-017 を実測してから）
 5. 環境の setup script に `cargo-llvm-cov`・`xdotool`・`mingw-w64` を足す（DEVELOPMENT_WORKFLOW 第 9 節）
+6. **施主の Windows で exe を動かす**（Issue #22 の受け入れ）。見えた欠陥は Issue にする
 
 ## 残る穴
 
@@ -42,8 +43,9 @@
 - 権限を有効にしなければ、なりすましは防げない（ファイルを直接編集すれば）
 - SMB の上で本当に壊れないかは、施主の共有で確かめるまで「動く」と書かない（QLT-013）
 - アクセシビリティは無い（ADR 0002）
-- CNF-014（Windows の 2 クレートの lint の表）は実ファイルでまだ発火させていない。クレートが生まれてから
-- `make lint-windows` は `xtask`・`core`・`application` を見る。`ui-x11` と `app` は Windows では組めないので外している
+- Windows 版は組み立てただけで、Windows で動かしていない（ADR 0009・gate-proofs 第 19.3 節）。IME の確定前の文字列（`WM_IME_COMPOSITION`）と起動後の dpi の変化はまだ
+- アカウントと設定の読み書きは adapters-x11 と adapters-windows に 2 度ある（adapters は store に依存できない。ADR 0009）
+- `make lint-windows` は X11 の 2 クレートだけを外す（`app` は Windows の合成ルートで組む）
 - `xdotool windowclose` は WM の無い Xvfb では `WM_DELETE_WINDOW` を送らず窓を消す。閉じる要求の経路は WSLg で確かめる
 - `Add` は `create` だけを追記し、担当は空のまま（編集行で変える）。アカウントの名前は `USER` で、画面から変えられない（ADR 0008）
 - 読み直しの刻みは X の `ClientMessage` で、Windows では別の経路になる（ADR 0008）。間隔は設定の `refresh_seconds`（Issue #16）

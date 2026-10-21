@@ -29,7 +29,7 @@ Claude Code / AI エージェントがこのリポジトリで作業するため
 2. **ゲートを弱めて通さない。** 検査が落ちたらコードを直す。閾値・`forbid` の降格・免除・`deny.toml` を触るのは ADR 相当の判断（QLT-010）
 3. **`planned` を `active` と書かない。** 未実装の強制を実装済みに見せるのは、この規約体系で唯一「壊す」行為（[ADR 0001](docs/adr/0001-strictness-is-mechanically-enforced.md)）
 
-🔴 ruleset が要る規則（GIT-002 / GIT-004）は planned のまま。Windows の 2 クレートはまだ無い。
+🔴 ruleset が要る規則（GIT-002 / GIT-004）は planned のまま。Windows 版は組み立てただけで、Windows で動かしていない（ADR 0009）。
 
 ---
 
@@ -152,7 +152,7 @@ Issue / 規則 ID:
 2026-10-21: Issue #1 で規範文書と ADR 0001〜0004 の初版を置いた。Issue #2 で nene-ruler の機械（lint の表・clippy.toml・deny.toml・xtask・Makefile・CI・フック）を移植し、`make prove` 26 件・`cargo test -p xtask` 80 件・実ファイルの発火を記録して、測れた規則を active にした（ADR 0005）。
 Issue #4 で部品の核（即時モード・ADR 0006）を `crates/core` に置き、ARC-003 と QLT-009 を active にした。Issue #5 で X11 の窓（application / ui-x11 / app・x11rb ＋ cairo-rs）を出し、表・検索・絞り込み・スクロールが Xvfb で動いた。日本語は起動時に家族を選んで出す（ADR 0007）。1 万件の 1 フレームは 1 ms 未満（gate-proofs 第 11 節）。
 Issue #7 で ADR 0004 の中核（`Item` / `Op` / `OpId` / `merge` / `history`）を core に置いた。IME は IM サーバの無いコンテナでは測れない。Issue #9 で store にジャーナル版 1（1 行 1 操作・CRC-32・追記と同期・読み直し）を置いた。
-Issue #11 で画面をジャーナルに結んだ: application の `Ledger`（併合した台帳・論理時計・Undo の束）と `Ports`、store の `FileJournal`、`crates/adapters-x11`（時計・アカウント・読み直しの刻み・ADR 0008）。`nene-docket <フォルダ>` で起動し、追加・題名・状態・削除・Ctrl+Z / Ctrl+Y が追記され、Xvfb で 2 プロセスが同じフォルダを編集して互いの変更が 3 秒以内に届いた（gate-proofs 第 14 節）。Issue #14 で担当と期限も画面から変えられるようにした（形が違う期限は追記せず示す）。Issue #16 で設定ファイル（最近の台帳・読み直しの間隔）を置き、引数なしで最近の台帳を開く。Issue #18 で選んだ課題の履歴（いつ・誰が・何を・何から何へ）を表の下に出す。Issue #20 でラベル（`,` 区切り）も画面から変え、検索がラベルにも効く。次は署名と権限の ADR（FR-010）、本文、Windows。
+Issue #11 で画面をジャーナルに結んだ: application の `Ledger`（併合した台帳・論理時計・Undo の束）と `Ports`、store の `FileJournal`、`crates/adapters-x11`（時計・アカウント・読み直しの刻み・ADR 0008）。`nene-docket <フォルダ>` で起動し、追加・題名・状態・削除・Ctrl+Z / Ctrl+Y が追記され、Xvfb で 2 プロセスが同じフォルダを編集して互いの変更が 3 秒以内に届いた（gate-proofs 第 14 節）。Issue #14 で担当と期限も画面から変えられるようにした（形が違う期限は追記せず示す）。Issue #16 で設定ファイル（最近の台帳・読み直しの間隔）を置き、引数なしで最近の台帳を開く。Issue #18 で選んだ課題の履歴（いつ・誰が・何を・何から何へ）を表の下に出す。Issue #20 でラベル（`,` 区切り）も画面から変え、検索がラベルにも効く。Issue #22 で Windows の 2 クレート（adapters-windows / ui-win32・Win32 ＋ Direct2D・ADR 0009）を足し、`make lint-windows` 0 件・`make build-windows` で exe ができたが、Windows では未実行。次は施主の Windows での確認、署名と権限の ADR（FR-010）、本文。
 
 ---
 

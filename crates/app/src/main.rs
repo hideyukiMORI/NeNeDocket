@@ -7,13 +7,16 @@
 use std::process::ExitCode;
 
 mod arguments;
-#[cfg(not(windows))]
 mod launch_failure;
+#[cfg(windows)]
+mod windows_root;
 #[cfg(not(windows))]
 mod x11_root;
 
 use arguments::Arguments;
 
+#[cfg(windows)]
+use windows_root as root;
 #[cfg(not(windows))]
 use x11_root as root;
 

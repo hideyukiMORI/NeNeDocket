@@ -1,0 +1,125 @@
+[package]
+name = "nene-docket-ui-win32"
+description = "NeNe Docket の画面（Windows）。Win32 の窓に Direct2D / DirectWrite で core の描画命令を描く。状態を描き、意図を発行する。unsafe を書ける 2 クレートの 1 つ"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+# 🔴 workspace の lint を継承しない（unsafe_code だけを下げられないため）。表は workspace の写しで、
+#    違うのは unsafe_code だけ。ずれたら CNF-014 が落とす（ADR 0002 の 4）。
+[lints.rust]
+# ── forbid 層: 逃げ道を用意しない ───────────────────────────────────────────
+# 🔴 workspace では forbid。Win32 を呼ぶこのクレートだけ deny に下げる（ADR 0002 の 4）。unsafe は関数ごとに
+#    #[expect(unsafe_code, reason = "RS-010: …")] と SAFETY の注釈を要する。この表は CNF-014 が workspace と突き合わせる。
+unsafe_code = "deny"
+# 識別子は ASCII。文書とコメントは日本語だが、名前は機械が扱う対象である。
+non_ascii_idents = "forbid"
+
+# ── deny 層 ─────────────────────────────────────────────────────────────────
+# 🔴 これが抑制制度の要（RS-019）。発火しなかった #[expect] を失敗にする。
+unfulfilled_lint_expectations = "deny"
+missing_docs = "deny"
+missing_debug_implementations = "deny"
+# 実際には crate 外から使えない pub を禁じる。可視性を最小に保つ（RS-008）。
+unreachable_pub = "deny"
+elided_lifetimes_in_paths = "deny"
+let_underscore_drop = "deny"
+unused_must_use = "deny"
+
+[lints.clippy]
+# ── 群 ──────────────────────────────────────────────────────────────────────
+# priority = -1 は「群より後の個別指定を勝たせる」ため。省くと順序が不定になる。
+all = { level = "deny", priority = -1 }
+pedantic = { level = "deny", priority = -1 }
+cargo = { level = "deny", priority = -1 }
+# restriction 群は「互いに矛盾する規則の在庫」であって規則集ではない。
+# 群として有効化しない。以下は在庫から1つずつ選んだもので、全てに理由がある。
+
+# ── forbid 層: パニックしうる書き方（RS-005） ──────────────────────────────
+# テストコードは clippy.toml の allow-*-in-tests で対象外。
+unwrap_used = "forbid"
+expect_used = "forbid"
+panic = "forbid"
+unreachable = "forbid"
+indexing_slicing = "forbid"
+exit = "forbid"
+# `as` は黙って切り詰める。変換は TryFrom / From のどちらか一つに寄せる（RS-007）。
+as_conversions = "forbid"
+mem_forget = "forbid"
+
+# ── forbid 層: 抑制制度そのもの（RS-019） ──────────────────────────────────
+allow_attributes = "forbid"
+allow_attributes_without_reason = "forbid"
+
+# ── forbid 層: 網羅性（RS-002） ────────────────────────────────────────────
+wildcard_enum_match_arm = "forbid"
+wildcard_in_or_patterns = "forbid"
+
+# ── deny 層: 「一つの事に一つの手段」 ──────────────────────────────────────
+todo = "deny"
+unimplemented = "deny"
+# 出力は合成ルートに集約する（RS-014）。書いてよい場所が #[expect] で自己申告になる。
+print_stdout = "deny"
+print_stderr = "deny"
+dbg_macro = "deny"
+# モジュールの置き方を一つに固定する（mod.rs を使わない・RS-012）。
+mod_module_files = "deny"
+str_to_string = "deny"
+# 再エクスポートは「同じ物への二つ目の名前」を作る（RS-008）。
+pub_use = "deny"
+# 型注釈の無い数値リテラルの i32 既定落ちを禁じる（RS-018）。
+default_numeric_fallback = "deny"
+semicolon_inside_block = "deny"
+unseparated_literal_suffix = "deny"
+empty_structs_with_brackets = "deny"
+unneeded_field_pattern = "deny"
+
+# ── deny 層: 複雑度（RS-011） ──────────────────────────────────────────────
+# 🔴 cognitive_complexity は nursery 群にあり、どの群にも含まれない。
+#    clippy.toml に閾値を書くだけでは死んだ設定になる（xi-tools で実測）。
+cognitive_complexity = "deny"
+
+# ── deny 層: 型と可視性（RS-008） ──────────────────────────────────────────
+partial_pub_fields = "deny"
+field_scoped_visibility_modifiers = "deny"
+impl_trait_in_params = "deny"
+multiple_inherent_impl = "deny"
+same_name_method = "deny"
+shadow_unrelated = "deny"
+
+# ── deny 層: 誤りを飲み込まない（RS-005） ─────────────────────────────────
+panic_in_result_fn = "deny"
+unwrap_in_result = "deny"
+map_err_ignore = "deny"
+let_underscore_untyped = "deny"
+
+# ── deny 層: 決定性（RS-016 / ARC-004） ───────────────────────────────────
+iter_over_hash_type = "deny"
+wildcard_dependencies = "deny"
+verbose_file_reads = "deny"
+# unsafe を書けるのは Windows の 2 クレートだけ（ADR 0002）。そこでも SAFETY の注釈が無ければ落とす。
+undocumented_unsafe_blocks = "deny"
+
+# 🔴 内部は application と core だけ（ARC-002 / CNF-013）。外部は windows-rs（windows と windows-numerics）だけで、Windows でだけ引く（ADR 0002）。
+[dependencies]
+nene-docket-application = { path = "../application" }
+nene-docket-core = { path = "../core" }
+
+[target.'cfg(windows)'.dependencies]
+windows = { version = "0.62.2", features = [
+    "Win32_Foundation",
+    "Win32_Graphics_Direct2D",
+    "Win32_Graphics_Direct2D_Common",
+    "Win32_Graphics_DirectWrite",
+    "Win32_Graphics_Dxgi_Common",
+    "Win32_Graphics_Gdi",
+    "Win32_System_LibraryLoader",
+    "Win32_UI_HiDpi",
+    "Win32_UI_Input_KeyboardAndMouse",
+    "Win32_UI_WindowsAndMessaging",
+] }
+# Direct2D の点（Vector2）。windows-rs の一部で、windows が既に引いている版。
+windows-numerics = "0.3.1"

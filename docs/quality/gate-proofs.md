@@ -462,7 +462,36 @@ Xvfb（`:97`）: `Add` → 題名 → 状態を `Done` → 題名を変えて En
 Xvfb（`:97`）: 課題を 2 つ足し、1 つ目にラベル `ui,table , later`、2 つ目に `adr`。ジャーナルには `labels	ui,table,later` と `labels	adr`（`,` は `\,` に逃がして 1 行）。
 検索欄に `table` で 1 つ目だけが出る（[01-labels-search](screenshots/2026-10-21-labels-01-search.png)）。
 
-## 19. 再現
+## 19. Issue #22 — Windows の窓（2026-10-21）
+
+同じコンテナ（Linux）。`apt-get install mingw-w64` でリンカを入れた。新しい `crates/adapters-windows`（`SystemClock`・`saved_account`・`saved_settings`・`desktop_dpi`・`random_id`）と
+`crates/ui-win32`（`docket_window`・`windows_app`・`pen`・`text_line`・`key_input`・`char_assembler`・`pointer_state`・`win32_failure`）、`crates/app` の `windows_root`。`palette` と `Rgb` を core へ移した（ADR 0009）。
+
+### 19.1 ゲート
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `doc-check` | 差分なし・0 件・警告なし |
+| `make lint-windows` | 0 件（`xtask`・`core`・`application`・`store`・`adapters-windows`・`ui-win32`・`app` を `x86_64-pc-windows-gnu` で。`#[expect(unsafe_code, reason = "RS-010: …")]` は 2 クレートに 30 か所、すべて発火） |
+| `make build-windows` | `target/x86_64-pc-windows-gnu/release/nene-docket.exe`（1,919,311 バイト） |
+| `make test` | 255 件（ui-win32 8・adapters-windows 4 は Linux で走る純粋な部分） |
+| `make conformance` | 違反なし（173 ファイル）。途中で CNF-001（`CharAssembler` の `derive(Default)`）と CNF-003（`pen.rs` の 2 つ目の型）が落ち、直した |
+| `make deny` | `windows` の手続きマクロが引く `unicode-ident` の `Unicode-3.0` で `licenses FAILED` → 実測して `deny.toml` の `allow` に足した（ADR 0009 の 7）。足した後 ok |
+| `make coverage` | core ＋ application regions 99.19% |
+
+### 19.2 実ファイルでの発火
+
+| 規則 | やったこと | 実出力 |
+| --- | --- | --- |
+| CNF-014（ADR 0002 の 4） | `crates/ui-win32/Cargo.toml` の `unwrap_used = "forbid"` を `"deny"` にした | `CNF-014: crates/ui-win32/Cargo.toml:1 — [lints.clippy] が workspace の表と違う。違ってよいのは unsafe_code = "deny" だけ（ADR 0002）` |
+| CNF-013（ARC-002） | `app` の `[target.'cfg(windows)'.dependencies]` に 2 クレートを足した | 通る（許可表にある）。`ui-x11` に `store` を足す反例は第 14.2 節 |
+
+### 19.3 証明していないこと（Issue #22・QLT-013）
+
+🔴 **Windows では一度も動かしていない。** 組み立て（clippy 0 件・exe）までが証拠で、窓が出ること・表と入力欄が描けること・Segoe UI と日本語の fallback・`WM_CHAR` の日本語・2 プロセスの 3 秒ごとの読み直し・`BCryptGenRandom` のアカウント・`%APPDATA%` の設定は、施主の Windows で確かめるまで「動く」と書かない。
+確かめ方: `make build-windows` の exe を Windows に持ち込み、`nene-docket.exe <フォルダ>` で開く。2 つ目は別の `APPDATA`（`set APPDATA=...`）で起動すると別のアカウントになる。
+
+## 20. 再現
 
 ```bash
 make prove

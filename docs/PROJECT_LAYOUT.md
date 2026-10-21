@@ -7,7 +7,7 @@
 Rust では層を**クレート**で表し、各クレートの `[dependencies]` が import 可能なものの全リストになる（ARC-002）。
 承認された向きの表は `xtask` の CNF-013 が持ち、マニフェストと照合する。
 
-🔴 クレートは具体的な責務とソースがある時だけ作る。**空の将来用モジュールは作らない。** Issue #11 の時点で在るのは `crates/core`・`crates/application`・`crates/store`・`crates/adapters-x11`・`crates/ui-x11`・`crates/app`・`xtask`。Windows の 2 クレートはまだ無い。
+🔴 クレートは具体的な責務とソースがある時だけ作る。**空の将来用モジュールは作らない。** Issue #22 の時点で、第 1 節のクレートはすべて在る（Windows の 2 クレートは Issue #22・ADR 0009）。
 
 ---
 
@@ -107,10 +107,12 @@ application の `JournalPort` の実装（`FileJournal`）もここ。
 
 時計・乱数・クリップボード・画面・IME のポートを OS の API で実装する。取得値をその場で core の型へ変換する（ARC-008）。
 `adapters-x11` は壁時計（`SystemClock`）・アカウントの保存（`saved_account`・`/dev/urandom` の ID）・設定の読み書き（`saved_settings`・FR-012）・読み直しの刻み（`RefreshTicker`・スレッドが X の窓へ `ClientMessage` を送る。ADR 0008）を持つ。
+`adapters-windows` は同じ壁時計・アカウント（`%APPDATA%`・`BCryptGenRandom`）・設定・デスクトップの dpi（`GetDpiForSystem`）を持つ。刻みは Windows では画面のタイマー（ADR 0009）。
 
 ### `ui-x11` / `ui-win32`
 
 application が作った値を描き、操作を意図として渡す（ARC-011）。部品（表・セレクトボックス・入力欄・ボタン・スクロールバー）の**配置と当たり判定は core** が物理画素で計算し、UI はそれを描くだけ。可変性の隔離区画（ARC-005）。
+`ui-x11` は cairo の `ImageSurface` に描いて `PutImage` で転送し、`ui-win32` は通常の窓に Direct2D の `HwndRenderTarget` で描く（ADR 0009）。色は core の `palette` から（ARC-001）。鍵の読み替えとポインタの追跡は OS ごとの純関数で、Linux でもテストする。
 
 ### `app`
 

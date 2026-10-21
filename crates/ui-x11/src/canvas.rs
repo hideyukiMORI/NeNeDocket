@@ -6,11 +6,11 @@ use cairo::{Context, FontSlant, FontWeight, Format, ImageSurface};
 use nene_docket_application::docket_frame::DocketFrame;
 use nene_docket_core::draw_command::DrawCommand;
 use nene_docket_core::paint::Paint;
+use nene_docket_core::palette;
 use nene_docket_core::pixel_rect::PixelRect;
 use nene_docket_core::text_align::TextAlign;
 use nene_docket_core::text_caret::TextCaret;
 
-use crate::palette;
 use crate::ui_failure::UiFailure;
 
 /// 完成した 1 フレームの画素の列。
@@ -135,10 +135,11 @@ fn draw(context: &Context, command: &DrawCommand) -> Result<(), UiFailure> {
     }
 }
 
-/// 描く色を意味から決める。
+/// 描く色を意味から決める（core の表・0〜255 を 0〜1 に）。
 fn set_paint(context: &Context, paint: Paint) {
     let rgb = palette::light(paint);
-    context.set_source_rgb(rgb.red, rgb.green, rgb.blue);
+    let unit = |channel: u8| f64::from(channel) / 255.0_f64;
+    context.set_source_rgb(unit(rgb.red()), unit(rgb.green()), unit(rgb.blue()));
 }
 
 fn rectangle(context: &Context, rect: PixelRect) {
