@@ -332,7 +332,7 @@ impl DocketScreen {
             assignee: TextEdit::empty(),
             due: TextEdit::empty(),
             labels: TextEdit::empty(),
-            body: BodyPane::hidden(),
+            body: BodyPane::hidden(environment.scale()),
             members: MembersPane::hidden(environment.scale()),
             attachments: AttachmentsPane::hidden(environment.scale()),
             altered: None,
@@ -457,9 +457,9 @@ impl DocketScreen {
     ) {
         commands.extend(select_box::select_box(
             language_rect,
-            &self.language_options(),
-            self.language_select,
+            (&self.language_options(), self.language_select),
             language_response,
+            self.scale,
         ));
     }
 
@@ -1031,7 +1031,12 @@ impl DocketScreen {
         let assignee_focused = self.interaction.focus() == Some(Self::slot_id(EditSlot::Assignee));
         self.head_commands(detail, &item, commands);
         let title = self.interaction.probe(TITLE, detail.title(), true);
-        commands.extend(text_field::text_field(detail.title(), &self.title, title));
+        commands.extend(text_field::text_field(
+            detail.title(),
+            &self.title,
+            title,
+            self.scale,
+        ));
         self.probe_state_chips(detail.chips(), commands);
         let slots = [EditSlot::Assignee, EditSlot::Due, EditSlot::Labels];
         for ((slot, name), rect) in slots.into_iter().zip(detail.names()).zip(detail.fields()) {
@@ -1047,7 +1052,12 @@ impl DocketScreen {
                 0,
             ));
             let response = self.interaction.probe(Self::slot_id(slot), rect, true);
-            commands.extend(text_field::text_field(rect, self.slot(slot), response));
+            commands.extend(text_field::text_field(
+                rect,
+                self.slot(slot),
+                response,
+                self.scale,
+            ));
             if slot == EditSlot::Due {
                 commands.extend(self.due_aside(rect, response.focused()));
             }
@@ -1280,7 +1290,7 @@ impl DocketScreen {
         ));
         let response = self.interaction.probe(DRAFT_TITLE, title, true);
         if let Some(draft) = self.draft() {
-            commands.extend(text_field::text_field(title, draft, response));
+            commands.extend(text_field::text_field(title, draft, response, self.scale));
         }
         commands.extend(cell_text::cell_text(
             hint,
@@ -1400,7 +1410,12 @@ impl DocketScreen {
             0,
         ));
         let theme = self.interaction.probe(THEME, rect, true);
-        commands.extend(text_field::text_field(rect, &self.theme_edit, theme));
+        commands.extend(text_field::text_field(
+            rect,
+            &self.theme_edit,
+            theme,
+            self.scale,
+        ));
         let side = sample.height() / 2;
         let gap = self.px(4);
         for (index, paint) in [Paint::Background, Paint::Ink, Paint::Accent]
@@ -1438,9 +1453,12 @@ impl DocketScreen {
             }
             commands.extend(checkbox::checkbox(
                 *rect,
-                self.word(Self::heading_of(column)),
-                self.settings.order().shows(column),
+                (
+                    self.word(Self::heading_of(column)),
+                    self.settings.order().shows(column),
+                ),
                 response,
+                self.scale,
             ));
         }
     }
@@ -2571,7 +2589,12 @@ impl DocketScreen {
             add_rect,
         ] = Self::rects(toolbar);
         let search = self.interaction.probe(SEARCH, search_rect, true);
-        commands.extend(text_field::text_field(search_rect, &self.search, search));
+        commands.extend(text_field::text_field(
+            search_rect,
+            &self.search,
+            search,
+            self.scale,
+        ));
         if self.search.text().is_empty() && !search.focused() {
             commands.extend(cell_text::cell_text(
                 search_rect,
@@ -2759,9 +2782,12 @@ impl DocketScreen {
         }
         commands.extend(checkbox::checkbox(
             rect,
-            self.word(Word::Toolbar(ToolbarWord::MembersToggle)),
-            self.members.is_shown(),
+            (
+                self.word(Word::Toolbar(ToolbarWord::MembersToggle)),
+                self.members.is_shown(),
+            ),
             members,
+            self.scale,
         ));
     }
 
@@ -3101,7 +3127,12 @@ impl DocketScreen {
                 .saturating_mul(i32::from(self.px(ROW_PX)));
             self.scroll = self.scroll.scrolled_by(wheel);
         }
-        commands.extend(scroll_bar::scroll_bar(track, self.scroll, response));
+        commands.extend(scroll_bar::scroll_bar(
+            track,
+            self.scroll,
+            response,
+            self.scale,
+        ));
     }
 }
 

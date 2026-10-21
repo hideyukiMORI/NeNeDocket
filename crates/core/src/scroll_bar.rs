@@ -8,10 +8,16 @@ use crate::pixel_rect::PixelRect;
 use crate::response::Response;
 use crate::response_phase::ResponsePhase;
 use crate::scroll_state::ScrollState;
+use crate::ui_scale::UiScale;
 
-/// 軌道とつまみ。掴んでいる間はつまみを強調で塗る。
+/// 軌道の線とつまみ。掴んでいる間はつまみを強調で塗る。線とつまみの幅は軌道の幅から、つまみの最小の長さは `scale` から（FR-016）。
 #[must_use]
-pub fn scroll_bar(track: PixelRect, state: ScrollState, response: Response) -> Vec<DrawCommand> {
+pub fn scroll_bar(
+    track: PixelRect,
+    state: ScrollState,
+    response: Response,
+    scale: UiScale,
+) -> Vec<DrawCommand> {
     let thumb_paint = match response.phase() {
         ResponsePhase::Held => Paint::Accent,
         ResponsePhase::Hovered => Paint::Ink,
@@ -30,7 +36,7 @@ pub fn scroll_bar(track: PixelRect, state: ScrollState, response: Response) -> V
         paint: Paint::Border,
     }];
     if state.max_offset() > 0 {
-        let thumb = state.thumb(track);
+        let thumb = state.thumb(track, scale);
         commands.push(DrawCommand::Fill {
             rect: PixelRect::new(center(thumb_width), thumb.y(), thumb_width, thumb.height()),
             paint: thumb_paint,
@@ -51,6 +57,7 @@ mod tests {
             track,
             state,
             Response::new(ResponsePhase::Idle, false, false),
+            UiScale::Single,
         );
         assert_eq!(
             idle.first(),
@@ -70,6 +77,7 @@ mod tests {
             track,
             state,
             Response::new(ResponsePhase::Held, false, false),
+            UiScale::Single,
         );
         assert!(matches!(
             held.get(1),
@@ -82,6 +90,7 @@ mod tests {
             track,
             state,
             Response::new(ResponsePhase::Hovered, false, false),
+            UiScale::Single,
         );
         assert!(matches!(
             hovered.get(1),
@@ -99,19 +108,22 @@ mod tests {
             track,
             ScrollState::top(200, 300),
             Response::new(ResponsePhase::Idle, false, false),
+            UiScale::Double,
         );
         assert_eq!(fits.len(), 1);
         let long = scroll_bar(
             track,
-            ScrollState::top(1200, 300),
+            ScrollState::top(1_000_000, 300),
             Response::new(ResponsePhase::Idle, false, false),
+            UiScale::Double,
         );
+        // 2 倍では線 2・つまみ 6、つまみの最小の長さも 2 倍（64）。
         assert!(matches!(
             long.as_slice(),
             [
                 DrawCommand::Fill { rect: line, .. },
                 DrawCommand::Fill { rect: thumb, .. },
-            ] if line.width() == 2 && thumb.width() == 6
+            ] if line.width() == 2 && thumb.width() == 6 && thumb.height() == 64
         ));
     }
 }

@@ -277,9 +277,9 @@ impl MembersPane {
             let options: Vec<&str> = labels.iter().map(String::as_str).collect();
             commands.extend(select_box::select_box(
                 rect,
-                &options,
-                self.successor,
+                (&options, self.successor),
                 response,
+                self.scale,
             ));
         }
         (commands, actions)
@@ -435,9 +435,12 @@ impl MembersPane {
         let editor = interaction.probe(MEMBER_EDITOR, *editor_rect, true);
         commands.extend(checkbox::checkbox(
             *editor_rect,
-            wording::text(language, Word::Editor),
-            member.is_listed_editor(),
+            (
+                wording::text(language, Word::Editor),
+                member.is_listed_editor(),
+            ),
             editor,
+            self.scale,
         ));
         if editor.clicked() {
             actions.push(MembersAction::ToggleEditor(member.id()));
@@ -451,7 +454,12 @@ impl MembersPane {
                 self.load_groups(member);
             }
         }
-        commands.extend(text_field::text_field(*groups_rect, &self.groups, groups));
+        commands.extend(text_field::text_field(
+            *groups_rect,
+            &self.groups,
+            groups,
+            self.scale,
+        ));
         let successor = interaction.probe(MEMBER_SUCCESSOR, *successor_rect, true);
         if successor.clicked() {
             self.successor = self.successor.toggled();
@@ -484,7 +492,12 @@ impl MembersPane {
                 .saturating_mul(i32::from(self.px(ROW_PX)));
             self.scroll = self.scroll.scrolled_by(wheel);
         }
-        commands.extend(scroll_bar::scroll_bar(track, self.scroll, response));
+        commands.extend(scroll_bar::scroll_bar(
+            track,
+            self.scroll,
+            response,
+            self.scale,
+        ));
     }
 
     const fn px(&self, base: u16) -> u16 {
@@ -541,9 +554,9 @@ impl MembersPane {
         let response = interaction.probe(PERMISSIONS_TOGGLE, toggle, true);
         commands.extend(checkbox::checkbox(
             toggle,
-            wording::text(language, Word::Permissions),
-            enabled,
+            (wording::text(language, Word::Permissions), enabled),
             response,
+            self.scale,
         ));
         response
             .clicked()

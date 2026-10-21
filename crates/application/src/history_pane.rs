@@ -220,6 +220,11 @@ impl HistoryPane {
                 .saturating_mul(i32::from(self.px(ROW_PX)));
             self.scroll = self.scroll.scrolled_by(wheel);
         }
-        commands.extend(scroll_bar::scroll_bar(track, self.scroll, response));
+        commands.extend(scroll_bar::scroll_bar(
+            track,
+            self.scroll,
+            response,
+            self.scale,
+        ));
     }
 }
