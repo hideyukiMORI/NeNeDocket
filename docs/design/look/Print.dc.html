@@ -1,0 +1,97 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>NeNe Docket 印刷の帳票</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 1100px; box-sizing: border-box; padding: 40px 0; display: flex; justify-content: center; align-items: flex-start; background: #4A4A4C; font-family: 'Noto Sans JP', system-ui, sans-serif">
+<div style="width: 1300px; height: 919px; box-sizing: border-box; padding: 40px 44px 28px; background: #FFFFFF; color: #111111; box-shadow: 0 12px 40px rgba(0,0,0,0.45); display: flex; flex-direction: column; gap: 14px">
+
+<div style="display: flex; align-items: flex-end; gap: 16px; border-bottom: 2px solid #111111; padding-bottom: 10px">
+<div style="display: flex; flex-direction: column; gap: 4px">
+<span style="font-size: 11px; color: #555555">総務部</span>
+<h1 style="margin: 0; font-size: 20px; font-weight: 700; letter-spacing: 0.04em">業務改善プロジェクト 課題管理表</h1>
+</div>
+<div style="flex: 1"></div>
+<div style="display: grid; grid-template-columns: auto auto; column-gap: 12px; row-gap: 2px; font-size: 10.5px; color: #333333">
+<span style="color: #666666">時点</span><span style="font-family: 'JetBrains Mono', monospace">2026-10-22 09:30</span>
+<span style="color: #666666">絞り込み</span><span>未完了 · 37 件</span>
+<span style="color: #666666">ビュー</span><span>定例 10/22</span>
+</div>
+<div style="display: flex; gap: 0; margin-left: 12px">
+<sc-for list="{{stamps}}" as="s" hint-placeholder-count="3">
+<div style="width: 58px; border: 1px solid #333333; margin-left: -1px; display: flex; flex-direction: column; font-size: 10px; text-align: center">
+<span style="height: 18px; line-height: 18px; border-bottom: 1px solid #333333; background: #F0F0F0">{{s}}</span>
+<span style="height: 44px; display: block"></span>
+</div>
+</sc-for>
+</div>
+</div>
+
+<div style="flex: 1; min-height: 0; border: 1px solid #333333; display: flex; flex-direction: column; font-size: 10.5px">
+<div style="display: grid; grid-template-columns: {{grid}}; background: #E8E8E8; border-bottom: 1px solid #333333; font-weight: 700">
+<sc-for list="{{heads}}" as="h" hint-placeholder-count="11"><span style="padding: 6px 6px; border-left: 1px solid #999999">{{h}}</span></sc-for>
+</div>
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="7">
+<div style="display: grid; grid-template-columns: {{grid}}; border-bottom: 1px solid #999999; line-height: 1.55">
+<span style="padding: 6px; border-left: 1px solid #999999; font-family: 'JetBrains Mono', monospace; display: flex; gap: 4px"><span>{{r.mark}}</span>{{r.no}}</span>
+<span style="padding: 6px; border-left: 1px solid #999999; font-family: 'JetBrains Mono', monospace">{{r.date}}</span>
+<span style="padding: 6px; border-left: 1px solid #999999">{{r.cat}}</span>
+<span style="padding: 6px; border-left: 1px solid #999999; font-weight: 700">{{r.title}}</span>
+<span style="padding: 6px; border-left: 1px solid #999999">{{r.detail}}</span>
+<span style="padding: 6px; border-left: 1px solid #999999">{{r.fix}}</span>
+<span style="padding: 6px; border-left: 1px solid #999999">{{r.who}}</span>
+<span style="padding: 6px; border-left: 1px solid #999999; font-family: 'JetBrains Mono', monospace; font-weight: {{r.dueW}}">{{r.due}}</span>
+<span style="padding: 6px; border-left: 1px solid #999999; font-weight: {{r.prioW}}">{{r.prio}}</span>
+<span style="padding: 6px; border-left: 1px solid #999999">{{r.state}}</span>
+<span style="padding: 6px; border-left: 1px solid #999999; color: #333333">{{r.note}}</span>
+</div>
+</sc-for>
+</div>
+
+<div style="display: flex; align-items: center; gap: 16px; font-size: 9.5px; color: #555555">
+<span>● 前回の定例（10/15）から変わった行 · ⚠ 期限を過ぎた</span>
+<div style="flex: 1"></div>
+<span>NeNe Docket で出力 · \\LinkStation\share\業務改善 · 森</span>
+<span style="font-family: 'JetBrains Mono', monospace">1 / 3</span>
+</div>
+
+</div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const heads = ['No', '起票日', '分類', '課題', '課題の詳細', '解決策', '担当', '期限', '優先度', 'ステータス', '備考'];
+    const d = [
+      ['●', '森-1', '10/01', '業務', '経費精算の承認が月末に集中する', '月末の 3 日間に承認待ちが 80 件を超え、支払いが翌月にずれることがある。', '週次の締めに分け、承認者を課長と係長の 2 名にする。規程の改定は 11 月の部会で。', '田中', '⚠ 10/18', '高', '対応中', '規程の案は共有フォルダの「規程」'],
+      ['', '森-2', '10/01', 'IT', '共有フォルダの権限が人によって違う', '同じ部署でも「経理」を開ける人と開けない人がいる。', '部署ごとのグループに付け替え、個人の権限を外す。10/24 に情シスと読み合わせ。', '森', '10/25', '中', '確認中', ''],
+      ['●', '森-3', '10/03', '業務', '請求書の差し戻しが多い', '9 月の差し戻しは 23 件で、半分が宛名と日付の書き方。', '記入例をテンプレートに足し、よくある誤りを 1 枚にまとめる。', '佐藤', '⚠ 10/20', '高', '未着手', ''],
+      ['●', '田中-1', '10/07', 'IT', 'VPN が夕方に遅くなる', '17 時台に在宅の 20 名が同時に繋ぐと、ファイルを開くのに 30 秒かかる。', '回線の契約帯域を見直す。見積りを 2 社から取る。', '森', '10/31', '中', '対応中', '見積り 1 社は受領'],
+      ['', '森-4', '10/08', '業務', '新人向けの手順書が古い', '画面が 2 年前の版のまま。', '画面の録画で手順を作り直す。', '田中', '11/05', '低', '対応中', ''],
+      ['', '田中-2', '10/10', '総務', '備品の発注が二重になる', '部署ごとに発注の台帳があり、同じ品を 2 度頼むことがある。', '発注の台帳を 1 本にする案を総務で検討。', '佐藤', '11/08', '中', '保留', '年度替わりに合わせる'],
+      ['●', '森-6', '10/18', '総務', 'テレワーク申請の様式が 2 種類ある', '旧様式と新様式が混在し、差し戻しが出ている。', '様式 A にそろえ、旧様式を共有フォルダから外す。', '田中', '10/30', '中', '確認中', '']
+    ];
+    const rows = d.map((x) => ({
+      mark: x[0], no: x[1], date: x[2], cat: x[3], title: x[4], detail: x[5], fix: x[6], who: x[7], due: x[8], prio: x[9], state: x[10], note: x[11],
+      dueW: x[8].indexOf('⚠') === 0 ? 700 : 400, prioW: x[9] === '高' ? 700 : 400
+    }));
+    return {
+      heads, rows, stamps: ['作成', '確認', '承認'],
+      grid: '64px 50px 40px 180px minmax(0, 1.3fr) minmax(0, 1.3fr) 44px 64px 40px 58px minmax(0, 0.8fr)'
+    };
+  }
+}
+</script>
+</body>
+</html>
