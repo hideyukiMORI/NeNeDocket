@@ -88,7 +88,7 @@ const THEME: WidgetId = WidgetId::new(15);
 /// 16 は本文の段の欄（`body_pane`）。
 const BODY_TOGGLE: WidgetId = WidgetId::new(17);
 const MEMBERS_TOGGLE: WidgetId = WidgetId::new(18);
-/// 19 は参加者の段の「権限」のチェック、21 はそのスクロールバー、22・23 は編集行の「編集者」とグループの欄（`members_pane`）。20 は本文のスクロールバー（`body_pane`）。
+/// 19 は参加者の段の「権限」のチェック、21 はそのスクロールバー、22〜24 は編集行の「編集者」・グループの欄・「引き継ぎ先」の箱、7000〜 はその候補（`members_pane`）。20 は本文のスクロールバー（`body_pane`）。
 const FILTER_OPTION: WidgetId = WidgetId::new(100);
 const STATE_OPTION: WidgetId = WidgetId::new(200);
 const LANGUAGE_OPTION: WidgetId = WidgetId::new(300);
@@ -627,6 +627,7 @@ impl DocketScreen {
                 }]
             }
             MembersAction::SetGroups(id, wanted) => self.group_commands(id, &wanted),
+            MembersAction::Succeed(new, old) => alloc::vec![AdminCommand::Succeed(new, old)],
         };
         if commands.is_empty() {
             return;
@@ -955,10 +956,12 @@ impl DocketScreen {
             }
             Some(THEME) => self.theme_key(key),
             Some(id) if id == MembersPane::groups_id() => {
-                if let Some(action) = self.members.groups_key(key) {
-                    let enabled = self.ports.journal().permissions().is_some();
-                    self.administer(action, enabled);
-                }
+                let action = self.members.groups_key(key);
+                self.administer_if(action);
+            }
+            Some(id) if id == MembersPane::successor_id() => {
+                let action = self.members.successor_key(key);
+                self.administer_if(action);
             }
             Some(STATE) => {
                 let before = self.state.chosen();
@@ -1005,7 +1008,13 @@ impl DocketScreen {
 
     /// 参加者の編集行の「編集者」を鍵で押した。
     fn press_member_editor(&mut self) {
-        if let Some(action) = self.members.editor_key() {
+        let action = self.members.editor_key();
+        self.administer_if(action);
+    }
+
+    /// 参加者の段の求めがあれば書く。
+    fn administer_if(&mut self, action: Option<MembersAction>) {
+        if let Some(action) = action {
             let enabled = self.ports.journal().permissions().is_some();
             self.administer(action, enabled);
         }
@@ -1466,7 +1475,10 @@ impl DocketScreen {
 
     /// 候補の列が開いているあいだ、表は押せない。
     fn any_options_open(&self) -> bool {
-        self.filter.is_open() || self.state.is_open() || self.language_select.is_open()
+        self.filter.is_open()
+            || self.state.is_open()
+            || self.language_select.is_open()
+            || self.members.options_open()
     }
 
     /// ヘッダと、見えている行だけ。行はクリックで選ぶ。
@@ -2682,6 +2694,7 @@ mod tests {
     const EDIT_ROW_Y: u16 = 280;
     const EDITOR_X: u16 = 60;
     const GROUPS_X: u16 = 500;
+    const SUCCESSOR_X: u16 = 950;
     const SHIFTED_FIRST_MEMBER_Y: u16 = 332;
 
     #[test]
@@ -2813,6 +2826,65 @@ mod tests {
         click(&mut screen, 100, SHIFTED_FIRST_MEMBER_Y);
         assert_eq!(screen.members()[1].groups(), ["ops"]);
         assert!(screen.notices().is_empty());
+    }
+
+    #[test]
+    fn the_owner_picks_a_successor_from_the_edit_row_and_the_old_id_leaves_the_pane() {
+        let (mut screen, _) = screen(2);
+        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, 100, SECOND_MEMBER_Y);
+        let frame = idle(&mut screen);
+        assert!(texts(&frame).iter().any(|text| text == "No successor"));
+        // 閉じた箱の上下では選ばない。開いて下で光らせ、Enter で決める。
+        click(&mut screen, SUCCESSOR_X, EDIT_ROW_Y);
+        assert_eq!(
+            screen.interaction.focus(),
+            Some(MembersPane::successor_id())
+        );
+        assert!(screen.members.options_open());
+        assert!(
+            texts(&idle(&mut screen))
+                .iter()
+                .any(|text| text.starts_with("me ("))
+        );
+        keys(&mut screen, &[KeyIntent::Escape]);
+        assert!(!screen.members.options_open());
+        keys(&mut screen, &[KeyIntent::Down]);
+        assert_eq!(screen.members().len(), 2);
+        keys(
+            &mut screen,
+            &[KeyIntent::Enter, KeyIntent::Down, KeyIntent::Enter],
+        );
+        let ids: Vec<AccountId> = screen.members().iter().map(Member::id).collect();
+        assert_eq!(ids, [ME]);
+        assert!(
+            screen
+                .ports
+                .journal()
+                .permissions()
+                .is_some_and(|p| p.resolved(OTHER) == ME)
+        );
+        idle(&mut screen);
+        assert_eq!(screen.members.selected(), None);
+    }
+
+    #[test]
+    fn the_successor_options_are_clickable_and_cover_the_rows() {
+        let (mut screen, _) = screen(2);
+        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, 100, SECOND_MEMBER_Y);
+        click(&mut screen, SUCCESSOR_X, EDIT_ROW_Y);
+        // 候補の列は箱の真下に 24 ずつ。1 つ目は「引き継ぎ先なし」、2 つ目が u1。その間は行の上だが、行は押せない。
+        click(&mut screen, SUCCESSOR_X, EDIT_ROW_Y + 24);
+        assert!(!screen.members.options_open());
+        assert_eq!(screen.members().len(), 2);
+        assert_eq!(screen.members.selected(), Some(OTHER));
+        click(&mut screen, SUCCESSOR_X, EDIT_ROW_Y);
+        click(&mut screen, SUCCESSOR_X, EDIT_ROW_Y + 48);
+        let ids: Vec<AccountId> = screen.members().iter().map(Member::id).collect();
+        assert_eq!(ids, [ME]);
     }
 
     #[test]

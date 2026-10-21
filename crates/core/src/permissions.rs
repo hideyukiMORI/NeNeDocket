@@ -62,10 +62,25 @@ impl Permissions {
     }
 
     /// `new` が `old` を引き継いだ権限。`old` に前の引き継ぎがあれば置き換える。
+    /// `old` が編集者なら `new` も編集者に、`old` の入っていたグループに `new` も入れ、`old` は一覧から外す
+    /// （古い ID は引き継いだ ID の役を持つので、書けることは変わらない）。
     #[must_use]
     pub fn succeeding(mut self, new: AccountId, old: AccountId) -> Self {
+        if new == old {
+            return self;
+        }
         self.successions.retain(|(_, previous)| *previous != old);
         self.successions.push((new, old));
+        if self.editors.contains(&old) {
+            self.editors.retain(|editor| *editor != old);
+            self.editors.push(new);
+        }
+        for (_, members) in &mut self.groups {
+            if members.contains(&old) {
+                members.retain(|member| *member != old);
+                members.push(new);
+            }
+        }
         self.tidy();
         self
     }
@@ -235,6 +250,30 @@ mod tests {
     }
 
     #[test]
+    fn a_successor_takes_over_the_editor_entry_and_the_groups_of_the_old_id() {
+        let old = AccountId::new(10);
+        let permissions = Permissions::owner_only(OWNER)
+            .allowing(old)
+            .grouped("qa", old)
+            .grouped("dev", A)
+            .succeeding(B, old);
+        assert_eq!(permissions.editors(), [B]);
+        assert_eq!(
+            permissions.groups(),
+            [
+                (String::from("dev"), alloc::vec![A]),
+                (String::from("qa"), alloc::vec![B])
+            ]
+        );
+        assert!(permissions.may_edit(old));
+        assert!(permissions.may_edit(B));
+        // 編集者でもグループにも無い古い ID を引き継いでも、新しい ID は書けない。
+        let viewer = Permissions::owner_only(OWNER).succeeding(B, C);
+        assert!(!viewer.may_edit(B));
+        assert_eq!(viewer.clone().succeeding(B, B), viewer);
+    }
+
+    #[test]
     fn successions_keep_one_per_old_id_drop_self_successions_and_survive_cycles() {
         let old = AccountId::new(10);
         let permissions = Permissions::owner_only(OWNER)
@@ -263,7 +302,7 @@ mod tests {
             .handed_to(A);
         assert_eq!(handed.owner(), A);
         assert_eq!(handed.editors(), [OWNER]);
-        assert_eq!(handed.groups(), [(String::from("qa"), alloc::vec![B])]);
+        assert_eq!(handed.groups(), [(String::from("qa"), alloc::vec![C])]);
         assert_eq!(handed.successions(), [(C, B)]);
         assert_eq!(handed.clone().handed_to(A), handed);
     }

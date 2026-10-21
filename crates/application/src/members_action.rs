@@ -14,4 +14,6 @@ pub enum MembersAction {
     TogglePermissions,
     /// その人のグループをこの集合にする（差分が `Group` / `Ungroup` になる）。
     SetGroups(AccountId, Vec<String>),
+    /// 新しい ID が古い ID を引き継ぐ（新, 旧・ADR 0013）。
+    Succeed(AccountId, AccountId),
 }

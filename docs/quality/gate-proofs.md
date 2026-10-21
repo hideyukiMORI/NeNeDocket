@@ -771,7 +771,21 @@ Xvfb（`:97`）で 1 度流した（`scratchpad/handover.sh`）:
 
 Xvfb（`:98`・`scratchpad/groups.sh`）: alice が台帳を作り bob が参加、alice が参加者の段で「権限」を押し、bob の行を押すと編集行が出た。グループ欄に `qa, dev` と打って Enter → `permissions.v1.txt` に `group = dev: …` / `group = qa: …`、役は `Editor (dev, qa)`、欄は正規の形 `dev, qa` に揃う（[01-typed](screenshots/2026-10-21-groups-01-typed.png)）。「編集者」のチェックを押すと `editor = …` の行が足された（[02-editor](screenshots/2026-10-21-groups-02-editor.png)）。行は ID の順なので、手順は 2 つの ID を比べて行を選ぶ。
 
-## 34. 再現
+## 34. Issue #54 — 参加者の段から引き継ぎを書く（2026-10-21）
+
+同じコンテナ。編集行（Issue #53）の右に「引き継ぎ先」の箱（ID 24・候補は 7000〜）が付いた。候補は選んだ人の他の参加者（`名前 (ID の先頭 4 桁)`）で、先頭は「引き継ぎ先なし」。候補を押すか、開いて上下で光らせ Enter で決めると `AdminCommand::Succeed(新, 旧)` を書く。閉じた箱の上下では選ばない（引き継ぎは戻せない）。候補の列は行の上に重なるので、行より後に問い合わせ、最後に描き、開いているあいだ表と行は押せない。core の `Permissions::succeeding` は、古い ID が編集者なら新しい ID を編集者に、古い ID の入っていたグループに新しい ID を入れ、古い ID を一覧から外すようになった（ADR 0013 の 3 に追記）。引き継がれた ID は参加者の段から消える（Issue #51）。文言は 6 言語に `NoSuccessor` を足した。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 355 件（core 100・application 87） |
+| `make conformance` | 違反なし（221 ファイル） |
+| `make coverage` | core ＋ application の region 98.83%（閾値 90） |
+| `make deny` | 回していない（依存の変更なし） |
+
+Xvfb（`:99`・`scratchpad/successor.sh`）: alice が台帳を作り bob を編集者に、鍵を失くした想定の bob が別の設定フォルダから同じ名前で参加（3 人）。alice が古い bob の行を押して編集行、「引き継ぎ先」を押すと候補 `No successor` / `alice (…)` / `bob (…)` が行の上に出た（[01-open](screenshots/2026-10-21-successor-01-open.png)）。新しい bob を押すと `permissions.v1.txt` に `succeeds = <新> : <旧>`、`editor =` は新しい bob に移り、段は alice（Owner）と新しい bob（Editor）の 2 人になった（[02-succeeded](screenshots/2026-10-21-successor-02-succeeded.png)）。行と候補の番号は ID の順なので、手順は 3 つの ID を並べて選ぶ。
+
+## 35. 再現
 
 ```bash
 make prove
