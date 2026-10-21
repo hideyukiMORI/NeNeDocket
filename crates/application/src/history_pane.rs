@@ -1,8 +1,8 @@
 //! 選んだ課題の履歴の段（FR-006）。表の下に、いつ・誰が・何を。自分のスクロールを持つ。
 
-use alloc::string::String;
 use alloc::vec::Vec;
 
+use nene_docket_core::cell_text;
 use nene_docket_core::column_width::ColumnWidth;
 use nene_docket_core::draw_command::DrawCommand;
 use nene_docket_core::interaction::Interaction;
@@ -14,7 +14,6 @@ use nene_docket_core::response_phase::ResponsePhase;
 use nene_docket_core::scroll_bar;
 use nene_docket_core::scroll_state::ScrollState;
 use nene_docket_core::table_layout::TableLayout;
-use nene_docket_core::text_align::TextAlign;
 use nene_docket_core::ui_scale::UiScale;
 use nene_docket_core::widget_id::WidgetId;
 use nene_docket_core::word::Word;
@@ -149,7 +148,7 @@ impl HistoryPane {
             paint: Paint::Surface,
         });
         for (cell, heading) in table.cells(header).into_iter().zip(headings) {
-            commands.push(Self::cell_text(cell, heading, Paint::Muted, padding));
+            commands.extend(cell_text::cell_text(cell, heading, Paint::Muted, padding));
         }
     }
 
@@ -190,7 +189,7 @@ impl HistoryPane {
                 .into_iter()
                 .zip(line.columns(language, display))
             {
-                commands.push(Self::cell_text(cell, &text, paint, padding));
+                commands.extend(cell_text::cell_text(cell, &text, paint, padding));
             }
         }
         commands.push(DrawCommand::Unclip);
@@ -222,20 +221,5 @@ impl HistoryPane {
             self.scroll = self.scroll.scrolled_by(wheel);
         }
         commands.extend(scroll_bar::scroll_bar(track, self.scroll, response));
-    }
-
-    fn cell_text(cell: PixelRect, text: &str, paint: Paint, padding: u16) -> DrawCommand {
-        DrawCommand::Text {
-            rect: PixelRect::new(
-                cell.x().saturating_add(padding),
-                cell.y(),
-                cell.width().saturating_sub(padding.saturating_mul(2)),
-                cell.height(),
-            ),
-            text: String::from(text),
-            align: TextAlign::Start,
-            paint,
-            caret: None,
-        }
     }
 }

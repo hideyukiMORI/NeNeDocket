@@ -25,6 +25,7 @@ pub mod attachment_word;
 pub mod bitmap;
 pub mod button;
 pub mod button_phase;
+pub mod cell_text;
 pub mod checkbox;
 pub mod column_width;
 pub mod csv;
