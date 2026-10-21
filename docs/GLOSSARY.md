@@ -9,7 +9,7 @@
 | 台帳（docket） | 1 つのフォルダ。課題の集合と、それを作ったジャーナルの全部。併合した状態も同じ名で呼ぶ | `Docket`（core・課題の集合と作られた順と宛先の無い操作の数）・フォルダ |
 | 画面の状態の所有者 | 検索欄・絞り込み・完了の表示・表の選択とスクロール・判定を 1 つ持ち、1 フレームの入力で次の状態へ置き換える | `DocketScreen`（application）・ADR 0006 |
 | 本文の段（body pane） | 選んだ課題の本文を出す複数行の欄。表の下。道具の段の「本文」で出す。フォーカスが外れたら `Set` を追記 | `BodyPane`（application）・`text_area`（core） |
-| 参加者の段（members pane） | 台帳に参加したアカウント（`keys/`）の名前・ID・役。持ち主は「権限」で有効・無効を切り替え、行を押して選ぶと編集行（「編集者」のチェック・グループの欄）が出る | `MembersPane` / `Member` / `MemberRole`（application）・FR-009 / FR-010 |
+| 参加者の段（members pane） | 台帳に参加したアカウント（`keys/`）の名前・ID・役。持ち主は「権限」で有効・無効を切り替え、行を押して選ぶと編集行（「編集者」のチェック・グループの欄・「引き継ぎ先」の箱）が出る | `MembersPane` / `Member` / `MemberRole`（application）・FR-009 / FR-010 |
 | 課題（item） | 台帳の 1 行。題名・本文・状態・担当・期限・ラベル・並び順と、消されているか。併合の派生値 | `Item` / `ItemId`（作ったアカウントと連番）（core） |
 | 項目（field） | 課題の 1 つの属性。操作は項目単位で勝敗が付く | `Field` / `FieldValue`（core・閉じた `enum`） |
 | 状態（state） | 課題の進み具合。閉じた集合 | `ItemState`（core） |
@@ -30,7 +30,7 @@
 | 署名（signature） | 版 2 の行と `permissions.v1.txt` に付く 64 バイト。読み手が公開鍵で検証し、通らない行は捨てて数える | `Signature`（core）・`verifier`（store）・ADR 0010 |
 | 持ち主（owner） | 台帳を作ったアカウント。権限を有効にし、編集者とグループを決め、`permissions.v1.txt` に署名する | `docket.v1.txt` の `owner`・`administration`（store） |
 | グループ（group） | アカウントの集合。中の全員が書ける | `Permissions::groups`（core）・FR-010 |
-| 引き継ぎ（succession） | 新しい ID が古い ID を引き継ぐと持ち主が書いた行。読み手は古い ID の履歴を新しい名前で出し、古い ID に新しい ID の役を与える。鍵を失くした人のため | `Permissions::successions` / `resolved`（core）・`succeeds =` 行・`--succeed`・ADR 0013 |
+| 引き継ぎ（succession） | 新しい ID が古い ID を引き継ぐと持ち主が書いた行。新しい ID は古い ID の編集者・グループを受け継ぎ、読み手は古い ID の履歴を新しい名前で出す。鍵を失くした人のため | `Permissions::successions` / `resolved` / `succeeding`（core）・`succeeds =` 行・`--succeed`・編集行の「引き継ぎ先」・ADR 0013 |
 | 持ち主の交代（handover） | 今の持ち主が `--owner` で持ち主を替える。直後の `permissions.v1.txt` は前の持ち主の鍵で署名され `handover` の行を持ち、新しい持ち主が開くと署名し直す | `administration::apply` / `adopt`（store）・`PermissionsReading::handover`（application）・ADR 0013 |
 | 権限（permission） | 台帳に「書ける」かどうか（持ち主・編集者・グループの中）。閲覧は制限しない | `Permissions`（core）・`permissions.v1.txt`（store）・`nene-docket --permissions on` |
 | 設定（settings） | 最近開いた台帳・読み直しの間隔・表示言語の希望・配色の希望・表の列の幅と順。版付きの `key = value`（版 4）。形は application、読み書きは adapters | `Settings` / `settings_file`（application）・`saved_settings`（adapters-x11 / adapters-windows） |

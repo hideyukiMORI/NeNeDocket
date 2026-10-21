@@ -1,5 +1,6 @@
 //! 参加者の段（FR-009）。表の下に、台帳に参加したアカウントの名前・ID・役（グループがあれば `役 (qa, dev)`）。
-//! 持ち主は「権限」で有効・無効を切り替え、行を押して選ぶと段の上に編集行（「編集者」のチェックとグループの欄・`,` 区切り）が出る（FR-010）。
+//! 持ち主は「権限」で有効・無効を切り替え、行を押して選ぶと段の上に編集行（「編集者」のチェックとグループの欄・`,` 区切り・
+//! 「引き継ぎ先」の箱・ADR 0013）が出る（FR-010）。
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -15,9 +16,12 @@ use nene_docket_core::layout::Layout;
 use nene_docket_core::paint::Paint;
 use nene_docket_core::pixel_rect::PixelRect;
 use nene_docket_core::preedit::Preedit;
+use nene_docket_core::response::Response;
 use nene_docket_core::response_phase::ResponsePhase;
 use nene_docket_core::scroll_bar;
 use nene_docket_core::scroll_state::ScrollState;
+use nene_docket_core::select_box;
+use nene_docket_core::select_state::SelectState;
 use nene_docket_core::table_layout::TableLayout;
 use nene_docket_core::text_align::TextAlign;
 use nene_docket_core::text_edit::TextEdit;
@@ -39,6 +43,10 @@ const MEMBERS_SCROLL: WidgetId = WidgetId::new(21);
 const MEMBER_EDITOR: WidgetId = WidgetId::new(22);
 /// 編集行のグループの欄の ID。
 const MEMBER_GROUPS: WidgetId = WidgetId::new(23);
+/// 編集行の「引き継ぎ先」の箱の ID。
+const MEMBER_SUCCESSOR: WidgetId = WidgetId::new(24);
+/// 「引き継ぎ先」の候補の ID。番号を足す。
+const MEMBER_SUCCESSOR_OPTION: WidgetId = WidgetId::new(7_000);
 /// 参加者の行の ID。見えている順の番号を足す。
 const MEMBER_ROW: WidgetId = WidgetId::new(3_000);
 
@@ -50,6 +58,7 @@ const PERMISSIONS_WIDTH_PX: u16 = 120;
 const PADDING_PX: u16 = 8;
 const SCROLL_WIDTH_PX: u16 = 12;
 const EDITOR_WIDTH_PX: u16 = 120;
+const SUCCESSOR_WIDTH_PX: u16 = 200;
 const GAP_PX: u16 = 4;
 /// グループの区切り。名前に `:` は使えない（`permissions.v1.txt` の形）。
 const GROUP_SEPARATOR: char = ',';
@@ -68,6 +77,10 @@ pub struct MembersPane {
     /// グループの欄を読み込んだ時点の文字列。違えば利用者が変えた。
     groups_base: String,
     bad_groups: bool,
+    /// 「引き継ぎ先」の箱。0 は引き継がない、1 からは `candidates` の順。
+    successor: SelectState,
+    /// 引き継ぎ先の候補（選んだ人の他の参加者）と、その表示。
+    candidates: Vec<(AccountId, String)>,
 }
 
 impl MembersPane {
@@ -82,6 +95,8 @@ impl MembersPane {
             groups: TextEdit::empty(),
             groups_base: String::new(),
             bad_groups: false,
+            successor: SelectState::closed(1, 0),
+            candidates: Vec::new(),
         }
     }
 
@@ -130,6 +145,35 @@ impl MembersPane {
     #[must_use]
     pub const fn groups_id() -> WidgetId {
         MEMBER_GROUPS
+    }
+
+    /// 編集行の「引き継ぎ先」の箱の ID。
+    #[must_use]
+    pub const fn successor_id() -> WidgetId {
+        MEMBER_SUCCESSOR
+    }
+
+    /// 「引き継ぎ先」の候補の列が開いているか（開いているあいだ、表と行は押せない）。
+    #[must_use]
+    pub const fn options_open(&self) -> bool {
+        self.successor.is_open()
+    }
+
+    /// 「引き継ぎ先」の箱の鍵。閉じた箱の上下では選ばない（引き継ぎは戻せないので、開いて Enter で決める）。
+    pub fn successor_key(&mut self, key: KeyIntent) -> Option<MembersAction> {
+        if !self.successor.is_open() && key != KeyIntent::Enter {
+            return None;
+        }
+        self.successor = self.successor.applied(key);
+        self.chosen_successor()
+    }
+
+    /// 箱が選んでいる候補への引き継ぎ。引き継がない（0）なら `None`。
+    fn chosen_successor(&self) -> Option<MembersAction> {
+        let old = self.selected?;
+        let chosen = self.successor.chosen().checked_sub(1)?;
+        let (new, _) = self.candidates.get(chosen)?;
+        Some(MembersAction::Succeed(*new, old))
     }
 
     /// グループの欄の鍵。Enter で確定（選んだ行のグループをその集合にする求め）。
@@ -185,15 +229,21 @@ impl MembersPane {
         let mut actions = Vec::new();
         let editing = self.editing(members, owner && enabled);
         let mut layout = Layout::inside(area, self.px(GAP_PX));
+        let mut successor_box = None;
         if let Some(member) = editing {
             let row = layout.row(
                 self.px(ROW_PX),
                 &[
                     ColumnWidth::Fixed(self.px(EDITOR_WIDTH_PX)),
                     ColumnWidth::Fill,
+                    ColumnWidth::Fixed(self.px(SUCCESSOR_WIDTH_PX)),
                 ],
             );
-            actions.extend(self.edit_row(interaction, (&row, &member, language), &mut commands));
+            self.load_candidates(members, &member);
+            let (acted, response) =
+                self.edit_row(interaction, (&row, &member, language), &mut commands);
+            actions.extend(acted);
+            successor_box = row.get(2).copied().zip(response);
         }
         let table_area = layout.remaining();
         let track = PixelRect::new(
@@ -220,7 +270,70 @@ impl MembersPane {
             &mut commands,
         ));
         self.scroll_bar(interaction, (track, table_area), &mut commands);
+        if let Some((rect, response)) = successor_box {
+            // 候補は行より後に問い合わせ（重なった所では候補が勝つ）、箱は最後に描く（候補が行の上に来る）。
+            actions.extend(self.successor_options(interaction, rect, language));
+            let labels = self.successor_labels(language);
+            let options: Vec<&str> = labels.iter().map(String::as_str).collect();
+            commands.extend(select_box::select_box(
+                rect,
+                &options,
+                self.successor,
+                response,
+            ));
+        }
         (commands, actions)
+    }
+
+    /// 選んだ人の他の参加者を候補にする。数が変われば箱を閉じて「引き継がない」に戻す。
+    fn load_candidates(&mut self, members: &[Member], selected: &Member) {
+        self.candidates = members
+            .iter()
+            .filter(|member| member.id() != selected.id())
+            .map(|member| {
+                (
+                    member.id(),
+                    alloc::format!("{} ({})", member.name(), member.short_id()),
+                )
+            })
+            .collect();
+        let count = self.candidates.len().saturating_add(1);
+        if self.successor.count() != count {
+            self.successor = SelectState::closed(count, 0);
+        }
+    }
+
+    /// 箱の候補の文言。先頭は「引き継ぎ先なし」。
+    fn successor_labels(&self, language: Language) -> Vec<String> {
+        let mut labels = alloc::vec![String::from(wording::text(language, Word::NoSuccessor))];
+        labels.extend(self.candidates.iter().map(|(_, label)| label.clone()));
+        labels
+    }
+
+    /// 開いた「引き継ぎ先」の候補。押せば選んで閉じ、引き継ぐ。
+    fn successor_options(
+        &mut self,
+        interaction: &mut Interaction,
+        rect: PixelRect,
+        language: Language,
+    ) -> Option<MembersAction> {
+        if !self.successor.is_open() {
+            return None;
+        }
+        let count = self.successor_labels(language).len();
+        let mut action = None;
+        for (index, option) in select_box::option_rects(rect, count)
+            .into_iter()
+            .enumerate()
+        {
+            let id = MEMBER_SUCCESSOR_OPTION.indexed(u32::try_from(index).unwrap_or(u32::MAX));
+            if interaction.probe(id, option, false).clicked() {
+                self.successor = self.successor.chosen_at(index);
+                interaction.focus_on(MEMBER_SUCCESSOR);
+                action = self.chosen_successor();
+            }
+        }
+        action
     }
 
     /// 見えている行。`administering` なら押して選べる。選んだ行は強調。
@@ -236,7 +349,11 @@ impl MembersPane {
             let Some(member) = usize::try_from(index).ok().and_then(|i| members.get(i)) else {
                 continue;
             };
-            let response = interaction.probe(MEMBER_ROW.indexed(index), rect, false);
+            let response = if self.successor.is_open() {
+                Response::new(ResponsePhase::Idle, false, false)
+            } else {
+                interaction.probe(MEMBER_ROW.indexed(index), rect, false)
+            };
             if administering && response.clicked() {
                 actions.extend(self.select(member));
             }
@@ -290,6 +407,7 @@ impl MembersPane {
         }
         self.selected = Some(member.id());
         self.load_groups(member);
+        self.successor = SelectState::closed(1, 0);
         actions
     }
 
@@ -300,16 +418,19 @@ impl MembersPane {
         self.bad_groups = false;
     }
 
-    /// 編集行: 「編集者」のチェックとグループの欄。欄はフォーカスを失ったときに確定し、違わなければいまの値に合わせる。
+    /// 編集行: 「編集者」のチェックとグループの欄と「引き継ぎ先」の箱（描くのは最後なので、問い合わせの結果を返す）。
+    /// 欄はフォーカスを失ったときに確定し、違わなければいまの値に合わせる。
     fn edit_row(
         &mut self,
         interaction: &mut Interaction,
         (row, member, language): (&[PixelRect], &Member, Language),
         commands: &mut Vec<DrawCommand>,
-    ) -> Vec<MembersAction> {
+    ) -> (Vec<MembersAction>, Option<Response>) {
         let mut actions = Vec::new();
-        let (Some(editor_rect), Some(groups_rect)) = (row.first(), row.get(1)) else {
-            return actions;
+        let (Some(editor_rect), Some(groups_rect), Some(successor_rect)) =
+            (row.first(), row.get(1), row.get(2))
+        else {
+            return (actions, None);
         };
         let editor = interaction.probe(MEMBER_EDITOR, *editor_rect, true);
         commands.extend(checkbox::checkbox(
@@ -331,7 +452,11 @@ impl MembersPane {
             }
         }
         commands.extend(text_field::text_field(*groups_rect, &self.groups, groups));
-        actions
+        let successor = interaction.probe(MEMBER_SUCCESSOR, *successor_rect, true);
+        if successor.clicked() {
+            self.successor = self.successor.toggled();
+        }
+        (actions, Some(successor))
     }
 
     /// つまみのドラッグとホイール（ポインタが段の上にあるときだけ）。

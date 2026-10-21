@@ -82,4 +82,6 @@ pub enum Word {
     Groups,
     /// グループ名に `:` は使えない。
     BadGroupName,
+    /// 参加者の編集行の「引き継ぎ先」の箱の、引き継がない候補（閉じた箱の名でもある）。
+    NoSuccessor,
 }
