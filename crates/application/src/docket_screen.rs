@@ -49,7 +49,7 @@ use nene_docket_core::word::Word;
 use nene_docket_core::wording;
 
 use crate::account::Account;
-use crate::admin_command::AdminCommand;
+use crate::administration_log;
 use crate::body_pane::BodyPane;
 use crate::docket_frame::DocketFrame;
 use crate::drag_target::DragTarget;
@@ -59,6 +59,7 @@ use crate::frame_input::FrameInput;
 use crate::history_change::HistoryChange;
 use crate::history_line::HistoryLine;
 use crate::history_pane::HistoryPane;
+use crate::item_number;
 use crate::journal_failure::JournalFailure;
 use crate::ledger::Ledger;
 use crate::member::Member;
@@ -70,6 +71,7 @@ use crate::ports::Ports;
 use crate::settings::Settings;
 use crate::settings_failure::SettingsFailure;
 use crate::table_column::TableColumn;
+use nene_docket_core::admin_command::AdminCommand;
 
 /// 部品の ID。候補は `*_OPTION` に番号を足し、表の行は `ROW` に見えている順の番号を足す。
 const SEARCH: WidgetId = WidgetId::new(1);
@@ -127,7 +129,6 @@ const LABELS_FIELD_WIDTH_PX: u16 = 140;
 /// ホイール 1 刻みで送る行数。
 const WHEEL_ROWS: i32 = 3;
 /// 番号の列に出す作成者の ID の桁数。
-const CREATOR_DIGITS: usize = 4;
 /// 過去の時点を再現している行の番号に付ける印。
 const PREVIEW_MARK: &str = "←";
 
@@ -436,12 +437,13 @@ impl DocketScreen {
         self.body.edit().text()
     }
 
-    /// 選んだ課題の履歴。新しいものが先。選んでいなければ空。
+    /// 選んだ課題の履歴。新しいものが先。選んでいなければ台帳全体の時系列（監査・ADR 0014）。
     #[must_use]
     pub fn history_lines(&self) -> Vec<HistoryLine> {
-        self.selected
-            .map(|id| HistoryLine::lines(self.ledger.ops(), id, &self.names))
-            .unwrap_or_default()
+        match self.selected {
+            Some(id) => HistoryLine::lines(self.ledger.ops(), id, &self.names),
+            None => HistoryLine::all(self.ledger.ops(), &self.names),
+        }
     }
 
     /// 利用者に示す降格（FR-014）。無ければ空。
@@ -603,7 +605,7 @@ impl DocketScreen {
             .filter(|point| area.contains(*point))?;
         let lines = self.history_lines();
         let index = self.history.line_at(area, lines.len(), point)?;
-        lines.get(index).map(|line| line.snapshot().clone())
+        lines.get(index).and_then(|line| line.snapshot().cloned())
     }
 
     /// 参加者の段。持ち主なら行の押下と「権限」のチェックを受け、権限を書く。
@@ -649,6 +651,11 @@ impl DocketScreen {
         }
         self.admin_failure = self.ports.journal_mut().administer(&commands).err();
         self.names = self.ports.journal().names();
+        if self.admin_failure.is_none() {
+            self.absorb_others();
+            self.write_failure =
+                administration_log::record(&mut self.ledger, &mut self.ports, &commands).err();
+        }
     }
 
     /// その人のいまのグループと望む集合の差分を `Group` / `Ungroup` に。
@@ -678,7 +685,7 @@ impl DocketScreen {
         [
             self.body.is_shown() && self.selected.is_some(),
             self.members.is_shown(),
-            self.history.is_shown() && self.selected.is_some(),
+            self.history.is_shown(),
         ]
     }
 
@@ -1671,8 +1678,7 @@ impl DocketScreen {
 
     /// 番号の列。作成者の ID の先頭と、その作成者の中での連番。複数アカウントでも重ならない。
     fn number_text(id: ItemId) -> String {
-        let creator: String = id.creator().hex().chars().take(CREATOR_DIGITS).collect();
-        format!("{creator}-{}", id.sequence())
+        item_number::text(id)
     }
 
     fn cell_text(cell: PixelRect, text: &str, paint: Paint, padding: u16) -> DrawCommand {
@@ -2480,13 +2486,70 @@ mod tests {
     }
 
     #[test]
-    fn the_history_pane_is_empty_without_a_selection() {
+    fn the_history_pane_without_a_selection_lists_the_whole_docket_with_item_numbers() {
         let (mut screen, _) = screen(3);
         click(&mut screen, HISTORY_X, TOOLBAR_Y);
         assert!(screen.shows_history());
-        assert!(screen.history_lines().is_empty());
-        let without_selection = idle(&mut screen);
-        assert!(texts(&without_selection).iter().all(|text| text != "When"));
+        // 他人が 3 件作った: 作成・題名・状態で 9 行。
+        let lines = screen.history_lines();
+        assert_eq!(lines.len(), 9);
+        let change = lines[0].columns(Language::English)[2].clone();
+        assert!(change.starts_with("0000-3: "), "{change}");
+        let frame = idle(&mut screen);
+        assert!(texts(&frame).iter().any(|text| text == "When"));
+        // 台帳全体の行は再現を持たず、押しても選び直さない。
+        assert!(lines[0].snapshot().is_none());
+        click(&mut screen, 100, FIRST_HISTORY_Y);
+        assert_eq!(screen.history_lines().len(), 9);
+    }
+
+    #[test]
+    fn administration_is_recorded_in_the_journal_shown_in_the_history_and_not_undone() {
+        let (mut screen, spy) = screen(2);
+        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, 100, SECOND_MEMBER_Y);
+        click(&mut screen, EDITOR_X, EDIT_ROW_Y);
+        let kinds: Vec<OpKind> = spy
+            .written
+            .borrow()
+            .iter()
+            .map(|op| op.kind().clone())
+            .collect();
+        assert_eq!(
+            kinds,
+            [
+                OpKind::Admin(AdminCommand::Permissions(true)),
+                OpKind::Admin(AdminCommand::Allow(OTHER)),
+            ]
+        );
+        assert_eq!(*spy.synced.borrow(), 2);
+        // 履歴（台帳全体）に名前で出る。
+        click(&mut screen, HISTORY_X, TOOLBAR_Y);
+        let lines = screen.history_lines();
+        assert_eq!(
+            lines[0].columns(Language::English),
+            ["2023-11-14 22:13", "me", "added an editor: other"]
+        );
+        assert_eq!(
+            lines[1].columns(Language::English)[2],
+            "turned permissions on"
+        );
+        // 権限の記録は戻せない: Undo は何も書かない。
+        keys(&mut screen, &[KeyIntent::Undo]);
+        assert_eq!(spy.written.borrow().len(), 2);
+        assert!(screen.notices().is_empty());
+    }
+
+    #[test]
+    fn a_failed_administration_is_not_recorded() {
+        let (mut screen, spy) = screen_with(FakeJournal {
+            fail_write: true,
+            ..FakeJournal::default()
+        });
+        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        assert!(spy.written.borrow().is_empty());
     }
 
     #[test]

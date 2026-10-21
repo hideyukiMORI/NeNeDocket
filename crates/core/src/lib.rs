@@ -17,6 +17,7 @@ extern crate alloc;
 extern crate std;
 
 pub mod account_id;
+pub mod admin_command;
 pub mod appearance;
 pub mod button;
 pub mod button_phase;

@@ -46,7 +46,7 @@ impl Ledger {
         });
         let next_sequence = ops
             .iter()
-            .map(|op| op.kind().item())
+            .filter_map(|op| op.kind().item())
             .filter(|item| item.creator() == account.id())
             .map(ItemId::sequence)
             .max()

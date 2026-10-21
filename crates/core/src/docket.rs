@@ -51,6 +51,7 @@ impl Docket {
                 }
                 None => self.orphans = self.orphans.saturating_add(1),
             },
+            OpKind::Admin(_) => {}
         }
         self
     }

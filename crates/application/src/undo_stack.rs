@@ -8,6 +8,7 @@ use alloc::vec::Vec;
 
 use nene_docket_core::op::Op;
 use nene_docket_core::op_id::OpId;
+use nene_docket_core::op_kind::OpKind;
 
 /// 生きている素の操作の列と、戻された（素の操作, それを戻した Undo）の列。
 #[derive(Debug, Clone, PartialEq, Eq)]
@@ -30,6 +31,9 @@ impl UndoStack {
 
     /// 自分の操作を 1 つ（ジャーナルの順に）。
     pub fn record(&mut self, op: &Op) {
+        if matches!(op.kind(), OpKind::Admin(_)) {
+            return;
+        }
         match op.undoes() {
             None => {
                 self.done.push(op.id());
@@ -101,6 +105,20 @@ mod tests {
 
     fn reversal(clock: u64, target: u64) -> Op {
         plain(clock).undoing(id(target))
+    }
+
+    #[test]
+    fn admin_records_are_not_undoable_so_they_are_not_recorded() {
+        let mut stack = UndoStack::empty();
+        stack.record(&Op::new(
+            id(1),
+            WallClock::new(0),
+            OpKind::Admin(nene_docket_core::admin_command::AdminCommand::Permissions(
+                true,
+            )),
+        ));
+        assert_eq!(stack.next_undo(), None);
+        assert_eq!(stack.done_count(), 0);
     }
 
     #[test]

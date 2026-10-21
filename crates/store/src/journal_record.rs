@@ -4,9 +4,13 @@
 //! `v1 <時計> <アカウント 16 進> <壁時計> <打ち消す操作 or -> <種類> <課題> [<項目> <値>] <検査和 8 桁>`
 //! `v2 <時計> <アカウント 16 進> <壁時計> <打ち消す操作 or -> <種類> <課題> [<項目> <値>] <署名 128 桁> <検査和 8 桁>`
 //! 課題は `<作ったアカウント 16 進>:<連番>`、打ち消す操作は `<時計>:<アカウント 16 進>`。
+//! 権限の記録（ADR 0014）は種類 `admin`、課題は `-`、続いて `<命令> <引数>…`:
+//! `permissions on|off`・`allow <アカウント>`・`disallow <アカウント>`・`group <名前> <アカウント>`・`ungroup <名前> <アカウント>`・
+//! `succeed <新> <旧>`・`owner <アカウント>`。
 //! 検査和は、それより前の欄をタブで結んだバイト列の CRC-32。署名は `v2` から値までをタブで結んだバイト列への Ed25519 署名。
 
 use nene_docket_core::account_id::AccountId;
+use nene_docket_core::admin_command::AdminCommand;
 use nene_docket_core::date::Date;
 use nene_docket_core::field::Field;
 use nene_docket_core::field_value::FieldValue;
@@ -31,6 +35,11 @@ const SEPARATOR: char = '\t';
 const NONE: &str = "-";
 /// ラベルの区切り。
 const LABEL_SEPARATOR: char = ',';
+/// 権限の記録の種類。
+const ADMIN: &str = "admin";
+/// 権限の有効・無効の値。
+const ON: &str = "on";
+const OFF: &str = "off";
 
 /// 署名する文（版の印から値まで）。
 fn body_of(version: JournalVersion, op: &Op) -> String {
@@ -145,11 +154,72 @@ fn encode_kind(kind: &OpKind) -> Vec<String> {
             value.field().keyword().to_owned(),
             encode_value(value),
         ],
+        OpKind::Admin(command) => {
+            let mut fields = vec![ADMIN.to_owned(), NONE.to_owned()];
+            fields.extend(encode_admin(command));
+            fields
+        }
     }
 }
 
-/// 種類と課題の欄の後に、`set` なら項目と値が続く。欄の総数はそれで決まる。
+/// 命令と引数。グループの名前は逃がす。
+fn encode_admin(command: &AdminCommand) -> Vec<String> {
+    match command {
+        AdminCommand::Permissions(on) => vec![
+            "permissions".to_owned(),
+            (if *on { ON } else { OFF }).to_owned(),
+        ],
+        AdminCommand::Allow(id) => vec!["allow".to_owned(), id.hex()],
+        AdminCommand::Disallow(id) => vec!["disallow".to_owned(), id.hex()],
+        AdminCommand::Group(name, id) => vec!["group".to_owned(), escape(name), id.hex()],
+        AdminCommand::Ungroup(name, id) => vec!["ungroup".to_owned(), escape(name), id.hex()],
+        AdminCommand::Succeed(new, old) => vec!["succeed".to_owned(), new.hex(), old.hex()],
+        AdminCommand::Owner(id) => vec!["owner".to_owned(), id.hex()],
+    }
+}
+
+/// `admin` の行の命令。欄の数は命令で決まる（`fields[7]` が命令、その後が引数）。
+fn decode_admin(fields: &[&str]) -> Result<AdminCommand, RecordFailure> {
+    let verb = fields.get(7).copied().unwrap_or("");
+    let expected_len = match verb {
+        "permissions" | "allow" | "disallow" | "owner" => 9,
+        "group" | "ungroup" | "succeed" => 10,
+        _ => return Err(RecordFailure::UnknownKind),
+    };
+    if fields.len() != expected_len {
+        return Err(RecordFailure::WrongFieldCount);
+    }
+    let first = fields.get(8).copied().unwrap_or("");
+    let second = fields.get(9).copied().unwrap_or("");
+    Ok(match verb {
+        "permissions" => AdminCommand::Permissions(match first {
+            ON => true,
+            OFF => false,
+            _ => return Err(RecordFailure::BadValue),
+        }),
+        "allow" => AdminCommand::Allow(parse_account(first)?),
+        "disallow" => AdminCommand::Disallow(parse_account(first)?),
+        "owner" => AdminCommand::Owner(parse_account(first)?),
+        "group" => AdminCommand::Group(
+            unescape(first).ok_or(RecordFailure::BadValue)?,
+            parse_account(second)?,
+        ),
+        "ungroup" => AdminCommand::Ungroup(
+            unescape(first).ok_or(RecordFailure::BadValue)?,
+            parse_account(second)?,
+        ),
+        _ => AdminCommand::Succeed(parse_account(first)?, parse_account(second)?),
+    })
+}
+
+/// 種類と課題の欄の後に、`set` なら項目と値が、`admin` なら命令と引数が続く。欄の総数はそれで決まる。
 fn decode_kind(kind: &str, item: &str, fields: &[&str]) -> Result<OpKind, RecordFailure> {
+    if kind == ADMIN {
+        if item != NONE {
+            return Err(RecordFailure::BadValue);
+        }
+        return Ok(OpKind::Admin(decode_admin(fields)?));
+    }
     let item = decode_item(item)?;
     let expected_len = if kind == "set" { 9 } else { 7 };
     if fields.len() != expected_len {
@@ -260,6 +330,68 @@ mod tests {
             WallClock::new(1_700_000_000),
             kind,
         )
+    }
+
+    /// 権限の記録の全部（ADR 0014）。グループの名前は逃がされる。
+    fn every_admin() -> Vec<Op> {
+        vec![
+            op(20, OpKind::Admin(AdminCommand::Permissions(true))),
+            op(21, OpKind::Admin(AdminCommand::Permissions(false))),
+            op(22, OpKind::Admin(AdminCommand::Allow(B))),
+            op(23, OpKind::Admin(AdminCommand::Disallow(B))),
+            op(
+                24,
+                OpKind::Admin(AdminCommand::Group("q\ta,b".to_owned(), B)),
+            ),
+            op(25, OpKind::Admin(AdminCommand::Ungroup("qa".to_owned(), B))),
+            op(26, OpKind::Admin(AdminCommand::Succeed(A, B))),
+            op(27, OpKind::Admin(AdminCommand::Owner(B))),
+        ]
+    }
+
+    #[test]
+    fn every_admin_record_round_trips_signed_and_unsigned() {
+        let key = SigningKey::from_bytes(&[3_u8; 32]);
+        for original in every_admin() {
+            let line = encode(&original);
+            assert!(line.contains("\tadmin\t-\t"), "{line}");
+            assert_eq!(decode(&line), Ok((original.clone(), None)));
+            let signed = encode_signed(&original, &key);
+            let (decoded, signature) = decode(&signed).unwrap();
+            assert_eq!(decoded, original);
+            assert!(is_signed_by(&decoded, &signature.unwrap(), &key.public()));
+        }
+    }
+
+    #[test]
+    fn a_bad_admin_record_is_refused_by_value_verb_count_item_or_account() {
+        let good = encode(&op(20, OpKind::Admin(AdminCommand::Permissions(true))));
+        let body = good.rsplit_once('\t').unwrap().0;
+        let rebuilt = |text: &str| with_checksum(text);
+        assert_eq!(
+            decode(&rebuilt(
+                &body.replace("\tpermissions\ton", "\tpermissions\tmaybe")
+            )),
+            Err(RecordFailure::BadValue)
+        );
+        assert_eq!(
+            decode(&rebuilt(&body.replace("\tpermissions\ton", "\tbless\ton"))),
+            Err(RecordFailure::UnknownKind)
+        );
+        assert_eq!(
+            decode(&rebuilt(
+                &body.replace("\tpermissions\ton", "\tpermissions\ton\textra")
+            )),
+            Err(RecordFailure::WrongFieldCount)
+        );
+        assert_eq!(
+            decode(&rebuilt(&body.replace("\tadmin\t-\t", "\tadmin\tx\t"))),
+            Err(RecordFailure::BadValue)
+        );
+        assert_eq!(
+            decode(&rebuilt(&body.replace("\tpermissions\ton", "\tallow\tzz"))),
+            Err(RecordFailure::BadAccount)
+        );
     }
 
     fn every_kind() -> Vec<Op> {

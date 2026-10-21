@@ -7,9 +7,9 @@ use nene_docket_core::account_id::AccountId;
 use nene_docket_core::op::Op;
 use nene_docket_core::permissions::Permissions;
 
-use crate::admin_command::AdminCommand;
 use crate::admission_report::AdmissionReport;
 use crate::journal_failure::JournalFailure;
+use nene_docket_core::admin_command::AdminCommand;
 
 /// 自分のジャーナルに追記し、同期し、他人の伸びた分を読む。
 pub trait JournalPort {

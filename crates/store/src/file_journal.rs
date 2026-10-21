@@ -4,12 +4,12 @@
 use std::path::Path;
 
 use nene_docket_application::account::Account;
-use nene_docket_application::admin_command::AdminCommand;
 use nene_docket_application::admission_report::AdmissionReport;
 use nene_docket_application::journal_failure::JournalFailure;
 use nene_docket_application::journal_port::JournalPort;
 use nene_docket_application::key_record::KeyRecord;
 use nene_docket_core::account_id::AccountId;
+use nene_docket_core::admin_command::AdminCommand;
 use nene_docket_core::op::Op;
 use nene_docket_core::permissions::Permissions;
 
@@ -233,7 +233,7 @@ mod tests {
     use super::*;
     use crate::administration;
     use crate::permissions_store;
-    use nene_docket_application::admin_command::AdminCommand;
+    use nene_docket_core::admin_command::AdminCommand;
 
     const ME: AccountId = AccountId::new(0x11);
     const OTHER: AccountId = AccountId::new(0x22);

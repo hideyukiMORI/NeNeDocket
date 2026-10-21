@@ -4,11 +4,12 @@
 //! 持ち主は `--permissions on|off` / `--allow <account>` / `--disallow <account>` / `--group <name> <account>` /
 //! `--ungroup <name> <account>` で権限を変える（FR-010・ADR 0010）。`--succeed <新 account> <旧 account>` で
 //! 引き継ぎ、`--owner <account>` で持ち主の交代（ADR 0013）。これらがあれば画面は開かず、書いて終わる。
+//! `--audit` は台帳全体の時系列（監査・ADR 0014）を標準出力に出して終わる。
 
 use std::path::{Path, PathBuf};
 
-use nene_docket_application::admin_command::AdminCommand;
 use nene_docket_core::account_id::AccountId;
+use nene_docket_core::admin_command::AdminCommand;
 
 use crate::launch_failure::LaunchFailure;
 
@@ -17,11 +18,12 @@ const DEFAULT_FOLDER: &str = "docket";
 /// `docket.v1.txt` を新しく作るときの名前の既定（フォルダ名が取れないとき）。
 const DEFAULT_NAME: &str = "Docket";
 
-/// 台帳のフォルダ（引数に無ければ `None`）と、権限の命令（無ければ空）。
+/// 台帳のフォルダ（引数に無ければ `None`）と、権限の命令（無ければ空）と、監査の出力か。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Arguments {
     folder: Option<PathBuf>,
     admin: Vec<AdminCommand>,
+    audit: bool,
 }
 
 impl Arguments {
@@ -32,10 +34,15 @@ impl Arguments {
         let mut parsed = Self {
             folder: None,
             admin: Vec::new(),
+            audit: false,
         };
         while let Some(word) = arguments.next() {
             if !word.starts_with('-') {
                 parsed.take_folder(word)?;
+                continue;
+            }
+            if word == "--audit" {
+                parsed.audit = true;
                 continue;
             }
             let command = match word.as_str() {
@@ -75,6 +82,11 @@ impl Arguments {
     /// 権限の命令。空なら画面を開く。
     pub(crate) fn admin(&self) -> &[AdminCommand] {
         &self.admin
+    }
+
+    /// 監査の出力を求めたか。
+    pub(crate) const fn audit(&self) -> bool {
+        self.audit
     }
 
     /// 台帳を新しく作るときの名前。フォルダ名。
@@ -174,6 +186,10 @@ mod tests {
             parse(&["--permissions", "off"]).unwrap().admin(),
             [AdminCommand::Permissions(false)]
         );
+        assert!(!parsed.audit());
+        let audit = parse(&["/srv/team", "--audit"]).unwrap();
+        assert!(audit.audit());
+        assert!(audit.admin().is_empty());
     }
 
     #[test]

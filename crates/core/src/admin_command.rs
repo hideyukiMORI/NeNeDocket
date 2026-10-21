@@ -1,8 +1,9 @@
 //! 持ち主が台帳の権限を変える命令（FR-010・ADR 0010）。合成ルートが引数から、画面が参加者の段から作り、store が当てる。
+//! 当てた後はジャーナルに `OpKind::Admin` として追記され、監査の記録になる（ADR 0014）。
 
 use alloc::string::String;
 
-use nene_docket_core::account_id::AccountId;
+use crate::account_id::AccountId;
 
 /// 1 つの変更。
 #[derive(Debug, Clone, PartialEq, Eq)]

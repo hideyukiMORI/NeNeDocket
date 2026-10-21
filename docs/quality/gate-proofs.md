@@ -799,7 +799,21 @@ Xvfb（`:99`・`scratchpad/successor.sh`）: alice が台帳を作り bob を編
 
 Xvfb（`:100`・`scratchpad/panes.sh`）: 参加者の段を出す（自動の高さ・[01-auto](screenshots/2026-10-21-panes-01-auto.png)）→ 表との隙間（y≈382）を押して y=250 まで動かして離す → `settings.v5.txt` に `pane_px = 342` → 閉じて開き直すと段は同じ高さ（[02-reopened](screenshots/2026-10-21-panes-02-reopened.png)）。
 
-## 36. 再現
+## 36. Issue #56 — 権限の変更をジャーナルに追記し、台帳全体の時系列を監査として出す（ADR 0014 受理・2026-10-21）
+
+同じコンテナ。`AdminCommand` を core に移し、`OpKind::Admin(AdminCommand)` を足した（`item()` は `Option`）。`Docket::applied` は何もせず、`inverse_of` は `None`、Undo の束は積まない。store は種類 `admin`・課題 `-`・命令と引数の行を読み書きする（グループ名は逃がす）。application の `administration_log::record` が、画面の参加者の段と合成ルートの両方から、権限を書いた後に命令を操作として追記して同期する。`HistoryLine::all`（`merge::chronicle`）が台帳全体の時系列を作り、履歴の段は課題を選んでいなければそれを出す（再現は無く、押しても選び直さない）。`audit_report::text` が `--audit` の文字列（古い順・タブ区切り）。文言は 6 言語に 8 語（権限の記録）。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 368 件（core 101・application 96・store 47・app 16） |
+| `make conformance` | 違反なし（226 ファイル） |
+| `make coverage` | core ＋ application の region 98.82%（閾値 90） |
+| `make deny` | 回していない（依存の変更なし） |
+
+Xvfb（`:101`・`scratchpad/audit.sh`）: alice が台帳を作り、bob が参加。alice の `--permissions on --allow <bob> --group qa <bob>` で `permissions.v1.txt` が書かれ、alice のジャーナル（版 2）に `admin - permissions on` / `admin - allow <bob>` / `admin - group qa <bob>` の署名付き 3 行が追記された。`--audit` は English で `turned permissions on` / `added an editor: bob` / `added to a group: qa: bob`、bob の `LANG=ja_JP.UTF-8` では `権限を有効にした` / `編集者に加えた: bob` / `グループに入れた: qa: bob`（いつ・誰が・何を、タブ区切り・古い順）。画面で履歴の段を出す（課題を選ばない）と同じ 3 行が新しい順に出た（[01-history-all](screenshots/2026-10-21-audit-01-history-all.png)）。参加者の段で bob の「編集者」を外すと `removed an editor: bob` が加わり、`--audit` にも出た（[02-after-disallow](screenshots/2026-10-21-audit-02-after-disallow.png)）。権限を有効にする前の alice の版 1 の 2 行は、これまで通り捨てて数える（`lines failing signature or permission: 2`）。
+
+## 37. 再現
 
 ```bash
 make prove
