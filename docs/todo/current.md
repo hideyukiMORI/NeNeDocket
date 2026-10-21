@@ -1,6 +1,6 @@
 # いまのタスク — NeNe Docket
 
-> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #16 まで）。
+> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #18 まで）。
 
 ## 状態
 
@@ -19,6 +19,7 @@
 | adapters-x11（時計・アカウント・読み直しの刻み） | ✅ Issue #11 |
 | 担当と期限を画面から変える（FR-001） | ✅ Issue #14。期限の形が違えば追記せず窓の下で示す（gate-proofs 第 15 節） |
 | 設定ファイル（FR-012）: 最近の台帳と読み直しの間隔 | ✅ Issue #16。引数なしで最近の台帳を開く。読めない設定は起動を止めて示す（gate-proofs 第 16 節）。列の幅と順・見えはまだ |
+| 課題の履歴の段（FR-006） | ✅ Issue #18。いつ（UTC）・誰が（ID の先頭 4 桁）・何を・何から何へ。Undo の行は控えめな色（gate-proofs 第 17 節） |
 | adapters-windows / ui-win32 | ❌ 無い |
 | IME の方式（FR-015） | ❌ ADR 未。コンテナには IM サーバ（fcitx / ibus）が無く XIM を測れない。施主の WSLg で測る |
 | 署名と鍵の方式（FR-010） | ❌ ADR 未。権限の Issue で決める |
@@ -28,7 +29,7 @@
 ## 次に行うこと
 
 1. **PR #3（Issue #1 / #2 / #4）を merge する。** 枝は harness の `claude/cloud-session-qus6l5` で、CI の `make ci` は GIT-002 で落ちている（gate-proofs 第 10 節）。ruleset が無いので merge はできる。施主が squash の件名を PR のタイトル（GIT-003 の形）で付けて merge する。ruleset（main の保護・squash-only・`check` を必須）を設定したら gate-proofs に記録し、GIT-002 / GIT-004 を active に
-2. 署名の ADR と権限（FR-010）。本文（複数行）とラベルを画面から変える経路（FR-001 の残り）。履歴の表示（FR-006）
+2. 署名の ADR と権限（FR-010）。本文（複数行）とラベルを画面から変える経路（FR-001 の残り）。アカウントの名前の一覧（FR-009・ジャーナルに名前を置く版付きの変更）
 3. **IME の実測は施主の WSLg で**: fcitx5 か ibus を入れ、`XMODIFIERS=@im=fcitx` で XIM の preedit が x11rb の窓に届く経路（XIM プロトコルの自前実装か、IM サーバの D-Bus か）を決める ADR
 4. スナップショットの ADR（FR-017 を実測してから）
 5. 環境の setup script に `cargo-llvm-cov`・`xdotool`・`mingw-w64` を足す（DEVELOPMENT_WORKFLOW 第 9 節）
@@ -46,3 +47,4 @@
 - `Add` は `create` だけを追記し、担当は空のまま（編集行で変える）。アカウントの名前は `USER` で、画面から変えられない（ADR 0008）
 - 読み直しの刻みは X の `ClientMessage` で、Windows では別の経路になる（ADR 0008）。間隔は設定の `refresh_seconds`（Issue #16）
 - 設定の「列の幅と順・見え」はまだ無い（列幅を変える経路ができてから）
+- 履歴の「いつ」は UTC（時差を知るアダプタが無い）、「誰が」は ID の先頭 4 桁（名前はジャーナルに無い）。過去の時点の状態の再現（FR-006 後半）はまだ

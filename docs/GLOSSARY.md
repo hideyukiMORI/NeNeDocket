@@ -37,6 +37,8 @@
 | 台帳の状態 | 見た操作の列・併合した台帳・論理時計・Undo の束の持ち主。自分の操作を作り、他人の操作を取り込む | `Ledger`（application） |
 | Undo の束 | 自分の素の操作のうち生きているものと、戻されたもの。ジャーナルの順に `record` すれば組み直せる | `UndoStack`（application）・ADR 0004 の 4 |
 | 編集の欄（slot） | 編集行の文字の欄（題名・担当・期限）。欄の文字列と課題の項目を行き来する。期限は `YYYY-MM-DD` | `EditSlot`（application） |
+| 履歴の行 | 課題 1 件に触れた操作を全順序で追い、いつ・誰が・何を・何から何へにした 1 行。Undo の追記は `undo:` | `HistoryLine`（application）・`merge::history`（core）・FR-006 |
+| 履歴の段 | 選んだ課題の履歴を表の下に出す段。自分のスクロールを持つ | `HistoryPane`（application） |
 | 降格の文言（notice） | 書けない・読めない・宛先の無い操作・読めなかった行を、窓の下 1 行で示す | `Notice`（application）・FR-014 |
 | アカウント | このプロセスの ID と名前。設定フォルダの `account.v1.txt` | `Account` / `account_file`（application）・`saved_account`（adapters-x11）・ADR 0008 |
 | 読み直しの刻み | 他人のジャーナルを読み直す合図を、一定の間隔で窓へ送るスレッド | `RefreshTicker`（adapters-x11）・`atoms::REFRESH_NAME`（ui-x11）・ADR 0008 |
