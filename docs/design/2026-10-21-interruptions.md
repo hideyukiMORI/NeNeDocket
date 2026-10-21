@@ -20,7 +20,7 @@
 | 権限・台帳・鍵のファイルの `rename` の途中 | `.tmp` が残り、元のファイルはそのまま（rename は原子的） | 持ち主が次に開いたとき `.tmp` を捨てる。元のファイルは最後に rename が終わった版 | `file_journal::tests::temporaries_of_my_account_…` / `leftovers::tests` / `key_file::tests::a_leftover_temporary_is_skipped_…` |
 | 添付の写しの途中 | `attachments/<課題>/<連番>-<名前>.tmp` が残り `attach` の行が無い | 一覧に出ない。消さない（上の約束）。同じ連番で付け直せば `.tmp` は上書きされる | `attachment_store::tests`（写しの検査） |
 | 空き容量ゼロ | 追記が失敗 | 失敗を示す。操作は store が覚え、空きができた後の追記・同期で古い順に書き直す。残っている間はスナップショットを書かない | `file_journal::tests::a_failed_append_is_kept_in_order_…`（追記の失敗を 4 回仕込む） |
-| スリープ復帰・共有の切断 | 読み直しが失敗し続ける・自分のハンドルが無効 | 読めない間は示し、復帰したら黙って続く（読み直しはスレッド・#75）。追記は 1 度開き直して試し、駄目なら覚えて示す | `own_journal::tests::reopening_gives_a_fresh_handle_…`（ファイルが消えた後に開き直す）・読み直しは `file_journal::tests::broken_lines_are_counted_and_a_missing_folder_is_unreadable` |
+| スリープ復帰・共有の切断 | 読み直しが失敗し続ける・自分のハンドルが無効 | 読めない間は示し、復帰したら黙って続く（読み直しはスレッド・#75）。追記は 1 度開き直して試し、駄目なら覚えて示す。スナップショットを書けなければ示し、台帳が変わっていなくても次の回（5 分ごと）にまた試し、書けたら知らせを消す（#100） | `own_journal::tests::reopening_gives_a_fresh_handle_…`（ファイルが消えた後に開き直す）・読み直しは `file_journal::tests::broken_lines_are_counted_and_a_missing_folder_is_unreadable`・スナップショットは `docket_screen::tests::a_failed_checkpoint_is_shown_retried_and_cleared_…` |
 | 画面のプロセスだけが `kill` される | 設定・スナップショットが書かれない | 次の起動は全部読む（遅いだけ）。設定は最後に書いた版 | スナップショット無しの起動は `file_journal::tests` の全部 |
 
 ## 施主の実機で
