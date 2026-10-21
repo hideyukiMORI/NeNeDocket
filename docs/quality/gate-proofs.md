@@ -1248,6 +1248,21 @@ A と B を NAS の台帳で開いたまま、Windows をスリープし約 1 �
 
 🔴 **正直に:** 英語の画面は「履歴」を出すクリックが外れて、履歴の段を見ていない。本文・参加者・添付の段、知らせの文言、`--audit` の文言は言語ごとには見ていない。125 の配色のうち見たのは 9。自動のクリックは、押すと離すを間を空けずに送ると狙った部品に当たらないことがあった（80 ms 空けると当たった）。当たり判定は押したフレームの位置だけを使う作り（`Interaction::probe`）なので、道具の側の問題と見て不具合にはしていない（推測）。
 
+### 51.15 WSLg: fcitx5 の XIM と X11 版の Ctrl+V
+
+施主の WSLg（Ubuntu 22.04.3・`DISPLAY=:0`・`LANG=C.UTF-8`）。
+
+| 項目 | 観測 |
+| --- | --- |
+| fcitx5 を入れる前の `xprop -root XIM_SERVERS` | `no such atom on any window` |
+| `fcitx5` `fcitx5-mozc` `fcitx5-frontend-gtk3` を入れ、`XMODIFIERS=@im=fcitx fcitx5 -d` | `XIM_SERVERS` は出ない。Ubuntu 22.04 では XIM の部品（`libxim.so`）が `fcitx5-module-xorg` に分かれていて入っていなかった。セッションの D-Bus も無い（`Failed to connect to session dbus`） |
+| `fcitx5-module-xorg` `dbus-x11` を足し、`dbus-launch` の下で起動し直す | **`XIM_SERVERS(ATOM) = @server=fcitx`**・ログに `Loaded addon xim`（fcitx5 5.0.14） |
+| X11 版（`cargo build --release`・設定と台帳は作業用の一時フォルダ）で、Windows のクリップボードに「クリップボードから貼る」を置き、追加 → 題名の欄で Ctrl+V → 外を押す | ジャーナルに `set :1 title クリップボードから貼る`。**画面の字は豆腐（□）**（[real-24](screenshots/2026-10-21-real-24-wslg-paste-tofu.png)） |
+
+起こした不具合: **#103**（X11 版で表示言語が日本語以外だと、利用者の日本語が豆腐。`LANG=C.UTF-8` で表示言語が English になり、`font_family::choose` が DejaVu Sans を選ぶ。IPAGothic 等は入っている）、**#104**（押してすぐ離すクリックが届かないことがある。`xdotool click 1` では「Add」が効かず、押して 150 ms 後に離すと効いた。Windows の自動化でも同じ形を見た）。
+
+🔴 **正直に:** X11 版は XIM の受け手を持たない（ADR 0020）ので、fcitx5 で日本語を打つことは試していない。ここで確かめたのは「WSLg の上で XIM のサーバを立てられる」ことと「Windows のクリップボードの日本語が X11 版に Ctrl+V で正しく入る」ことまで。操作は施主ではなく自動化（`xdotool`）。fcitx5 と追加のパッケージは施主の WSL に入れたまま（止めてある）。
+
 ## 52. 再現
 
 ```bash
