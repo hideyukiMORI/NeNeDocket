@@ -30,7 +30,7 @@ crates/adapters-windows（nene-docket-adapters-windows）
     Windows のアダプタ。同じポートを Win32 で実装する。unsafe を書ける 2 クレートの 1 つ（ADR 0002）
 
 crates/store（nene-docket-store）
-    ジャーナル（版 1）の形と置き場。`docket.v1.txt`・`journal/<account>.v1.log`・1 行 1 操作と CRC-32・追記と同期・他人の伸びた分の読み直し。設定ファイルは FR-012 で足す。標準ライブラリだけ・外部クレート 0
+    ジャーナル（版 1）の形と置き場。`docket.v1.txt`・`journal/<account>.v1.log`・1 行 1 操作と CRC-32・追記と同期・他人の伸びた分の読み直し。設定ファイルとアカウントのファイルは台帳でなくマシンのものなので、形は application、読み書きは adapters（ADR 0008）。標準ライブラリだけ・外部クレート 0
 
     アダプタ 2 つと store だけが、現在時刻・乱数・環境・ファイルを読める製品モジュール（ARC-007 / CNF-012）
 
@@ -106,7 +106,7 @@ application の `JournalPort` の実装（`FileJournal`）もここ。
 ### `adapters-x11` / `adapters-windows`
 
 時計・乱数・クリップボード・画面・IME のポートを OS の API で実装する。取得値をその場で core の型へ変換する（ARC-008）。
-`adapters-x11` は壁時計（`SystemClock`）・アカウントの保存（`saved_account`・`/dev/urandom` の ID）・読み直しの刻み（`RefreshTicker`・スレッドが X の窓へ `ClientMessage` を送る。ADR 0008）を持つ。
+`adapters-x11` は壁時計（`SystemClock`）・アカウントの保存（`saved_account`・`/dev/urandom` の ID）・設定の読み書き（`saved_settings`・FR-012）・読み直しの刻み（`RefreshTicker`・スレッドが X の窓へ `ClientMessage` を送る。ADR 0008）を持つ。
 
 ### `ui-x11` / `ui-win32`
 

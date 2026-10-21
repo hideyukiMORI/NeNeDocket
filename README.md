@@ -6,10 +6,11 @@ A small, fast issue tracker for Windows and X11. Rust, no UI toolkit, no server.
 
 ```bash
 cargo build --release -p nene-docket
-target/release/nene-docket /path/to/docket   # the folder is created if missing; default ./docket
+target/release/nene-docket /path/to/docket   # the folder is created if missing
+target/release/nene-docket                   # reopens the most recent docket (or ./docket the first time)
 ```
 
-The account (a random 128-bit id and your `USER` name) is created once in `$XDG_CONFIG_HOME/nene-docket/account.v1.txt`.
+The account (a random 128-bit id and your `USER` name) is created once in `$XDG_CONFIG_HOME/nene-docket/account.v1.txt`; recent dockets and the refresh interval live next to it in `settings.v1.txt`.
 
 ## What it will be
 

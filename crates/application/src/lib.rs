@@ -24,4 +24,6 @@ pub mod journal_port;
 pub mod ledger;
 pub mod notice;
 pub mod ports;
+pub mod settings;
+pub mod settings_file;
 pub mod undo_stack;

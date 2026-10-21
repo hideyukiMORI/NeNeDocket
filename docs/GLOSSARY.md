@@ -27,7 +27,7 @@
 | 鍵（key） | アカウントの署名鍵。権限を有効にした台帳でだけ使う | 別の ADR |
 | グループ（group） | アカウントの集合。権限の単位 | `Group`（core）・FR-010 |
 | 権限（permission） | 台帳・項目に対して「書ける」かどうか。閲覧は制限しない | `Permission`（core） |
-| 設定（settings） | 最近開いた台帳・列の幅と順・見え。版付きの `key = value` | `SettingsFileV1`（store） |
+| 設定（settings） | 最近開いた台帳と読み直しの間隔（列の幅と順・見えはまだ）。版付きの `key = value`。形は application、読み書きは adapters | `Settings` / `settings_file`（application）・`saved_settings`（adapters-x11） |
 | 結果（outcome） | 期待される成功・失敗を表す閉じた型 | `Result<T, *Failure>`（core / application） |
 | 拒否理由（failure） | 結果に添える閉じた理由の集合 | `*Failure`（`enum`） |
 | ポート（port） | 中核がプラットフォームを使うための型のある窓口 | `*Port`（application の `trait`） |

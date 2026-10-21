@@ -1,7 +1,8 @@
-//! X11（Linux）の合成ルート（ARC-006）。アカウント・ジャーナル・時計・刻みを結び、X11 の画面を起動する。
+//! X11（Linux）の合成ルート（ARC-006）。設定・アカウント・ジャーナル・時計・刻みを結び、X11 の画面を起動する。
 
 use nene_docket_adapters_x11::refresh_ticker::RefreshTicker;
 use nene_docket_adapters_x11::saved_account;
+use nene_docket_adapters_x11::saved_settings;
 use nene_docket_adapters_x11::system_clock::SystemClock;
 use nene_docket_application::docket_screen::DocketScreen;
 use nene_docket_application::ports::Ports;
@@ -14,13 +15,13 @@ use nene_docket_ui_x11::event_loop;
 use crate::arguments::Arguments;
 use crate::launch_failure::LaunchFailure;
 
-/// 他人のジャーナルを読み直す間隔（秒。ADR 0004 の 8。決め打ちしない）。
-const REFRESH_INTERVAL_SECONDS: u64 = 3;
-
-/// 依存を結んで走らせる。
+/// 依存を結んで走らせる。台帳のフォルダは引数、無ければ設定の最近の台帳（FR-012）。開けたら設定に覚える。
 pub(crate) fn run(arguments: &Arguments) -> Result<(), LaunchFailure> {
+    let settings = saved_settings::load()?;
+    let folder = arguments.folder_or(settings.latest());
     let account = saved_account::load_or_create()?;
-    let journal = FileJournal::open(arguments.folder(), &arguments.docket_name(), account.id())?;
+    let journal = FileJournal::open(&folder, &Arguments::docket_name(&folder), account.id())?;
+    let settings = saved_settings::remember(settings, &folder)?;
     let ports = Ports::new(Box::new(journal), Box::new(SystemClock));
     let display = Display::connect()?;
     let mut screen = DocketScreen::open(display.environment(), account, ports);
@@ -28,7 +29,7 @@ pub(crate) fn run(arguments: &Arguments) -> Result<(), LaunchFailure> {
     let ticker = RefreshTicker::start(
         window.window(),
         atoms::REFRESH_NAME,
-        REFRESH_INTERVAL_SECONDS,
+        settings.refresh_seconds(),
     )?;
     event_loop::run(&display, &mut window, &mut screen)?;
     drop(ticker);

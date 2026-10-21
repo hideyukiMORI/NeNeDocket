@@ -15,6 +15,8 @@ pub enum AdapterFailure {
     NoConfigDirectory,
     /// アカウントのファイルが読めない形（版が違う・壊れている）。黙って作り直さない（FR-014）。
     BadAccountFile(PathBuf),
+    /// 設定ファイルが読めない形（版が違う・知らない鍵・壊れている）。黙って既定値へ落とさない（FR-014）。
+    BadSettingsFile(PathBuf),
     /// 刻みの接続が X サーバに繋げなかった。
     Connect(ConnectError),
     /// 刻みの接続が X の要求を送れなかった。
@@ -34,6 +36,13 @@ impl fmt::Display for AdapterFailure {
                 write!(
                     formatter,
                     "account file is not readable: {}",
+                    path.display()
+                )
+            }
+            Self::BadSettingsFile(path) => {
+                write!(
+                    formatter,
+                    "settings file is not readable: {}",
                     path.display()
                 )
             }
@@ -87,6 +96,11 @@ mod tests {
             AdapterFailure::BadAccountFile(PathBuf::from("/x/account.v1.txt"))
                 .to_string()
                 .ends_with("account.v1.txt")
+        );
+        assert!(
+            AdapterFailure::BadSettingsFile(PathBuf::from("/x/settings.v1.txt"))
+                .to_string()
+                .contains("settings")
         );
     }
 }
