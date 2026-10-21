@@ -33,7 +33,7 @@
 | 引き継ぎ（succession） | 新しい ID が古い ID を引き継ぐと持ち主が書いた行。新しい ID は古い ID の編集者・グループを受け継ぎ、読み手は古い ID の履歴を新しい名前で出す。鍵を失くした人のため | `Permissions::successions` / `resolved` / `succeeding`（core）・`succeeds =` 行・`--succeed`・編集行の「引き継ぎ先」・ADR 0013 |
 | 持ち主の交代（handover） | 今の持ち主が `--owner` で持ち主を替える。直後の `permissions.v1.txt` は前の持ち主の鍵で署名され `handover` の行を持ち、新しい持ち主が開くと署名し直す | `administration::apply` / `adopt`（store）・`PermissionsReading::handover`（application）・ADR 0013 |
 | 権限（permission） | 台帳に「書ける」かどうか（持ち主・編集者・グループの中）。閲覧は制限しない | `Permissions`（core）・`permissions.v1.txt`（store）・`nene-docket --permissions on` |
-| 設定（settings） | 最近開いた台帳・読み直しの間隔・表示言語の希望・配色の希望・表の列の幅と順。版付きの `key = value`（版 4）。形は application、読み書きは adapters | `Settings` / `settings_file`（application）・`saved_settings`（adapters-x11 / adapters-windows） |
+| 設定（settings） | 最近開いた台帳・読み直しの間隔・表示言語の希望・配色の希望・表の列の幅と順・下の段の高さ。版付きの `key = value`（版 5）。形は application、読み書きは adapters | `Settings` / `settings_file`（application）・`saved_settings`（adapters-x11 / adapters-windows） |
 | 表示言語（language） | 画面の語の言語。6 つの閉じた集合。希望（`system` か決まった言語）は設定に、表示する言語は OS の観測値と合わせて解決する | `Language` / `LanguageChoice`（core）・ADR 0011・FR-019 |
 | 語（word）と文言の表 | 画面に出す語の名前と、言語ごとの文字列の表。UI は文字列を書かない | `Word` / `wording::text`（core） |
 | 配色（theme） | 名前・明暗・台帳の 8 色。組み込み 125 の元（`ThemeSeed`: 本文の 3 色と出典）から整数の補間で導く。希望（`system` か名前）は設定に | `Theme` / `ThemeSeed` / `theme_catalog` / `theme_derivation` / `ThemeChoice`（core）・ADR 0012 |

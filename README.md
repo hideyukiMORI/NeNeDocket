@@ -10,7 +10,7 @@ target/release/nene-docket /path/to/docket   # the folder is created if missing
 target/release/nene-docket                   # reopens the most recent docket (or ./docket the first time)
 ```
 
-The account (a random 128-bit id, your `USER` name and a secret key) is created once in `$XDG_CONFIG_HOME/nene-docket/account.v2.txt`; recent dockets, the refresh interval, language, theme and column layout live next to it in `settings.v4.txt`. The config folder belongs to one machine: do not copy it to another (a copied key is reported as a key mismatch). Use a second machine as a second account, and if a key is lost let the docket owner run `--succeed NEW OLD` so the old id's history carries the new name (ADR 0013).
+The account (a random 128-bit id, your `USER` name and a secret key) is created once in `$XDG_CONFIG_HOME/nene-docket/account.v2.txt`; recent dockets, the refresh interval, language, theme, column layout and pane height live next to it in `settings.v5.txt`. The config folder belongs to one machine: do not copy it to another (a copied key is reported as a key mismatch). Use a second machine as a second account, and if a key is lost let the docket owner run `--succeed NEW OLD` so the old id's history carries the new name (ADR 0013).
 
 ## What it will be
 

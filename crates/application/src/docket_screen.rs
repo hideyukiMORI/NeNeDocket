@@ -52,6 +52,7 @@ use crate::account::Account;
 use crate::admin_command::AdminCommand;
 use crate::body_pane::BodyPane;
 use crate::docket_frame::DocketFrame;
+use crate::drag_target::DragTarget;
 use crate::edit_slot::EditSlot;
 use crate::environment::Environment;
 use crate::frame_input::FrameInput;
@@ -64,6 +65,7 @@ use crate::member::Member;
 use crate::members_action::MembersAction;
 use crate::members_pane::MembersPane;
 use crate::notice::Notice;
+use crate::pane_height::PaneHeight;
 use crate::ports::Ports;
 use crate::settings::Settings;
 use crate::settings_failure::SettingsFailure;
@@ -97,6 +99,8 @@ const ROW: WidgetId = WidgetId::new(1_000);
 const COLUMN_GRIP: WidgetId = WidgetId::new(5_000);
 /// 表のヘッダの見出し（ドラッグで順を変える・FR-012）。左からの番号を足す。
 const COLUMN_HEAD: WidgetId = WidgetId::new(6_000);
+/// 表と下の段の境のつまみの ID。ドラッグで段の高さを変える（FR-012）。
+const PANE_GRIP: WidgetId = WidgetId::new(25);
 
 /// 1x の寸法（SPECIFICATION 第 2 節・決め打ちしない）。
 const MARGIN_PX: u16 = 8;
@@ -150,8 +154,8 @@ pub struct DocketScreen {
     base: Option<Item>,
     /// 履歴の行の上にポインタがあるとき、その時点の課題（表の行と本文の段に再現する・FR-006）。
     preview: Option<Item>,
-    /// 列の境をドラッグ中か。離したときに設定を書く。
-    resizing: Option<TableColumn>,
+    /// 列の境か、表と下の段の境をドラッグ中か。離したときに設定を書く。
+    resizing: Option<DragTarget>,
     /// 見出しをドラッグ中の列。離した位置へ入れ、設定を書く。
     moving: Option<TableColumn>,
     bad_due: bool,
@@ -248,6 +252,7 @@ impl DocketScreen {
         let toolbar = layout.row(self.px(ROW_PX), &self.toolbar_widths());
         let editor = layout.row(self.px(ROW_PX), &self.editor_widths());
         let (table_area, notice_rect) = self.split_notice(layout.remaining());
+        let whole_area = table_area;
         let (table_area, [body_area, members_area, history_area]) = self.split_panes(table_area);
         self.preview = self.history_preview(history_area, input);
         let visible = self.visible_ids();
@@ -266,6 +271,11 @@ impl DocketScreen {
             self.probe_toolbar(&toolbar, &mut commands);
         let (state_rect, state_response) = self.probe_editor(&editor, &mut commands);
         self.probe_table(&table, &visible, &mut commands);
+        self.probe_pane_grip(
+            whole_area,
+            table_area,
+            [body_area, members_area, history_area],
+        );
         self.probe_scroll(
             track,
             [body_area, members_area, history_area],
@@ -540,18 +550,23 @@ impl DocketScreen {
     /// 表の下の段（上から本文・参加者・履歴）。本文と履歴は課題を選んでいるときだけ。
     /// 高さは 1 つなら 2/5、2 つなら 1/4 ずつ、3 つなら 1/5 ずつ（ヘッダ ＋ 3 行以上）。
     fn split_panes(&self, area: PixelRect) -> (PixelRect, [Option<PixelRect>; 3]) {
-        let shown = [
-            self.body.is_shown() && self.selected.is_some(),
-            self.members.is_shown(),
-            self.history.is_shown() && self.selected.is_some(),
-        ];
+        let shown = self.shown_panes();
         let count = shown.iter().filter(|flag| **flag).count();
-        let share = match count {
-            0 | 1 => self.history.height_in(area.height()),
-            2 => area.height() / 4,
-            _ => area.height() / 5,
+        let height = match self.settings.pane() {
+            PaneHeight::Auto => {
+                let share = match count {
+                    0 | 1 => self.history.height_in(area.height()),
+                    2 => area.height() / 4,
+                    _ => area.height() / 5,
+                };
+                share.max(self.px(ROW_PX).saturating_mul(4))
+            }
+            PaneHeight::Fixed(logical) => self.clamped_pane_height(
+                area,
+                count,
+                logical.saturating_mul(self.scale.factor().max(1)),
+            ),
         };
-        let height = share.max(self.px(ROW_PX).saturating_mul(4));
         let mut bottom = area.bottom();
         let mut panes = [None, None, None];
         for (slot, flag) in panes.iter_mut().zip(shown).rev() {
@@ -656,6 +671,79 @@ impl DocketScreen {
                 .map(|name| AdminCommand::Ungroup(name.clone(), id)),
         );
         commands
+    }
+
+    /// 出している段（本文・参加者・履歴の順）。本文と履歴は課題を選んでいるときだけ。
+    fn shown_panes(&self) -> [bool; 3] {
+        [
+            self.body.is_shown() && self.selected.is_some(),
+            self.members.is_shown(),
+            self.history.is_shown() && self.selected.is_some(),
+        ]
+    }
+
+    /// 1 段の高さ（物理画素）を、行 2 つ分以上・表に行 2 つ分が残る範囲に収める。
+    fn clamped_pane_height(&self, area: PixelRect, count: usize, wanted: u16) -> u16 {
+        let min = self.px(PaneHeight::MIN_PX);
+        let gaps = u16::try_from(count.saturating_sub(1))
+            .unwrap_or(u16::MAX)
+            .saturating_mul(self.px(MARGIN_PX).saturating_add(1));
+        let room = area
+            .height()
+            .saturating_sub(self.px(ROW_PX).saturating_mul(2))
+            .saturating_sub(gaps);
+        let max = room / u16::try_from(count.max(1)).unwrap_or(1);
+        wanted.clamp(min, max.max(min))
+    }
+
+    /// 表と一番上の段の境のつまみ。縦にドラッグすると段の高さが変わり、離すと設定に残る（FR-012）。
+    fn probe_pane_grip(
+        &mut self,
+        whole: PixelRect,
+        table: PixelRect,
+        panes: [Option<PixelRect>; 3],
+    ) {
+        let count = panes.iter().flatten().count();
+        let was_panes = self.resizing == Some(DragTarget::Panes);
+        if count == 0 {
+            if was_panes {
+                self.resizing = None;
+            }
+            return;
+        }
+        let gap_top = table.bottom().saturating_add(1);
+        let rect = PixelRect::new(
+            whole.x(),
+            gap_top.saturating_add(self.px(MARGIN_PX).saturating_sub(self.px(GRIP_PX)) / 2),
+            whole.width(),
+            self.px(GRIP_PX),
+        );
+        let response = self.interaction.probe(PANE_GRIP, rect, false);
+        let held = response.phase() == ResponsePhase::Held;
+        if let Some(y) = self
+            .interaction
+            .pointer()
+            .position()
+            .map(PixelPoint::y)
+            .filter(|_| held)
+        {
+            let gaps = u16::try_from(count.saturating_sub(1))
+                .unwrap_or(u16::MAX)
+                .saturating_mul(self.px(MARGIN_PX).saturating_add(1));
+            let total = whole.bottom().saturating_add(1).saturating_sub(y);
+            let each = total.saturating_sub(gaps) / u16::try_from(count).unwrap_or(1);
+            let physical = self.clamped_pane_height(whole, count, each);
+            let logical = physical / self.scale.factor().max(1);
+            self.settings = self.settings.clone().with_pane(PaneHeight::fixed(logical));
+        }
+        if !held && was_panes {
+            self.save_settings();
+        }
+        if held {
+            self.resizing = Some(DragTarget::Panes);
+        } else if was_panes {
+            self.resizing = None;
+        }
     }
 
     /// 本文の段。複数行の欄 1 つ。
@@ -822,10 +910,13 @@ impl DocketScreen {
             self.settings = self.settings.clone().with_columns(widths);
             held = Some(column);
         }
-        if held.is_none() && self.resizing.is_some() {
+        let was_column = matches!(self.resizing, Some(DragTarget::Column(_)));
+        if held.is_none() && was_column {
             self.save_settings();
         }
-        self.resizing = held;
+        if held.is_some() || was_column {
+            self.resizing = held.map(DragTarget::Column);
+        }
     }
 
     /// 見出しをつまんで横に動かし、離した位置の列へ入れる（FR-012）。境のつまみが押下を取っていれば動かない。
@@ -2940,6 +3031,53 @@ mod tests {
         screen.step(&pointer(1040, header_y, ButtonPhase::Released));
         idle(&mut screen);
         assert_eq!(spy.saved.borrow().len(), 2);
+    }
+
+    #[test]
+    fn dragging_the_pane_border_resizes_the_panes_and_saves_the_settings() {
+        let (mut screen, spy) = screen(2);
+        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        assert_eq!(screen.settings().pane(), PaneHeight::Auto);
+        // 段は 268..391、表の下端は 259、隙間 260..267 のつまみは 261..266。
+        screen.step(&pointer(500, 263, ButtonPhase::Pressed));
+        screen.step(&pointer(500, 200, ButtonPhase::Held));
+        assert_eq!(screen.settings().pane(), PaneHeight::Fixed(192));
+        assert!(spy.saved.borrow().is_empty());
+        screen.step(&pointer(500, 200, ButtonPhase::Released));
+        idle(&mut screen);
+        assert_eq!(spy.saved.borrow().len(), 1);
+        assert_eq!(spy.saved.borrow()[0].pane(), PaneHeight::Fixed(192));
+        // 段のヘッダは 200..224 に上がった: そこの「権限」のチェックが押せる。
+        click(&mut screen, 1000, 212);
+        assert_eq!(screen.members()[0].role(), MemberRole::Owner);
+    }
+
+    #[test]
+    fn the_pane_height_is_clamped_and_there_is_no_grip_without_a_pane() {
+        let (mut screen, spy) = screen(2);
+        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        screen.step(&pointer(500, 263, ButtonPhase::Pressed));
+        screen.step(&pointer(500, 200, ButtonPhase::Held));
+        screen.step(&pointer(500, 200, ButtonPhase::Released));
+        idle(&mut screen);
+        // 行 2 つ分より低くならず、表に行 2 つ分が残る高さより高くならない。
+        screen.step(&pointer(500, 195, ButtonPhase::Pressed));
+        screen.step(&pointer(500, 385, ButtonPhase::Held));
+        assert_eq!(screen.settings().pane(), PaneHeight::Fixed(56));
+        screen.step(&pointer(500, 90, ButtonPhase::Held));
+        assert_eq!(screen.settings().pane(), PaneHeight::Fixed(256));
+        screen.step(&pointer(500, 90, ButtonPhase::Released));
+        idle(&mut screen);
+        assert_eq!(spy.saved.borrow().len(), 2);
+        // 段が無ければつまみも無い。
+        keys(&mut screen, &[KeyIntent::Escape]);
+        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        screen.step(&pointer(500, 263, ButtonPhase::Pressed));
+        screen.step(&pointer(500, 100, ButtonPhase::Held));
+        screen.step(&pointer(500, 100, ButtonPhase::Released));
+        assert_eq!(screen.settings().pane(), PaneHeight::Fixed(256));
+        assert_eq!(spy.saved.borrow().len(), 2);
+        assert_eq!(screen.resizing, None);
     }
 
     #[test]

@@ -785,7 +785,21 @@ Xvfb（`:98`・`scratchpad/groups.sh`）: alice が台帳を作り bob が参加
 
 Xvfb（`:99`・`scratchpad/successor.sh`）: alice が台帳を作り bob を編集者に、鍵を失くした想定の bob が別の設定フォルダから同じ名前で参加（3 人）。alice が古い bob の行を押して編集行、「引き継ぎ先」を押すと候補 `No successor` / `alice (…)` / `bob (…)` が行の上に出た（[01-open](screenshots/2026-10-21-successor-01-open.png)）。新しい bob を押すと `permissions.v1.txt` に `succeeds = <新> : <旧>`、`editor =` は新しい bob に移り、段は alice（Owner）と新しい bob（Editor）の 2 人になった（[02-succeeded](screenshots/2026-10-21-successor-02-succeeded.png)）。行と候補の番号は ID の順なので、手順は 3 つの ID を並べて選ぶ。
 
-## 35. 再現
+## 35. Issue #55 — 表と下の段の境をドラッグで動かし、設定の版 5 に残す（2026-10-21）
+
+同じコンテナ。表と一番上の段の隙間（8 px）に 6 px のつまみ（ID 25）を置き、縦にドラッグすると出している段すべてが同じ高さになる。高さは application の `PaneHeight`（`auto` か 56 以上の論理画素）で、設定の版 5 に `pane_px = auto|<高さ>` で残る（版 4 以前は読んで `auto` で補い、`pane_px` を持つ版 4 以前は拒む）。範囲は行 2 つ分（56）以上、表に行 2 つ分が残る高さ以下で、ドラッグ中も読んだ値も同じ `clamped_pane_height` で収める。離したときに設定を書く。列の境のドラッグと同じ `resizing` を `DragTarget`（列か段か）で共有し、どちらかをドラッグ中は見出しを動かさない。adapters は `settings.v5.txt` を書き、版 4→3→2→1 の順に読む。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 358 件（application 90） |
+| `make conformance` | 違反なし（223 ファイル） |
+| `make coverage` | core ＋ application の region 98.86%（閾値 90） |
+| `make deny` | 回していない（依存の変更なし） |
+
+Xvfb（`:100`・`scratchpad/panes.sh`）: 参加者の段を出す（自動の高さ・[01-auto](screenshots/2026-10-21-panes-01-auto.png)）→ 表との隙間（y≈382）を押して y=250 まで動かして離す → `settings.v5.txt` に `pane_px = 342` → 閉じて開き直すと段は同じ高さ（[02-reopened](screenshots/2026-10-21-panes-02-reopened.png)）。
+
+## 36. 再現
 
 ```bash
 make prove

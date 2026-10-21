@@ -8,6 +8,7 @@ use nene_docket_core::theme_choice::ThemeChoice;
 
 use crate::column_order::ColumnOrder;
 use crate::column_widths::ColumnWidths;
+use crate::pane_height::PaneHeight;
 
 /// 最近の台帳を覚える数。
 const RECENT_LIMIT: usize = 10;
@@ -23,6 +24,7 @@ pub struct Settings {
     theme: ThemeChoice,
     columns: ColumnWidths,
     order: ColumnOrder,
+    pane: PaneHeight,
 }
 
 impl Settings {
@@ -36,6 +38,7 @@ impl Settings {
             theme: ThemeChoice::System,
             columns: ColumnWidths::initial(),
             order: ColumnOrder::initial(),
+            pane: PaneHeight::Auto,
         }
     }
 
@@ -99,6 +102,18 @@ impl Settings {
     #[must_use]
     pub const fn order(&self) -> ColumnOrder {
         self.order
+    }
+
+    /// 表の下の段の高さを変えた設定。
+    #[must_use]
+    pub fn with_pane(self, pane: PaneHeight) -> Self {
+        Self { pane, ..self }
+    }
+
+    /// 表の下の段の高さ。
+    #[must_use]
+    pub const fn pane(&self) -> PaneHeight {
+        self.pane
     }
 
     /// 最近開いた台帳。新しいものが先。
