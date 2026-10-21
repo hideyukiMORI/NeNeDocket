@@ -6,6 +6,8 @@ use std::io::Read;
 use std::path::{Path, PathBuf};
 
 use encoding_rs::{Encoding, SHIFT_JIS};
+use nene_docket_core::bitmap::Bitmap;
+use nene_docket_media::image_decoding;
 
 use nene_docket_core::attachment::Attachment;
 use nene_docket_core::item_id::ItemId;
@@ -103,6 +105,25 @@ fn decode(bytes: &[u8]) -> String {
         Ok(text) => text.to_owned(),
         Err(_error) => SHIFT_JIS.decode_without_bom_handling(bytes).0.into_owned(),
     }
+}
+
+/// 画像の長い辺の上限（画素）。超えれば整数の倍率で縮める（ADR 0018）。
+pub const MAX_IMAGE_SIDE: u32 = 2048;
+
+/// 写しを画像として読む（FR-022）。PNG / JPEG。
+///
+/// # Errors
+///
+/// 写しを読めない（`CannotReadAttachment`）・復号できない（`CannotDecodeAttachment`）。
+pub fn read_image(
+    root: &Path,
+    item: ItemId,
+    attachment: &Attachment,
+) -> Result<Bitmap, StoreFailure> {
+    let bytes = fs::read(path_of(root, item, attachment))
+        .map_err(|_error| StoreFailure::CannotReadAttachment)?;
+    image_decoding::decode(&bytes, MAX_IMAGE_SIDE)
+        .map_err(|_failure| StoreFailure::CannotDecodeAttachment)
 }
 
 /// 写しの中身が記録の SHA-256 と合うか。無い・読めないなら合わない。

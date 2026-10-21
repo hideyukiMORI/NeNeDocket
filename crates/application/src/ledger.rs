@@ -310,6 +310,7 @@ mod tests {
     use nene_docket_core::account_id::AccountId;
     use nene_docket_core::admin_command::AdminCommand;
     use nene_docket_core::attachment::Attachment;
+    use nene_docket_core::shared_bitmap::SharedBitmap;
 
     use crate::attachment_text::AttachmentText;
     use nene_docket_core::field_value::FieldValue;
@@ -441,6 +442,14 @@ mod tests {
             _attachment: &Attachment,
         ) -> Result<AttachmentText, JournalFailure> {
             Ok(AttachmentText::new(String::new(), false))
+        }
+
+        fn read_attachment_image(
+            &self,
+            _item: ItemId,
+            _attachment: &Attachment,
+        ) -> Result<SharedBitmap, JournalFailure> {
+            Err(JournalFailure::AttachmentUndecodable)
         }
     }
 

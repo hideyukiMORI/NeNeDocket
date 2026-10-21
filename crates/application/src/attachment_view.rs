@@ -1,5 +1,5 @@
 //! 添付の見せ方（FR-022）。種類で決める: 文（読み取り専用の欄）・表（CSV / TSV）・それ以外はパスと「開く」。
-//! 画像（PNG / JPEG）は Issue #64 までパスと「開く」。
+//! 画像（PNG / JPEG）は画素の列（ホイールで拡大・ドラッグで移動）。
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -8,6 +8,7 @@ use nene_docket_core::attachment::Attachment;
 use nene_docket_core::attachment_kind::AttachmentKind;
 use nene_docket_core::csv;
 use nene_docket_core::item_id::ItemId;
+use nene_docket_core::shared_bitmap::SharedBitmap;
 use nene_docket_core::text_edit::TextEdit;
 
 use crate::journal_failure::JournalFailure;
@@ -32,6 +33,8 @@ pub enum AttachmentView {
         /// 先頭だけか。
         truncated: bool,
     },
+    /// 画像。UI が伸縮して描く。
+    Image(SharedBitmap),
     /// OS の既定のアプリで開く。写しの場所。
     Path(String),
 }
@@ -52,7 +55,12 @@ impl AttachmentView {
             AttachmentKind::Csv => Some(','),
             AttachmentKind::Tsv => Some('\t'),
             AttachmentKind::Text => None,
-            AttachmentKind::Image | AttachmentKind::Other => {
+            AttachmentKind::Image => {
+                return journal
+                    .read_attachment_image(item, attachment)
+                    .map(Self::Image);
+            }
+            AttachmentKind::Other => {
                 return Ok(Self::Path(journal.attachment_path(item, attachment)));
             }
         };
@@ -80,7 +88,7 @@ impl AttachmentView {
     pub const fn is_truncated(&self) -> bool {
         match self {
             Self::Text { truncated, .. } | Self::Table { truncated, .. } => *truncated,
-            Self::Path(_) => false,
+            Self::Image(_) | Self::Path(_) => false,
         }
     }
 }
@@ -89,6 +97,7 @@ impl AttachmentView {
 mod tests {
     use nene_docket_core::account_id::AccountId;
     use nene_docket_core::admin_command::AdminCommand;
+    use nene_docket_core::bitmap::Bitmap;
     use nene_docket_core::op::Op;
     use nene_docket_core::permissions::Permissions;
 
@@ -160,6 +169,19 @@ mod tests {
         fn attachment_path(&self, _item: ItemId, attachment: &Attachment) -> String {
             alloc::format!("/d/{}", attachment.file_name())
         }
+        fn read_attachment_image(
+            &self,
+            _item: ItemId,
+            attachment: &Attachment,
+        ) -> Result<SharedBitmap, JournalFailure> {
+            if attachment.name().starts_with("broken") {
+                return Err(JournalFailure::AttachmentUndecodable);
+            }
+            let bitmap = Bitmap::new(2, 1, alloc::vec![1, 2, 3, 4, 5, 6, 7, 8])
+                .ok_or(JournalFailure::AttachmentUndecodable)?;
+            Ok(SharedBitmap::new(1, bitmap))
+        }
+
         fn read_attachment(
             &self,
             _item: ItemId,
@@ -227,9 +249,14 @@ mod tests {
             load("a.xlsx"),
             AttachmentView::Path(String::from("/d/1-a.xlsx"))
         );
-        assert_eq!(
-            load("a.png"),
-            AttachmentView::Path(String::from("/d/1-a.png"))
+        let image = load("a.png");
+        assert!(matches!(&image, AttachmentView::Image(bitmap) if bitmap.bitmap().width() == 2));
+        assert!(!image.is_truncated());
+        let broken = AttachmentView::load(
+            &TextJournal,
+            ItemId::new(AccountId::new(1), 1),
+            &Attachment::new(1, String::from("broken.png"), 0, [0_u8; 32]),
         );
+        assert_eq!(broken, Err(JournalFailure::AttachmentUndecodable));
     }
 }

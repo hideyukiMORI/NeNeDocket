@@ -34,6 +34,8 @@ pub enum StoreFailure {
     CannotReadAttachment,
     /// 添付の写しを置けない（FR-021）。
     CannotWriteAttachment,
+    /// 添付の画像を復号できない（FR-022）。
+    CannotDecodeAttachment,
 }
 
 impl fmt::Display for StoreFailure {
@@ -61,6 +63,7 @@ impl fmt::Display for StoreFailure {
             Self::BadSnapshot => formatter.write_str("the snapshot is not readable"),
             Self::CannotReadAttachment => formatter.write_str("cannot read the file to attach"),
             Self::CannotWriteAttachment => formatter.write_str("cannot store the attachment"),
+            Self::CannotDecodeAttachment => formatter.write_str("添付の画像を復号できない"),
         }
     }
 }

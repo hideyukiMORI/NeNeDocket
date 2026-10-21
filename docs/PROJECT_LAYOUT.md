@@ -29,8 +29,11 @@ crates/adapters-x11（nene-docket-adapters-x11）
 crates/adapters-windows（nene-docket-adapters-windows）
     Windows のアダプタ。同じポートを Win32 で実装する。unsafe を書ける 2 クレートの 1 つ（ADR 0002）
 
+crates/media（nene-docket-media）
+    添付の画像の復号。PNG / JPEG のバイト列を `Bitmap`（RGBA）にし、長い辺 2,048 画素に縮める（ADR 0018）。ファイルも時計も読まない。外部クレートは `png` と `jpeg-decoder` だけ
+
 crates/store（nene-docket-store）
-    ジャーナル（版 1・2）の形と置き場。`docket.v1.txt`・`journal/<account>.v1.log` / `.v2.log`・1 行 1 操作と CRC-32・追記と同期・他人の伸びた分の読み直し・`keys/`・`permissions.v1.txt`・自分のスナップショット `snapshot/<account>.v1.txt` と索引 `.v1.idx`（ADR 0015）・添付の写し `attachments/<課題>/<連番>-<名前>`（ADR 0016）。添付の写しを文として読む（文字コードは `encoding_rs`・ADR 0017）。設定ファイルとアカウントのファイルは台帳でなくマシンのものなので、形は application、読み書きは adapters（ADR 0008）。外部クレートは `encoding_rs` だけ
+    ジャーナル（版 1・2）の形と置き場。`docket.v1.txt`・`journal/<account>.v1.log` / `.v2.log`・1 行 1 操作と CRC-32・追記と同期・他人の伸びた分の読み直し・`keys/`・`permissions.v1.txt`・自分のスナップショット `snapshot/<account>.v1.txt` と索引 `.v1.idx`（ADR 0015）・添付の写し `attachments/<課題>/<連番>-<名前>`（ADR 0016）。添付の写しを文として読む（文字コードは `encoding_rs`・ADR 0017）、画像として読む（media・ADR 0018）。設定ファイルとアカウントのファイルは台帳でなくマシンのものなので、形は application、読み書きは adapters（ADR 0008）。外部クレートは `encoding_rs` だけ
 
     アダプタ 2 つと store だけが、現在時刻・乱数・環境・ファイルを読める製品モジュール（ARC-007 / CNF-012）
 
@@ -55,8 +58,11 @@ core
 application
     -> core
 
+media
+    -> core（外部: png, jpeg-decoder）
+
 store
-    -> application, core（外部なし）
+    -> application, media, core（外部: encoding_rs）
 
 adapters-x11
     -> application, core（外部: x11rb）
@@ -81,6 +87,7 @@ app
 - application -> store / アダプタ / UI: 禁止（ファイルの形を application が知らないこと）
 - ui-x11 -> adapters-x11 / store: 禁止（X の接続を共有したくなったら、接続を application のポートに畳んで ADR）
 - store -> アダプタ: 禁止（時計が要るなら値として受け取る）
+- media -> application / store / UI: 禁止（バイト列を画素にするだけ）
 - 何か -> 合成ルート: 禁止
 
 ---

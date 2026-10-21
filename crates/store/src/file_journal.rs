@@ -18,6 +18,7 @@ use nene_docket_core::attachment::Attachment;
 use nene_docket_core::item_id::ItemId;
 use nene_docket_core::op::Op;
 use nene_docket_core::permissions::Permissions;
+use nene_docket_core::shared_bitmap::SharedBitmap;
 
 use crate::administration;
 use crate::attachment_store;
@@ -429,7 +430,8 @@ impl JournalPort for FileJournal {
         attachment_store::copy_in(self.folder.root(), item, sequence, Path::new(source)).map_err(
             |failure| match failure {
                 StoreFailure::CannotReadAttachment => JournalFailure::AttachmentUnreadable,
-                StoreFailure::Io(_)
+                StoreFailure::CannotDecodeAttachment
+                | StoreFailure::Io(_)
                 | StoreFailure::UnknownDocketVersion(_)
                 | StoreFailure::BadDocketFile
                 | StoreFailure::BadJournalName(_)
@@ -464,6 +466,41 @@ impl JournalPort for FileJournal {
         attachment_store::read_text(self.folder.root(), item, attachment)
             .map(|(text, truncated)| AttachmentText::new(text, truncated))
             .map_err(|_failure| JournalFailure::AttachmentUnreadable)
+    }
+
+    /// ID は記録の SHA-256 の先頭 8 バイト（同じ中身なら同じ ID）。
+    fn read_attachment_image(
+        &self,
+        item: ItemId,
+        attachment: &Attachment,
+    ) -> Result<SharedBitmap, JournalFailure> {
+        let bitmap = attachment_store::read_image(self.folder.root(), item, attachment).map_err(
+            |failure| match failure {
+                StoreFailure::CannotDecodeAttachment => JournalFailure::AttachmentUndecodable,
+                StoreFailure::CannotReadAttachment
+                | StoreFailure::CannotWriteAttachment
+                | StoreFailure::Io(_)
+                | StoreFailure::UnknownDocketVersion(_)
+                | StoreFailure::BadDocketFile
+                | StoreFailure::BadJournalName(_)
+                | StoreFailure::BadKeyFile(_)
+                | StoreFailure::BadPermissionsFile
+                | StoreFailure::UnverifiedPermissions
+                | StoreFailure::NoDocket
+                | StoreFailure::NotTheOwner
+                | StoreFailure::KeyMismatch
+                | StoreFailure::BadIndex
+                | StoreFailure::BadSnapshot => JournalFailure::AttachmentUnreadable,
+            },
+        )?;
+        let id = u64::from_be_bytes(
+            attachment
+                .sha256()
+                .get(..8)
+                .and_then(|head| <[u8; 8]>::try_from(head).ok())
+                .unwrap_or([0_u8; 8]),
+        );
+        Ok(SharedBitmap::new(id, bitmap))
     }
 }
 

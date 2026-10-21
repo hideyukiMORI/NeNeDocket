@@ -33,9 +33,10 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0015](0015-large-dockets-snapshot-and-incremental-merge.md) | 大容量でも軽い: 派生値のキャッシュ・増分の併合・アカウントごとのスナップショットと索引 | 受理（Issue #61・段階 1・2 実装済み） |
 | [0016](0016-attachments-copied-into-the-docket.md) | 添付は台帳フォルダの `attachments/` に写し、ジャーナルに `attach` / `detach` を追記する（SHA-256 は core に自前・写しは消さない） | 受理（Issue #62） |
 | [0017](0017-attachment-viewers-and-external-open.md) | 添付の中身: 文と表（CSV / TSV・`Shift_JIS` も）は段の中、それ以外は OS の既定のアプリ（`xdg-open` / `ShellExecuteW`）。store に `encoding_rs` を許す | 受理（Issue #63） |
+| [0018](0018-image-viewer-png-jpeg.md) | 画像のビューワー: PNG / JPEG を `crates/media`（`png` / `jpeg-decoder`）で復号し、`DrawCommand::Image` で UI が伸縮して描く（ホイールで拡大・ドラッグで移動・2,048 画素に縮めて持つ） | 受理（Issue #64） |
 
 ## これから書くもの（Issue が立ったら）
 
-- 添付の画像と PDF の依存（`png` / `jpeg-decoder`・`hayro`・FR-022・Issue #64 / #66）
+- 添付の PDF の依存（`hayro`・FR-022・Issue #66）
 - 文字入力（IME）の方式（FR-015）
 - 利用者のテーマファイル（nene-nib の `.v1.theme`・ADR 0012 の 7）

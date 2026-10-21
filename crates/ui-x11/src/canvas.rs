@@ -2,15 +2,17 @@
 //!
 //! 文字の幅はここで測る。core はカーソルを文字の添字で渡し、ここがフォントで画素の位置に直す。
 
-use cairo::{Context, FontSlant, FontWeight, Format, ImageSurface};
+use cairo::{Context, Filter, FontSlant, FontWeight, Format, ImageSurface, Matrix, SurfacePattern};
 use nene_docket_application::docket_frame::DocketFrame;
 use nene_docket_core::draw_command::DrawCommand;
 use nene_docket_core::paint::Paint;
 use nene_docket_core::palette::Palette;
 use nene_docket_core::pixel_rect::PixelRect;
+use nene_docket_core::shared_bitmap::SharedBitmap;
 use nene_docket_core::text_align::TextAlign;
 use nene_docket_core::text_caret::TextCaret;
 
+use crate::surface_cache::SurfaceCache;
 use crate::ui_failure::UiFailure;
 
 /// 完成した 1 フレームの画素の列。
@@ -30,8 +32,8 @@ impl Canvas {
     pub fn render(
         frame: &DocketFrame,
         bounds: PixelRect,
-        format: Format,
-        font_family: &str,
+        (format, font_family): (Format, &str),
+        cache: &mut SurfaceCache,
     ) -> Result<Self, UiFailure> {
         let surface = ImageSurface::create(
             format,
@@ -44,7 +46,7 @@ impl Canvas {
             context.set_font_size(f64::from(frame.font_px()));
             let palette = frame.theme().palette();
             for command in frame.commands() {
-                draw(&context, &palette, command)?;
+                draw(&context, &palette, command, cache)?;
             }
         }
         surface.flush();
@@ -106,7 +108,12 @@ impl Canvas {
 }
 
 /// 1 つの命令を描く。
-fn draw(context: &Context, palette: &Palette, command: &DrawCommand) -> Result<(), UiFailure> {
+fn draw(
+    context: &Context,
+    palette: &Palette,
+    command: &DrawCommand,
+    cache: &mut SurfaceCache,
+) -> Result<(), UiFailure> {
     match command {
         DrawCommand::Fill { rect, paint } => {
             set_paint(context, palette, *paint);
@@ -123,6 +130,11 @@ fn draw(context: &Context, palette: &Palette, command: &DrawCommand) -> Result<(
             paint,
             caret,
         } => draw_text(context, palette, (*rect, *align, *paint), (text, *caret)),
+        DrawCommand::Image {
+            dest,
+            source,
+            bitmap,
+        } => draw_image(context, (*dest, *source), bitmap, cache),
         DrawCommand::Clip(rect) => {
             context.save()?;
             rectangle(context, *rect);
@@ -134,6 +146,37 @@ fn draw(context: &Context, palette: &Palette, command: &DrawCommand) -> Result<(
             Ok(())
         }
     }
+}
+
+/// 画素の列の `source` を `dest` に伸縮して描く。`dest` で切り抜く。
+fn draw_image(
+    context: &Context,
+    (dest, source): (PixelRect, PixelRect),
+    bitmap: &SharedBitmap,
+    cache: &mut SurfaceCache,
+) -> Result<(), UiFailure> {
+    if dest.is_empty() || source.is_empty() {
+        return Ok(());
+    }
+    let surface = cache.surface_for(bitmap)?;
+    context.save()?;
+    rectangle(context, dest);
+    context.clip();
+    context.translate(f64::from(dest.x()), f64::from(dest.y()));
+    context.scale(
+        f64::from(dest.width()) / f64::from(source.width()),
+        f64::from(dest.height()) / f64::from(source.height()),
+    );
+    // 🔴 既定の Good は縮めるときに畳み込みで、2000 × 1500 を 1 フレーム 36 ms かかった。Bilinear は 2 ms（gate-proofs 第 41 節）。
+    let pattern = SurfacePattern::create(surface);
+    pattern.set_filter(Filter::Bilinear);
+    let mut matrix = Matrix::identity();
+    matrix.translate(f64::from(source.x()), f64::from(source.y()));
+    pattern.set_matrix(matrix);
+    context.set_source(&pattern)?;
+    context.paint()?;
+    context.restore()?;
+    Ok(())
 }
 
 /// 描く色を意味から決める（フレームの配色・0〜255 を 0〜1 に）。
@@ -242,7 +285,13 @@ mod tests {
 
     fn render(commands: Vec<DrawCommand>) -> Canvas {
         let frame = DocketFrame::new((UiScale::Single, Language::English, theme()), commands);
-        Canvas::render(&frame, BOUNDS, Format::Rgb24, "sans-serif").unwrap()
+        Canvas::render(
+            &frame,
+            BOUNDS,
+            (Format::Rgb24, "sans-serif"),
+            &mut SurfaceCache::empty(),
+        )
+        .unwrap()
     }
 
     #[test]

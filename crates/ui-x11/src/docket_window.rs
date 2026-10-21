@@ -14,6 +14,7 @@ use x11rb::wrapper::ConnectionExt as _;
 use crate::canvas::Canvas;
 use crate::display::Display;
 use crate::font_family;
+use crate::surface_cache::SurfaceCache;
 use crate::transfer::Transfer;
 use crate::ui_failure::UiFailure;
 
@@ -32,6 +33,8 @@ pub struct DocketWindow<'d> {
     bounds: PixelRect,
     /// 直前のフレームの言語と、その字を描ける家族。言語が変わったら選び直す（ADR 0011）。
     font: Option<(Language, &'static str)>,
+    /// 添付の画像の surface の覚え（FR-022）。
+    surfaces: SurfaceCache,
 }
 
 impl<'d> DocketWindow<'d> {
@@ -75,6 +78,7 @@ impl<'d> DocketWindow<'d> {
             gc,
             bounds: PixelRect::new(0, 0, INITIAL_WIDTH, INITIAL_HEIGHT),
             font: None,
+            surfaces: SurfaceCache::empty(),
         };
         opened.declare_hints()?;
         connection.map_window(opened.window.window())?;
@@ -106,8 +110,12 @@ impl<'d> DocketWindow<'d> {
     /// X の要求か cairo が失敗した。
     pub fn present(&mut self, frame: &DocketFrame) -> Result<(), UiFailure> {
         let family = self.font_for(frame.language())?;
-        let mut canvas =
-            Canvas::render(frame, self.bounds, self.display.visual().format(), family)?;
+        let mut canvas = Canvas::render(
+            frame,
+            self.bounds,
+            (self.display.visual().format(), family),
+            &mut self.surfaces,
+        )?;
         Transfer::new(
             (self.window.window(), self.gc.gcontext()),
             canvas.width(),

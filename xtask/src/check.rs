@@ -494,12 +494,21 @@ pub(crate) fn no_nondeterministic_input(file: &SourceFile) -> Vec<Violation> {
 /// クレート間で許された依存（ARC-002）。鍵はディレクトリ名、値は依存してよいパッケージ名。
 /// 🔴 core の外部クレートは `ed25519-dalek` だけ（ADR 0010）。application・store・xtask は外部 0。
 ///    外部クレートを足すのは ADR と deny.toml の仕事（ARC-013）。
-const ALLOWED_DEPENDENCIES: [(&str, &[&str]); 9] = [
+const ALLOWED_DEPENDENCIES: [(&str, &[&str]); 10] = [
     ("crates/core/", &["ed25519-dalek"]),
     ("crates/application/", &["nene-docket-core"]),
     (
+        "crates/media/",
+        &["nene-docket-core", "png", "jpeg-decoder"],
+    ),
+    (
         "crates/store/",
-        &["nene-docket-application", "nene-docket-core", "encoding_rs"],
+        &[
+            "nene-docket-application",
+            "nene-docket-core",
+            "nene-docket-media",
+            "encoding_rs",
+        ],
     ),
     (
         "crates/adapters-x11/",
@@ -533,9 +542,10 @@ const ALLOWED_DEPENDENCIES: [(&str, &[&str]); 9] = [
 ];
 
 /// 外部クレートを表に書いたものだけに限るクレート（中核・store・検査器）。他は ADR と deny.toml に任せる。
-const LISTED_EXTERNAL_CRATES: [&str; 4] = [
+const LISTED_EXTERNAL_CRATES: [&str; 5] = [
     "crates/core/",
     "crates/application/",
+    "crates/media/",
     "crates/store/",
     "xtask/",
 ];

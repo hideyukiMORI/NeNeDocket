@@ -29,11 +29,13 @@ pub enum AttachmentWord {
     Truncated,
     /// OS の既定のアプリで開けなかった。
     CannotOpen,
+    /// 画像を読めない（壊れている・知らない形）。
+    CannotDecode,
 }
 
 impl AttachmentWord {
     /// 全部の語（閉じた集合を 1 か所で列挙する）。
-    pub const ALL: [Self; 13] = [
+    pub const ALL: [Self; 14] = [
         Self::Attachments,
         Self::Path,
         Self::Attach,
@@ -47,5 +49,6 @@ impl AttachmentWord {
         Self::Open,
         Self::Truncated,
         Self::CannotOpen,
+        Self::CannotDecode,
     ];
 }
