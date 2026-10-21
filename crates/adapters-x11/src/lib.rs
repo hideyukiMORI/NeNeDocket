@@ -4,7 +4,9 @@
 //! 他人のジャーナルを読み直す刻み（スレッドが X の窓へ `ClientMessage` を送る）。業務の判断は持たない。
 
 pub mod adapter_failure;
+mod config_directory;
 mod random_id;
 pub mod refresh_ticker;
 pub mod saved_account;
+pub mod saved_settings;
 pub mod system_clock;

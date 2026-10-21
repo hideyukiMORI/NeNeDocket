@@ -413,7 +413,25 @@ Ctrl+A → `2026-11-30` → Enter で文言が消え、表の `Due` に出て、
 
 🔴 `xdotool type` はこのコンテナのロケールで日本語を打てない（`Invalid multi-byte sequence`）。日本語の表示は第 11.3 節で確かめてあり、今回は ASCII の題名で駆動した。
 
-## 16. 再現
+## 16. Issue #16 — 設定ファイル（2026-10-21）
+
+同じコンテナ。application に `Settings`（最近の台帳 10 件・読み直しの間隔）と `settings_file`（`version = 1` / `refresh_seconds` / `recent`）、
+adapters-x11 に `config_directory`・`saved_settings`（読む・開いた台帳を絶対の道で覚えて丸ごと書く）。app は引数が無ければ最近の台帳、それも無ければ `./docket`。刻みの間隔は設定から。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 233 件（application 37・adapters-x11 5） |
+| `make conformance` | 違反なし（149 ファイル） |
+| `make coverage` | core ＋ application regions 99.54% |
+
+Xvfb（`:97`・`XDG_CONFIG_HOME` を一時フォルダに）:
+
+1. `nene-docket <一時フォルダ>/team` で開き、課題を 1 つ足して閉じる → `settings.v1.txt` に `recent = /…/recent/team`（絶対の道）
+2. 別の作業フォルダから引数なしで `nene-docket` → 同じ台帳が開き、`remembered` の行が出る（[01-reopened](screenshots/2026-10-21-settings-01-reopened.png)）。作業フォルダに `./docket` は作られない
+3. 設定に知らない鍵 `theme = dark` を書いて起動 → `NeNe Docket 0.1.0: settings file is not readable: /…/settings.v1.txt`、終了コード 1。既定値へ落ちない
+
+## 17. 再現
 
 ```bash
 make prove
