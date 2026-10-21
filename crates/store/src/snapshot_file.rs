@@ -31,6 +31,7 @@ use crate::crc32::crc32;
 use crate::escape::{escape, unescape};
 use crate::journal_record;
 use crate::journal_version::JournalVersion;
+use crate::replace;
 use crate::snapshot_reading::Reading;
 use crate::store_failure::StoreFailure;
 
@@ -153,7 +154,7 @@ pub fn read(root: &Path, account: AccountId) -> Result<Option<StoredSnapshot>, S
     parse(&text, &bytes).map(Some)
 }
 
-/// 書く（一時名に書いて rename）。
+/// 書く（一時名に書いて rename・Windows のロックには再試行・Issue #79）。
 ///
 /// # Errors
 ///
@@ -165,12 +166,8 @@ pub fn write(
 ) -> Result<(), StoreFailure> {
     let (state_path, index_path) = paths(root, account);
     fs::create_dir_all(root.join(DIRECTORY))?;
-    let index_temporary = index_path.with_extension("idx.tmp");
-    fs::write(&index_temporary, encode_index(&snapshot.index))?;
-    fs::rename(&index_temporary, &index_path)?;
-    let state_temporary = state_path.with_extension("txt.tmp");
-    fs::write(&state_temporary, encode(snapshot))?;
-    fs::rename(&state_temporary, &state_path)?;
+    replace::replace_file(&index_path, &encode_index(&snapshot.index))?;
+    replace::replace_file(&state_path, encode(snapshot).as_bytes())?;
     Ok(())
 }
 

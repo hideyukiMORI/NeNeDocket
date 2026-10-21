@@ -999,7 +999,20 @@ Xvfb（1120×600・`LANG=ja_JP.UTF-8`・送り手は scratchpad の `clip-own`: 
 
 🔴 **正直に:** Windows の IME は組み立てただけ（`make lint-windows` 0 件）で、確定前の文字列が欄に出ること・候補の窓の位置・`WM_IME_CHAR` を流さないことの実機の確認は施主の Windows（QLT-013）。X11 の IME 本体（XIM）は無く、Ctrl+V の貼り付けだけ。`INCR`（256 KiB 超）と `PRIMARY` は受けない。確定前の下線は Xvfb で出す手段が無い（IM サーバが無い）ので、cairo の画素のテストだけ。
 
-## 47. 再現
+## 47. Issue #79 — Windows のファイルロック: 共有モード・置き換えの再試行（2026-10-21）
+
+同じコンテナ。設計は [docs/design/2026-10-21-windows-file-locks.md](../design/2026-10-21-windows-file-locks.md)。store に `retry`（`PermissionDenied` と Windows の共有違反 32 / 33 に 50 ms × 5 回）と `replace`（一時名に書いて rename・両方を再試行）。`snapshot_file` / `attachment_store` / `permissions_store` / `docket_file` / `key_file` の書きは全部 `replace_file` を通る（`permissions.v1.txt` / `docket.v1.txt` / `keys/` は前は直接書いていた）。自分のジャーナルは Windows で `FILE_SHARE_DELETE` を外して開く（`own_journal::open_append`・`cfg(windows)`）。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `doc-check` | 差分なし・0 件・警告なし |
+| `make build-windows` | exe ができた（store の `cfg(windows)` の `share_mode` が組み立つ） |
+| `make test` | 434 件（store 69: `retry` 3 件 — 偽の失敗 3 回で通る・5 回で諦める・恒久の失敗は 1 回 / `replace` 1 件 — 置き換えて `.tmp` が残らない） |
+| `make conformance` | 違反なし |
+
+🔴 **正直に:** Linux ではロックが起きないので、再試行は偽の失敗でしか試していない。施主の Windows での 3 つの手順（2 プロセス・Explorer のプレビューを出したまま権限を変える・Defender を有効にして添付）は**未実施**（設計文書の第 4 節）。結果はこの節に足す。Rust の std の既定の共有モード（`READ | WRITE | DELETE`）は文書から取った値で、実機で `handle.exe` 等で見てはいない。
+
+## 48. 再現
 
 ```bash
 make prove

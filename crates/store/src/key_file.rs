@@ -9,6 +9,7 @@ use std::path::{Path, PathBuf};
 use nene_docket_application::account::Account;
 use nene_docket_application::key_record::KeyRecord;
 
+use crate::replace;
 use crate::store_failure::StoreFailure;
 
 /// 鍵を置く下のフォルダ。
@@ -36,7 +37,7 @@ pub fn ensure_own(root: &Path, account: &Account) -> Result<bool, StoreFailure> 
         }
         Err(error) if error.kind() == io::ErrorKind::NotFound => {
             fs::create_dir_all(&directory)?;
-            fs::write(&path, KeyRecord::of(account).encode())?;
+            replace::replace_file(&path, KeyRecord::of(account).encode().as_bytes())?;
             Ok(false)
         }
         Err(error) => Err(StoreFailure::Io(error)),

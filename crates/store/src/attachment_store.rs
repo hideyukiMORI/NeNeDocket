@@ -14,6 +14,7 @@ use nene_docket_core::attachment::Attachment;
 use nene_docket_core::item_id::ItemId;
 use nene_docket_core::sha256::sha256;
 
+use crate::replace;
 use crate::store_failure::StoreFailure;
 
 /// 添付を置くフォルダ。
@@ -57,9 +58,7 @@ pub fn copy_in(
     let directory = item_directory(root, item);
     let place = || StoreFailure::CannotWriteAttachment;
     fs::create_dir_all(&directory).map_err(|_error| place())?;
-    let temporary = directory.join(format!("{}.tmp", attachment.file_name()));
-    fs::write(&temporary, &bytes).map_err(|_error| place())?;
-    fs::rename(&temporary, path_of(root, item, &attachment)).map_err(|_error| place())?;
+    replace::replace_file(&path_of(root, item, &attachment), &bytes).map_err(|_error| place())?;
     Ok(attachment)
 }
 

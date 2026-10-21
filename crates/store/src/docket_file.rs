@@ -7,6 +7,7 @@ use std::path::Path;
 
 use nene_docket_core::account_id::AccountId;
 
+use crate::replace;
 use crate::store_failure::StoreFailure;
 
 /// ファイル名。版はファイル名にも出す。
@@ -142,7 +143,7 @@ impl DocketFile {
     /// 書けない。
     pub fn write_to(&self, folder: &Path) -> Result<(), StoreFailure> {
         fs::create_dir_all(folder)?;
-        fs::write(folder.join(FILE_NAME), self.text())?;
+        replace::replace_file(&folder.join(FILE_NAME), self.text().as_bytes())?;
         Ok(())
     }
 }

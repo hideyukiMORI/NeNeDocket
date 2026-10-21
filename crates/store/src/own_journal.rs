@@ -54,7 +54,7 @@ impl OwnJournal {
         std::fs::create_dir_all(journal_directory)?;
         let version = version_for(signing.is_some());
         let path = journal_directory.join(file_name(account, version));
-        let mut file = OpenOptions::new().append(true).create(true).open(&path)?;
+        let mut file = open_append(&path)?;
         if ends_without_newline(&path)? {
             file.write_all(b"\n")?;
             file.sync_data()?;
@@ -133,6 +133,26 @@ impl OwnJournal {
     pub fn path(&self) -> &Path {
         &self.path
     }
+}
+
+/// 追記で開く（無ければ作る）。Windows では共有モードから `FILE_SHARE_DELETE` を外し、同期ツールやバックアップが
+/// 開いている最中に rename / 削除できないようにする（追記が別名のファイルへ消えるのを防ぐ・Issue #79）。読みと書きの共有は残す。
+#[cfg(windows)]
+fn open_append(path: &Path) -> Result<File, StoreFailure> {
+    use std::os::windows::fs::OpenOptionsExt as _;
+    /// `FILE_SHARE_READ | FILE_SHARE_WRITE`（`FILE_SHARE_DELETE` の 4 を含まない）。
+    const SHARE_READ_WRITE: u32 = 0x0000_0003;
+    Ok(OpenOptions::new()
+        .append(true)
+        .create(true)
+        .share_mode(SHARE_READ_WRITE)
+        .open(path)?)
+}
+
+/// 追記で開く（無ければ作る）。
+#[cfg(not(windows))]
+fn open_append(path: &Path) -> Result<File, StoreFailure> {
+    Ok(OpenOptions::new().append(true).create(true).open(path)?)
 }
 
 /// 最後のバイトが改行でないか（空のファイルは偽）。
