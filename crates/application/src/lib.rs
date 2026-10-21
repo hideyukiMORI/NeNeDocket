@@ -15,5 +15,4 @@ pub mod docket_frame;
 pub mod docket_screen;
 pub mod environment;
 pub mod frame_input;
-pub mod item_state;
 pub mod sample_item;

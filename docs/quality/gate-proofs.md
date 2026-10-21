@@ -280,7 +280,21 @@ Xvfb `:97`（1024×700×24・`-noreset`）、WM 無し。`target/debug/nene-dock
 - Windows の見え（Windows 版はまだ無い）
 - `Xft.dpi` が 144 以上のときの 2x の見え（`UiScale::Double` は core のテストだけ）
 
-## 12. 再現
+## 12. Issue #7 — 課題・操作・論理時計・併合（2026-10-21）
+
+同じコンテナ。core に 14 モジュールを足し、`ItemState` を application から core へ移した。表示は無い。
+
+| target | 結果 |
+| --- | --- |
+| `make lint` / `fmt-check` / `doc-check` | 0 件・差分なし・警告なし |
+| `make test` | core 68・application 10・ui-x11 16・xtask 81、すべて成功 |
+| `make conformance` | 違反なし（111 ファイル） |
+| `make coverage` | core ＋ application: regions 99.58%。`docket.rs` / `merge.rs` / `item.rs` は 100% |
+
+順序に依らないことのテスト（QLT-008・ADR 0003 の 7）: `the_same_ops_in_any_order_give_the_same_docket` が、2 アカウント 7 操作の集合を、元の順・逆順・3 回転・アカウントごとに分けて B → A・ばらばらの添字順の 5 通りで併合し、`Docket` が等しいことを見る。
+同時の操作（時計 3 の A と B）はアカウントの番号が大きい B が勝ち、負けた A の操作が `history` の 3 番目に残る。同じ操作を 2 度与えても 1 度だけ数える。宛先の無い操作は落とさず数える（2 件）。
+
+## 13. 再現
 
 ```bash
 make prove

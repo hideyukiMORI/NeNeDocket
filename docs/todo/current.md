@@ -13,6 +13,7 @@
 | ゲート発火の証明 `make prove`（26 件）と `cargo test -p xtask`（80 件） | ✅ Issue #2・[gate-proofs](../quality/gate-proofs.md) 第 4〜8 節。測れた規則は active |
 | 部品の核（配置・判定・フォーカス・編集状態・描画命令）を `crates/core` に | ✅ Issue #4・[ADR 0006](../adr/0006-widget-kernel-in-core.md)。テスト 49 件・region 99.71%。ARC-003 と QLT-009 を active に |
 | X11 の窓（application / ui-x11 / app・x11rb ＋ cairo-rs） | ✅ Issue #5・[ADR 0007](../adr/0007-japanese-font-family-chosen-at-startup.md)。Xvfb で表・検索・絞り込み・チェック・追加・スクロールを xdotool で駆動（gate-proofs 第 11 節）。1 万件の 1 フレーム 0.9 ms |
+| core の課題・操作・論理時計・併合（ADR 0004） | ✅ Issue #7。同じ操作の集合を別の順で読んでも同じ台帳になるテスト。region 99.58% |
 | adapters-x11 / store / adapters-windows / ui-win32 | ❌ 無い |
 | IME の方式（FR-015） | ❌ ADR 未。コンテナには IM サーバ（fcitx / ibus）が無く XIM を測れない。施主の WSLg で測る |
 | 署名と鍵の方式（FR-010） | ❌ ADR 未。権限の Issue で決める |
@@ -22,7 +23,7 @@
 ## 次に行うこと
 
 1. **PR #3（Issue #1 / #2 / #4）を merge する。** 枝は harness の `claude/cloud-session-qus6l5` で、CI の `make ci` は GIT-002 で落ちている（gate-proofs 第 10 節）。ruleset が無いので merge はできる。施主が squash の件名を PR のタイトル（GIT-003 の形）で付けて merge する。ruleset（main の保護・squash-only・`check` を必須）を設定したら gate-proofs に記録し、GIT-002 / GIT-004 を active に
-2. core の `Item` / `Op` / `merge`（ADR 0004）と、同じ操作の集合を別の順で読むテスト。store のジャーナル版 1（ファイルを読める 3 区画の 1 つ）
+2. store のジャーナル版 1（ファイルを読める 3 区画の 1 つ）: 1 行 1 操作のテキスト・検査和・追記と同期・他人の伸びた分の読み直し。application のポートと Undo の束、画面の表が `Docket` を読む配線
 3. **IME の実測は施主の WSLg で**: fcitx5 か ibus を入れ、`XMODIFIERS=@im=fcitx` で XIM の preedit が x11rb の窓に届く経路（XIM プロトコルの自前実装か、IM サーバの D-Bus か）を決める ADR
 4. 署名の ADR と権限（FR-010）。スナップショットの ADR（FR-017 を実測してから）
 5. 環境の setup script に `cargo-llvm-cov`・`xdotool`・`mingw-w64` を足す（DEVELOPMENT_WORKFLOW 第 9 節）

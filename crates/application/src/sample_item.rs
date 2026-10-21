@@ -4,7 +4,7 @@ use alloc::format;
 use alloc::string::String;
 use alloc::vec::Vec;
 
-use crate::item_state::ItemState;
+use nene_docket_core::item_state::ItemState;
 
 /// 番号・題名・状態・担当。
 #[derive(Debug, Clone, PartialEq, Eq)]

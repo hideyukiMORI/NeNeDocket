@@ -151,7 +151,7 @@ Issue / 規則 ID:
 
 2026-10-21: Issue #1 で規範文書と ADR 0001〜0004 の初版を置いた。Issue #2 で nene-ruler の機械（lint の表・clippy.toml・deny.toml・xtask・Makefile・CI・フック）を移植し、`make prove` 26 件・`cargo test -p xtask` 80 件・実ファイルの発火を記録して、測れた規則を active にした（ADR 0005）。
 Issue #4 で部品の核（即時モード・ADR 0006）を `crates/core` に置き、ARC-003 と QLT-009 を active にした。Issue #5 で X11 の窓（application / ui-x11 / app・x11rb ＋ cairo-rs）を出し、表・検索・絞り込み・スクロールが Xvfb で動いた。日本語は起動時に家族を選んで出す（ADR 0007）。1 万件の 1 フレームは 1 ms 未満（gate-proofs 第 11 節）。
-IME は IM サーバの無いコンテナでは測れない。次は core の `Item` / `Op` / `merge`（ADR 0004）か、施主の WSLg で XIM を測る。
+Issue #7 で ADR 0004 の中核（`Item` / `Op` / `OpId` / `merge` / `history`）を core に置いた。IME は IM サーバの無いコンテナでは測れない。次は store のジャーナル版 1 と、画面の表が `Docket` を読む配線。
 
 ---
 
