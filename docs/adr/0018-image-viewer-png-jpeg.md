@@ -20,7 +20,7 @@
 ## 強制
 
 - active: PNG（α・RGB・灰・灰 ＋ α）と JPEG の復号、縮小、壊れた入力の拒否（media）、`place` の中央・拡大・ずれ（core `image_fit`）、`premultiplied_bgra`・`SharedBitmap` の同一性（core）、段の画像・ホイール・ドラッグ・復号の失敗（application `docket_screen`）、surface の覚えと上限（ui-x11 `surface_cache`）、CNF-013（media と store の表）。Issue #64・gate-proofs 第 41 節
-- 不能: Windows の `CreateBitmap` / `DrawBitmap` は Windows で動かしていない（ADR 0009 と同じ）
+- 不能: Windows の `CreateBitmap` / `DrawBitmap` は施主の Windows で PNG（15 MB を含む）と JPEG（4000×3000）を描いた（gate-proofs 第 51.5・51.8 節）。自動の検査は無い
 
 ## 結果
 

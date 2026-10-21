@@ -32,7 +32,8 @@ core には確定前の文字列（`Preedit`）と欄への差し込み（`TextE
 
 - 依存は増えない。`unsafe` は ui-win32 の `ime`（IMM32 の 5 関数）に閉じる。
 - 候補の窓の位置は欄の矩形の左下で、カーソルの画素の位置ではない（UI がカーソルの位置を application に返す経路が無い。要るなら `Pen` が描いた位置を覚える）。
-- Windows は施主の実機で未確認（ADR 0009 と同じ）。X11 で日本語を打つには、当面は他のアプリで打って貼る。
+- Windows は施主の実機（Microsoft IME）で、確定前の文字が欄の中に下線付きで出る・候補の窓が入力中の文字の左下に出る・確定・Esc で確定前だけ消える、を題名と本文の欄で見た（施主の目視の報告だけ・gate-proofs 第 51.7 節）。X11 で日本語を打つには、当面は他のアプリで打って貼る（施主の WSLg で Windows のクリップボードから Ctrl+V で入るのを見た・第 51.15 節）。
+- 決定 3 の測りのうち、施主の WSLg で fcitx5 の `XIM_SERVERS`（`@server=fcitx`）が出るところまで見た（Ubuntu 22.04 では `fcitx5-module-xorg` とセッションの D-Bus が要る・第 51.15 節）。x11rb の窓から `_XIM_XCONNECT` が届くかはまだ。
 - Windows の Ctrl+V の貼り付けは入れていない（IME で打てる。要るなら `OpenClipboard` / `CF_UNICODETEXT`・Issue を切る）。
 
 ## 検証
