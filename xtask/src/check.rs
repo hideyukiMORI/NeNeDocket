@@ -491,6 +491,36 @@ pub(crate) fn no_nondeterministic_input(file: &SourceFile) -> Vec<Violation> {
         .collect()
 }
 
+/// ファイルの時刻を読む・書く API。壁時計は機械ごとにずれ、NAS では粒度も違うので順序や鮮度に使わない（ADR 0004・Issue #76）。
+const FILE_TIME_NAMES: [&str; 6] = [
+    ".modified()",
+    ".accessed()",
+    ".created()",
+    "set_modified(",
+    "set_times(",
+    "FileTimes",
+];
+
+/// CNF-015 — ファイルの時刻（mtime / atime / ctime）はどのクレートでも読まない・書かない（ARC-004・ADR 0004）。
+/// 順序は論理時計、伸びは読み位置で決める。adapters と store も例外ではない。
+pub(crate) fn no_file_times(file: &SourceFile) -> Vec<Violation> {
+    let path = file.path();
+    if !(path.starts_with("crates/") && file.has_extension("rs")) {
+        return Vec::new();
+    }
+    production_lines(file)
+        .filter_map(|(number, line)| {
+            let name = FILE_TIME_NAMES.iter().find(|name| line.contains(*name))?;
+            Some(Violation::new(
+                "CNF-015",
+                path,
+                number,
+                format!("`{name}` を順序や鮮度に使わない（ARC-004・ADR 0004。論理時計と読み位置で決める）"),
+            ))
+        })
+        .collect()
+}
+
 /// クレート間で許された依存（ARC-002）。鍵はディレクトリ名、値は依存してよいパッケージ名。
 /// 🔴 core の外部クレートは `ed25519-dalek` だけ（ADR 0010）。application・store・xtask は外部 0。
 ///    外部クレートを足すのは ADR と deny.toml の仕事（ARC-013）。
@@ -925,6 +955,53 @@ mod tests {
             "[workspace.lints.clippy]\nunwrap_used = \"forbid\"\n",
         );
         assert!(no_gate_disabling(&file).is_empty());
+    }
+
+    // ── CNF-015 ────────────────────────────────────────────────────────────
+
+    #[test]
+    fn cnf015_catches_file_times_in_every_crate() {
+        for (path, line) in [
+            (
+                "crates/store/src/other_journals.rs",
+                "let stamp = fs::metadata(&path)?.modified()?;\n",
+            ),
+            (
+                "crates/adapters-x11/src/tick.rs",
+                "let seen = entry.metadata()?.accessed();\n",
+            ),
+            ("crates/core/src/item.rs", "let born = meta.created();\n"),
+            (
+                "crates/store/src/replace.rs",
+                "file.set_times(FileTimes::new())?;\n",
+            ),
+        ] {
+            assert_eq!(
+                rules(&no_file_times(&fixture(path, line))),
+                vec!["CNF-015"],
+                "{path}"
+            );
+        }
+    }
+
+    #[test]
+    fn cnf015_allows_sizes_and_other_metadata() {
+        let file = fixture(
+            "crates/store/src/own_journal.rs",
+            "let length = self.file.metadata()?.len();\nlet kind = meta.file_type();\n",
+        );
+        assert!(no_file_times(&file).is_empty());
+    }
+
+    #[test]
+    fn cnf015_ignores_tests_and_xtask() {
+        let file = fixture(
+            "crates/store/src/damage.rs",
+            "//! tool\n#[cfg(test)]\nmod tests {\n    let t = meta.modified();\n}\n",
+        );
+        assert!(no_file_times(&file).is_empty());
+        let tool = fixture("xtask/src/prove.rs", "let t = meta.modified();\n");
+        assert!(no_file_times(&tool).is_empty());
     }
 
     // ── CNF-012 ────────────────────────────────────────────────────────────

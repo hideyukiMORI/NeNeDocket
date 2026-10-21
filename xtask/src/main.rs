@@ -53,6 +53,7 @@ fn inspect(files: &[SourceFile], root: &Path) -> Vec<Violation> {
             found.extend(check::task_markers_cite_issue(file));
             found.extend(check::no_gate_disabling(file));
             found.extend(check::no_nondeterministic_input(file));
+            found.extend(check::no_file_times(file));
             found.extend(check::dependencies_follow_graph(file));
             found
         })

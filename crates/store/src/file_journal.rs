@@ -803,6 +803,47 @@ mod tests {
         let _cleaned = std::fs::remove_dir_all(&root);
     }
 
+    /// `root` の下の全部の名前（添付の写しの `<連番>-` より後を除く）が小文字の ASCII か。
+    fn names_are_lowercase_ascii(directory: &Path, under_attachment: bool) -> bool {
+        std::fs::read_dir(directory).unwrap().all(|entry| {
+            let path = entry.unwrap().path();
+            let name = path.file_name().unwrap().to_str().unwrap();
+            let checked = if under_attachment && path.is_file() {
+                name.split('-').next().unwrap()
+            } else {
+                name
+            };
+            let lowercase = checked.chars().all(|c| {
+                c.is_ascii_lowercase() || c.is_ascii_digit() || matches!(c, '.' | '-' | '_')
+            });
+            let below = !path.is_dir()
+                || names_are_lowercase_ascii(&path, under_attachment || name == "attachments");
+            lowercase && below
+        })
+    }
+
+    #[test]
+    fn every_name_the_store_makes_is_lowercase_ascii() {
+        let root = temp("names");
+        let owner = account(ME, 1);
+        docket_with_permissions(&root, &owner, OTHER);
+        let mut mine = FileJournal::open(&root, "Team", &owner).unwrap();
+        let (ledger, _) = ledger_opening::open(&mut mine, owner.clone());
+        mine.append(&create(2, ME)).unwrap();
+        mine.sync().unwrap();
+        let source = root.join("Source File.PNG");
+        std::fs::write(&source, b"png").unwrap();
+        let item = ItemId::new(ME, 2);
+        mine.copy_attachment(item, 1, source.to_str().unwrap())
+            .unwrap();
+        mine.checkpoint(&ledger.snapshot()).unwrap();
+        mine.finish_checkpoint().unwrap();
+        drop(mine);
+        std::fs::remove_file(&source).unwrap();
+        assert!(names_are_lowercase_ascii(&root, false));
+        let _cleaned = std::fs::remove_dir_all(&root);
+    }
+
     fn docket_with_permissions(root: &Path, owner: &Account, editor: AccountId) {
         let mut before = FileJournal::open(root, "Team", owner).unwrap();
         before.append(&create(1, ME)).unwrap();
