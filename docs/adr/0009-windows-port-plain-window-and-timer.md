@@ -51,3 +51,7 @@ X11 版の読み直しの刻みは、アダプタのスレッドが X の窓へ 
 | アカウント・設定の読み書きを store に移して両アダプタから使う | adapters は store に依存できない（CNF-013）。許すなら依存の向きの ADR が要る。2 度書く量は 100 行程度で、今は小さい |
 | GDI（`TextOutW`）で描く | ADR 0002 が Direct2D / DirectWrite と決めた。GDI は日本語の fallback と AA が弱い |
 | `windows-sys`（薄い束縛）に替えて手続きマクロを避ける | COM（Direct2D）の呼び出しが生のポインタになり、`unsafe` が広がる。`Unicode-3.0` 1 つを許すほうが小さい |
+
+## 補足（Issue #79・2026-10-21）
+
+Windows のファイルロックへの備えは store に置いた（adapters-windows ではない。ARC-007 の区画のまま）: 置き換えは一時名 → rename で、`PermissionDenied` と共有違反に 50 ms × 5 回の再試行。自分のジャーナルは `FILE_SHARE_DELETE` を外して開く。表と施主の確認の手順は [docs/design/2026-10-21-windows-file-locks.md](../design/2026-10-21-windows-file-locks.md)。

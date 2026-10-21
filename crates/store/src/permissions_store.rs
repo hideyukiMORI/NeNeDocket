@@ -10,6 +10,7 @@ use nene_docket_core::account_id::AccountId;
 use nene_docket_core::permissions::Permissions;
 use nene_docket_core::signing_key::SigningKey;
 
+use crate::replace;
 use crate::store_failure::StoreFailure;
 
 /// ファイル名。版は名前にある。
@@ -43,9 +44,9 @@ pub fn write(
     handover: Option<AccountId>,
 ) -> Result<(), StoreFailure> {
     fs::create_dir_all(root)?;
-    fs::write(
-        root.join(FILE_NAME),
-        permissions_file::encode(permissions, signer, handover),
+    replace::replace_file(
+        &root.join(FILE_NAME),
+        permissions_file::encode(permissions, signer, handover).as_bytes(),
     )?;
     Ok(())
 }
