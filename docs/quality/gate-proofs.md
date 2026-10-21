@@ -59,6 +59,7 @@ CNF-009 は active の規則ごとに `| ID |` で始まる行がここにある
 | CNF-012 | core の `std::time`・app の `std::env::var`・`crates/app/build.rs` の `std::fs` | 同上 ＋ 実ファイル（第 9 節） | 反例は CNF-012。adapters・store・`std::env::args` は通る |
 | CNF-013 | ui → adapters・core の外部 crate・xtask の依存 | 同上 ＋ 実ファイル（第 8 節・第 9 節） | 反例は CNF-013 |
 | CNF-014 | Windows のクレートの lint の表の 1 項目を緩める・消す | xtask の正例・反例 | 反例は CNF-014 を 2 件（rust と clippy の表）。正例と他のクレートは通る |
+| CNF-015 | store の `.modified()`・adapters の `.accessed()`・core の `.created()`・`set_times` | xtask の正例・反例 | 反例は CNF-015。`.len()` と `file_type()`・テストの中・xtask は通る |
 
 ## 3. Issue #1 で確かめたこと（文書だけ）
 
@@ -116,6 +117,7 @@ Issue #2 で同じことを xtask の CNF-009 が見て、違反なしだった�
 | CNF-012 | 8 | cnf012_allows_adapters, cnf012_allows_arguments_in_composition_root, cnf012_allows_the_windows_adapters_and_the_store, cnf012_catches_env_in_ui, cnf012_catches_files_and_commands_in_every_product_crate, cnf012_catches_other_env_in_composition_root, cnf012_catches_time_in_core, cnf012_ignores_xtask |
 | CNF-013 | 7 | cnf013_allows_application_depending_on_core_only, cnf013_allows_the_documented_direction, cnf013_catches_a_dependency_in_xtask, cnf013_catches_external_crate_in_core, cnf013_catches_ui_depending_on_adapters, cnf013_keeps_the_store_free_of_external_crates, cnf013_reads_target_specific_dependencies |
 | CNF-014 | 3 | cnf014_accepts_a_faithful_copy_with_unsafe_denied, cnf014_catches_a_loosened_or_missing_lint, cnf014_ignores_other_crates |
+| CNF-015 | 3 | cnf015_allows_sizes_and_other_metadata, cnf015_catches_file_times_in_every_crate, cnf015_ignores_tests_and_xtask |
 | GIT-002 / GIT-003 / GIT-004 | 9 | accepts_the_documented_form, branch_names, breaking_commit_needs_footer_but_title_does_not, pull_request_passes_with_all_fields, pull_request_rejects_draft_missing_close_and_bad_title, rejects_english_description, rejects_missing_issue, rejects_unknown_type_and_bad_scope, rejects_zero_issue_and_long_subject |
 | 規則 ID の字句・prove の補助 | 6 | accepts_each_prefix, extracts_ids_from_prose, rejects_wrong_shapes, license_allow_replaces_only_the_license_list, probe_members_replaces_a_multi_line_list, probe_members_replaces_a_single_line_list |
 
@@ -1024,7 +1026,19 @@ Xvfb（1120×600・`LANG=ja_JP.UTF-8`・送り手は scratchpad の `clip-own`: 
 
 🔴 **正直に:** 空き容量ゼロは仕込んだ失敗でしか試していない。施主の実機での 3 手順（共有を切って戻す・スリープして戻す・編集中に電源を切る）は未実施。添付の `.tmp` は消さない（誰のものか分からず、時刻を使わない）と決めた — Issue の「掃除する」から変えた。
 
-## 49. 再現
+## 49. Issue #76 — NAS の癖: 一覧と守り、CNF-015（ファイルの時刻を使わない）、名前は小文字の ASCII（2026-10-21）
+
+同じコンテナ。表は [docs/design/2026-10-21-share-quirks.md](../design/2026-10-21-share-quirks.md)（8 行・各行に 避けた / 検出して示す / 許容と明記）。読み直しが大きさを見ない（読み位置から EOF）のは既にそうで、表に結んだ。新しいのは CNF-015（xtask・どのクレートでも `.modified()` / `.accessed()` / `.created()` / `set_times` / `FileTimes` を拒む・実ファイルは 0 件）と、store が作る名前が全部小文字の ASCII であることのテスト（台帳・鍵・権限・ジャーナル・スナップショット・添付のフォルダと連番）。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `doc-check` | 差分なし・0 件・警告なし |
+| `make test` | 444 件（xtask ＋3: `cnf015_*` / store ＋1: `every_name_the_store_makes_is_lowercase_ascii`） |
+| `make conformance` | 違反なし（CNF-015 を含む） |
+
+🔴 **正直に:** 属性キャッシュ・一覧のキャッシュ・oplock の遅れ・`fsync` の無視は、このコンテナ（ローカルディスク）では出ない。施主の NAS での確認（設計文書の第 2 節: 機種と SMB の版・`--probe-share`・2 台の同時編集・3 台目が見えるまでの秒数）は**未実施**。
+
+## 50. 再現
 
 ```bash
 make prove

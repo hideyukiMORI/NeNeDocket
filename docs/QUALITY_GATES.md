@@ -225,6 +225,13 @@ lint が見ないもの、つまり**このリポジトリ固有の規約**を�
 - 対応する規則: RS-010 / QLT-003 / QLT-010
 - 機械強制: **active**（`xtask`）
 
+### CNF-015 — ファイルの時刻を読まない・書かない
+
+`crates/` の `.rs` の production コードで `.modified()` / `.accessed()` / `.created()` / `set_modified(` / `set_times(` / `FileTimes` を拒む。adapters と store も例外ではない（壁時計は機械ごとにずれ、NAS では粒度も違う。順序は論理時計、伸びは読み位置で決める・ADR 0004・Issue #76）。
+
+- 対応する規則: ARC-004 / RS-015
+- 機械強制: **active**（`xtask`。字句検査なので別名・間接呼び出しは見えない）
+
 ---
 
 ## 3. 強制マトリクス
@@ -237,7 +244,7 @@ CNF-009 が「本文に定義があるのにここに行が無い」「状態が
 | ARC-001 | planned | レビュー事項（CNF-004 と `pub_use` が温床を減らす） |
 | ARC-002 | active | cargo の循環拒否（P-23）＋ CNF-013（実ファイル: gate-proofs 第 8 節） |
 | ARC-003 | active | CNF-007（`#![no_std]`）＋ CNF-013（外部 crate の禁止）。実ファイル発火と `std` の名前解決エラー E0433 は gate-proofs 第 9 節 |
-| ARC-004 | planned | |
+| ARC-004 | planned | CNF-015（ファイルの時刻を使わない）が一部を守る。状態の持ち主はレビュー事項 |
 | ARC-005 | planned | |
 | ARC-006 | planned | CNF-002 と RS-014 が一部を守る |
 | ARC-007 | active | CNF-012 |
@@ -297,6 +304,7 @@ CNF-009 が「本文に定義があるのにここに行が無い」「状態が
 | CNF-012 | active | xtask / `cargo test -p xtask` |
 | CNF-013 | active | xtask / `cargo test -p xtask`（実ファイル: gate-proofs 第 8 節） |
 | CNF-014 | active | xtask / `cargo test -p xtask` |
+| CNF-015 | active | `xtask`（正例・反例 3 件・gate-proofs 第 49 節） |
 
 ---
 

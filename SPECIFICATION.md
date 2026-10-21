@@ -57,6 +57,7 @@
 | 既定の状態の集合 | `Open` / `In progress` / `Done` | 使って足りなければ台帳ごとの定義を足す（版付き） |
 | 既定の列 | `#` / Title / State / Assignee / Due / Tags | 実機で見て決める |
 | ジャーナルの同期間隔 | 2 秒、かつ操作が止まったら即時 | 共有で遅いなら伸ばす。失う幅は「数秒」を超えない |
+| NAS が `fsync` を無視するとき | 失う幅は NAS がキャッシュを失った分（数秒） | 検出する手段は無い。許容と明記（[docs/design/2026-10-21-share-quirks.md](docs/design/2026-10-21-share-quirks.md)） |
 | 他人のジャーナルの読み直し間隔 | 3 秒（読みは store のスレッド・合図が重なれば 1 回にまとまる・Issue #75） | 共有の負荷で調整する。`--probe-share` で測ってから |
 | Undo / Redo の鍵 | Ctrl+Z / Ctrl+Y（Ctrl+Shift+Z も） | OS の流儀に合わせる |
 | 字の大きさ | 本文 13 論理画素・表 12 論理画素・sans-serif | 読めなければ大きくする |
