@@ -93,6 +93,9 @@ const fn japanese_attachment(word: AttachmentWord) -> &'static str {
         AttachmentWord::CannotRead => "添付のファイルを読めません",
         AttachmentWord::CannotWrite => "添付の写しを置けません",
         AttachmentWord::Altered => "中身が記録と合いません",
+        AttachmentWord::Open => "開く",
+        AttachmentWord::Truncated => "先頭だけを出しています",
+        AttachmentWord::CannotOpen => "OS のアプリで開けません",
     }
 }
 
@@ -169,6 +172,9 @@ const fn english_attachment(word: AttachmentWord) -> &'static str {
         AttachmentWord::CannotRead => "cannot read the file to attach",
         AttachmentWord::CannotWrite => "cannot store the attachment",
         AttachmentWord::Altered => "contents differ from the record",
+        AttachmentWord::Open => "Open",
+        AttachmentWord::Truncated => "Showing the beginning only",
+        AttachmentWord::CannotOpen => "Cannot open with the system application",
     }
 }
 
@@ -244,6 +250,9 @@ const fn simplified_chinese_attachment(word: AttachmentWord) -> &'static str {
         AttachmentWord::CannotRead => "无法读取要附加的文件",
         AttachmentWord::CannotWrite => "无法保存附件",
         AttachmentWord::Altered => "内容与记录不符",
+        AttachmentWord::Open => "打开",
+        AttachmentWord::Truncated => "仅显示开头部分",
+        AttachmentWord::CannotOpen => "无法用系统应用打开",
     }
 }
 
@@ -319,6 +328,9 @@ const fn traditional_chinese_attachment(word: AttachmentWord) -> &'static str {
         AttachmentWord::CannotRead => "無法讀取要附加的檔案",
         AttachmentWord::CannotWrite => "無法保存附件",
         AttachmentWord::Altered => "內容與記錄不符",
+        AttachmentWord::Open => "開啟",
+        AttachmentWord::Truncated => "僅顯示開頭部分",
+        AttachmentWord::CannotOpen => "無法用系統應用程式開啟",
     }
 }
 
@@ -393,6 +405,9 @@ const fn korean_attachment(word: AttachmentWord) -> &'static str {
         AttachmentWord::CannotRead => "첨부할 파일을 읽을 수 없습니다",
         AttachmentWord::CannotWrite => "첨부를 저장할 수 없습니다",
         AttachmentWord::Altered => "내용이 기록과 다릅니다",
+        AttachmentWord::Open => "열기",
+        AttachmentWord::Truncated => "앞부분만 표시합니다",
+        AttachmentWord::CannotOpen => "시스템 앱으로 열 수 없습니다",
     }
 }
 
@@ -469,6 +484,9 @@ const fn spanish_attachment(word: AttachmentWord) -> &'static str {
         AttachmentWord::CannotRead => "no se puede leer el archivo a adjuntar",
         AttachmentWord::CannotWrite => "no se puede guardar el adjunto",
         AttachmentWord::Altered => "el contenido no coincide con el registro",
+        AttachmentWord::Open => "Abrir",
+        AttachmentWord::Truncated => "Solo se muestra el comienzo",
+        AttachmentWord::CannotOpen => "No se puede abrir con la aplicación del sistema",
     }
 }
 
@@ -477,7 +495,7 @@ mod tests {
     use super::*;
 
     /// 全部の語（`Word` の閉じた集合を 1 か所で列挙する。増えたらここも増える）。
-    const WORDS: [Word; 65] = [
+    const WORDS: [Word; 68] = [
         Word::All,
         Word::StateName(ItemState::Open),
         Word::StateName(ItemState::InProgress),
@@ -543,6 +561,9 @@ mod tests {
         Word::Attachment(AttachmentWord::CannotRead),
         Word::Attachment(AttachmentWord::CannotWrite),
         Word::Attachment(AttachmentWord::Altered),
+        Word::Attachment(AttachmentWord::Open),
+        Word::Attachment(AttachmentWord::Truncated),
+        Word::Attachment(AttachmentWord::CannotOpen),
     ];
 
     #[test]

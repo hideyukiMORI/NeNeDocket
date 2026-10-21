@@ -52,7 +52,10 @@ use nene_docket_core::wording;
 
 use crate::account::Account;
 use crate::administration_log;
+use crate::attachment_view::AttachmentView;
+use crate::attachment_view_cache::AttachmentViewCache;
 use crate::attachments_action::AttachmentsAction;
+use crate::attachments_context::AttachmentsContext;
 use crate::attachments_pane::AttachmentsPane;
 use crate::body_pane::BodyPane;
 use crate::docket_frame::DocketFrame;
@@ -72,6 +75,7 @@ use crate::member::Member;
 use crate::members_action::MembersAction;
 use crate::members_pane::MembersPane;
 use crate::notice::Notice;
+use crate::open_failure::OpenFailure;
 use crate::pane_height::PaneHeight;
 use crate::ports::Ports;
 use crate::settings::Settings;
@@ -168,6 +172,10 @@ pub struct DocketScreen {
     /// 写しが記録と合わない添付の連番のキャッシュと、その鍵（台帳の世代・選んだ課題）。ファイルを毎フレーム読まない。
     altered_cache: Vec<u32>,
     altered_key: Option<(u64, Option<ItemId>)>,
+    /// 選んだ添付の中身（文・表・パス）の覚え（FR-022）。
+    view_cache: AttachmentViewCache,
+    /// OS の既定のアプリで開けなかった（FR-022）。次に開けるまで示す。
+    open_failure: Option<OpenFailure>,
     /// 編集欄を読み込んだ時点の課題。確定のとき、他人がその後に変えていれば上書きと分かる（FR-008）。
     base: Option<Item>,
     /// 履歴の行の上にポインタがあるとき、その時点の課題（表の行と本文の段に再現する・FR-006）。
@@ -238,6 +246,8 @@ impl DocketScreen {
             attachments: AttachmentsPane::hidden(environment.scale()),
             altered_cache: Vec::new(),
             altered_key: None,
+            view_cache: AttachmentViewCache::empty(),
+            open_failure: None,
             base: None,
             preview: None,
             resizing: None,
@@ -545,6 +555,7 @@ impl DocketScreen {
         notices.extend(self.write_failure.map(Notice::Journal));
         notices.extend(self.read_failure.map(Notice::Journal));
         notices.extend(self.admin_failure.map(Notice::Journal));
+        notices.extend(self.open_failure.map(Notice::Open));
         let orphans = self.ledger.docket().orphans();
         if orphans > 0 {
             notices.push(Notice::Orphans(orphans));
@@ -870,20 +881,46 @@ impl DocketScreen {
         }
     }
 
-    /// 添付の段。選んだ課題の添付を並べ、パスの欄と「添付する」「外す」を受ける（FR-021）。
+    /// 添付の段。選んだ課題の添付を並べ、パスの欄と「添付する」「外す」を受け、選んだ添付の中身を出す（FR-021 / FR-022）。
     fn probe_attachments(&mut self, area: Option<PixelRect>, commands: &mut Vec<DrawCommand>) {
         let Some(area) = area else {
             return;
         };
         let item = self.selected_item();
         let altered = self.altered_attachments(item.as_ref());
-        let actions = self.attachments.probe(
-            &mut self.interaction,
-            (area, item.as_ref(), &altered, self.language),
-            commands,
-        );
+        self.load_view(item.as_ref());
+        let context = AttachmentsContext::new(area, self.language)
+            .with_item(item.as_ref())
+            .with_altered(&altered)
+            .with_view(self.view_cache.view());
+        let actions = self
+            .attachments
+            .probe(&mut self.interaction, &context, commands);
         for action in actions {
             self.act_on_attachments(Some(action));
+        }
+    }
+
+    /// 選んだ添付の中身を読む。鍵（台帳の世代・課題・連番）が変わったときだけ。読めなければ示す（FR-014）。
+    fn load_view(&mut self, item: Option<&Item>) {
+        let Some((item, sequence)) = item.zip(self.attachments.selected()) else {
+            self.view_cache.clear();
+            return;
+        };
+        let key = (self.ledger.generation(), item.id(), sequence);
+        if self.view_cache.holds(key) {
+            return;
+        }
+        let Some(attachment) = item.attachment(sequence) else {
+            self.view_cache.clear();
+            return;
+        };
+        match AttachmentView::load(self.ports.journal(), item.id(), attachment) {
+            Ok(view) => self.view_cache.remember(key, Some(view)),
+            Err(failure) => {
+                self.view_cache.remember(key, None);
+                self.write_failure = Some(failure);
+            }
         }
     }
 
@@ -931,7 +968,17 @@ impl DocketScreen {
                 item: item.id(),
                 sequence,
             }),
+            AttachmentsAction::Open(sequence) => self.open_attachment(&item, sequence),
         }
+    }
+
+    /// 添付の写しを OS の既定のアプリで開く（FR-022）。開けなければ示す。
+    fn open_attachment(&mut self, item: &Item, sequence: u32) {
+        let Some(attachment) = item.attachment(sequence) else {
+            return;
+        };
+        let path = self.ports.journal().attachment_path(item.id(), attachment);
+        self.open_failure = self.ports.opener().open(&path).err();
     }
 
     /// 本文の段。複数行の欄 1 つ。
@@ -1288,6 +1335,10 @@ impl DocketScreen {
                 self.toggle_pane(id);
             }
             id if pressed && id == MembersPane::editor_id() => self.press_member_editor(),
+            id if pressed && id == AttachmentsPane::open_id() => {
+                let action = self.attachments.open_key();
+                self.act_on_attachments(action);
+            }
             ADD if key == KeyIntent::Enter => self.add_item(),
             DELETE if key == KeyIntent::Enter => self.delete_item(),
             _ => return false,
@@ -1991,6 +2042,7 @@ mod tests {
     use core::cell::RefCell;
 
     use nene_docket_core::appearance::Appearance;
+    use nene_docket_core::attachment_kind::AttachmentKind;
     use nene_docket_core::logical_clock::LogicalClock;
     use nene_docket_core::op_id::OpId;
     use nene_docket_core::permissions::Permissions;
@@ -2004,9 +2056,11 @@ mod tests {
     use nene_docket_core::wall_clock::WallClock;
 
     use super::*;
+    use crate::attachment_text::AttachmentText;
     use crate::clock_port::ClockPort;
     use crate::journal_port::JournalPort;
     use crate::ledger_snapshot::LedgerSnapshot;
+    use crate::opener_port::OpenerPort;
     use crate::settings_port::SettingsPort;
 
     const BOUNDS: PixelRect = PixelRect::new(0, 0, 1060, 400);
@@ -2157,6 +2211,27 @@ mod tests {
             alloc::format!("/docket/attachments/{}", attachment.file_name())
         }
 
+        /// 名前で決める: `.csv` は 2 列の表、`big` で始まれば先頭だけ、`unreadable` で始まれば読めない、他は 2 行の文。
+        fn read_attachment(
+            &self,
+            _item: ItemId,
+            attachment: &Attachment,
+        ) -> Result<AttachmentText, JournalFailure> {
+            let name = attachment.name();
+            if name.starts_with("unreadable") {
+                return Err(JournalFailure::AttachmentUnreadable);
+            }
+            let text = if AttachmentKind::of(name) == AttachmentKind::Csv {
+                "h1,h2\n1,\"x,y\"\n"
+            } else {
+                "hello\nworld\n"
+            };
+            Ok(AttachmentText::new(
+                String::from(text),
+                name.starts_with("big"),
+            ))
+        }
+
         fn rejected_lines(&self) -> usize {
             self.rejected
         }
@@ -2239,6 +2314,23 @@ mod tests {
         pending: Rc<RefCell<Vec<Op>>>,
         synced: Rc<RefCell<usize>>,
         saved: Rc<RefCell<Vec<Settings>>>,
+        opened: Rc<RefCell<Vec<String>>>,
+    }
+
+    /// 開いたパスを覚える偽の起動。`fail` を含むパスは開けない。
+    #[derive(Debug)]
+    struct FakeOpener {
+        opened: Rc<RefCell<Vec<String>>>,
+    }
+
+    impl OpenerPort for FakeOpener {
+        fn open(&self, path: &str) -> Result<(), OpenFailure> {
+            if path.contains("fail") {
+                return Err(OpenFailure::CannotOpen);
+            }
+            self.opened.borrow_mut().push(String::from(path));
+            Ok(())
+        }
     }
 
     fn screen_with(journal: FakeJournal) -> (DocketScreen, Spy) {
@@ -2251,11 +2343,13 @@ mod tests {
         fail_settings: bool,
     ) -> (DocketScreen, Spy) {
         let saved = Rc::new(RefCell::new(Vec::new()));
+        let opened = Rc::new(RefCell::new(Vec::new()));
         let spy = Spy {
             written: Rc::clone(&journal.written),
             pending: Rc::clone(&journal.pending),
             synced: Rc::clone(&journal.synced),
             saved: Rc::clone(&saved),
+            opened: Rc::clone(&opened),
         };
         let settings_port = FakeSettings {
             saved,
@@ -2265,6 +2359,7 @@ mod tests {
             Box::new(journal),
             Box::new(FixedClock),
             Box::new(settings_port),
+            Box::new(FakeOpener { opened }),
         );
         let account = Account::new(ME, String::from("me"), SigningKey::from_bytes(&[1_u8; 32]));
         (
@@ -3255,6 +3350,101 @@ mod tests {
         assert!(!screen.shows_attachments());
         let closed = idle(&mut screen);
         assert!(!texts(&closed).iter().any(|text| text == "⚠ bad.txt"));
+    }
+
+    /// 中身の段の「開く」の中央（一覧が見出し ＋ 1 行のとき、中身は 348 から）。
+    const OPEN_BUTTON_X: u16 = 1007;
+    const VIEW_ROW_Y: u16 = 360;
+
+    /// 課題 1 を選び、段を出し、`path` を添付して、その行を選ぶ。
+    fn attach_and_select(path: &str) -> (DocketScreen, Spy) {
+        let (mut screen, spy) = screen(2);
+        click(&mut screen, 100, FIRST_ROW_Y);
+        click(&mut screen, ATTACHMENTS_X, TOOLBAR_Y);
+        click(&mut screen, 400, EDIT_ROW_Y);
+        keys(&mut screen, &chars(path));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        click(&mut screen, 100, SHIFTED_FIRST_MEMBER_Y);
+        assert_eq!(screen.attachments.selected(), Some(1));
+        (screen, spy)
+    }
+
+    #[test]
+    fn a_selected_text_attachment_shows_its_lines() {
+        let (mut screen, _) = attach_and_select("/tmp/notes.txt");
+        let shown = texts(&idle(&mut screen));
+        assert!(shown.iter().any(|text| text == "hello"), "{shown:?}");
+        assert!(
+            !shown
+                .iter()
+                .any(|text| text == "Showing the beginning only")
+        );
+        // 行の選択を外すと中身も消える（段を閉じて開き直す）。
+        click(&mut screen, ATTACHMENTS_X, TOOLBAR_Y);
+        click(&mut screen, ATTACHMENTS_X, TOOLBAR_Y);
+        assert_eq!(screen.attachments.selected(), Some(1));
+        assert!(texts(&idle(&mut screen)).iter().any(|text| text == "hello"));
+    }
+
+    #[test]
+    fn a_selected_csv_attachment_shows_a_table_with_the_first_row_as_headings() {
+        let (mut screen, _) = attach_and_select("/tmp/data.csv");
+        let shown = texts(&idle(&mut screen));
+        assert!(shown.iter().any(|text| text == "h1"), "{shown:?}");
+        assert!(shown.iter().any(|text| text == "h2"));
+    }
+
+    #[test]
+    fn other_kinds_show_the_path_and_the_open_button_calls_the_opener() {
+        let (mut screen, spy) = attach_and_select("/tmp/book.xlsx");
+        let shown = texts(&idle(&mut screen));
+        assert!(
+            shown
+                .iter()
+                .any(|text| text == "/docket/attachments/1-book.xlsx"),
+            "{shown:?}"
+        );
+        assert!(shown.iter().any(|text| text == "Open"));
+        click(&mut screen, OPEN_BUTTON_X, VIEW_ROW_Y);
+        assert_eq!(
+            *spy.opened.borrow(),
+            [String::from("/docket/attachments/1-book.xlsx")]
+        );
+        assert!(screen.notices().is_empty());
+        // 鍵でも押せる（ボタンにフォーカスがある）。
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert_eq!(spy.opened.borrow().len(), 2);
+    }
+
+    #[test]
+    fn a_failed_open_is_reported() {
+        let (mut screen, spy) = attach_and_select("/tmp/fail.xlsx");
+        click(&mut screen, OPEN_BUTTON_X, VIEW_ROW_Y);
+        assert!(spy.opened.borrow().is_empty());
+        assert!(
+            screen
+                .notices()
+                .contains(&Notice::Open(OpenFailure::CannotOpen))
+        );
+    }
+
+    #[test]
+    fn a_truncated_text_says_so_and_an_unreadable_copy_is_reported() {
+        let (mut screen, _) = attach_and_select("/tmp/big.txt");
+        let shown = texts(&idle(&mut screen));
+        assert!(
+            shown
+                .iter()
+                .any(|text| text == "Showing the beginning only"),
+            "{shown:?}"
+        );
+        let (mut unreadable, _) = attach_and_select("/tmp/unreadable.txt");
+        idle(&mut unreadable);
+        assert!(
+            unreadable
+                .notices()
+                .contains(&Notice::Journal(JournalFailure::AttachmentUnreadable))
+        );
     }
 
     #[test]

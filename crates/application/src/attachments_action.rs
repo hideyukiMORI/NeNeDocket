@@ -9,4 +9,6 @@ pub enum AttachmentsAction {
     Attach(String),
     /// この連番の添付を外す。
     Detach(u32),
+    /// この連番の添付を OS の既定のアプリで開く（FR-022）。
+    Open(u32),
 }

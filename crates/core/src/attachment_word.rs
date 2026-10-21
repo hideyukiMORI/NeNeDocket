@@ -23,11 +23,17 @@ pub enum AttachmentWord {
     CannotWrite,
     /// 添付の写しの中身が記録と合わない。
     Altered,
+    /// 添付の段の「開く」（OS の既定のアプリで・FR-022）。
+    Open,
+    /// 大きなファイルの先頭だけを出している。
+    Truncated,
+    /// OS の既定のアプリで開けなかった。
+    CannotOpen,
 }
 
 impl AttachmentWord {
     /// 全部の語（閉じた集合を 1 か所で列挙する）。
-    pub const ALL: [Self; 10] = [
+    pub const ALL: [Self; 13] = [
         Self::Attachments,
         Self::Path,
         Self::Attach,
@@ -38,5 +44,8 @@ impl AttachmentWord {
         Self::CannotRead,
         Self::CannotWrite,
         Self::Altered,
+        Self::Open,
+        Self::Truncated,
+        Self::CannotOpen,
     ];
 }

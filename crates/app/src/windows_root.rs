@@ -2,6 +2,7 @@
 
 use nene_docket_adapters_windows::appearance;
 use nene_docket_adapters_windows::desktop_dpi;
+use nene_docket_adapters_windows::external_opener::ExternalOpener;
 use nene_docket_adapters_windows::locale;
 use nene_docket_adapters_windows::saved_account;
 use nene_docket_adapters_windows::saved_settings::{self, SettingsStore};
@@ -55,6 +56,7 @@ pub(crate) fn run(arguments: &Arguments) -> Result<(), LaunchFailure> {
         Box::new(journal),
         Box::new(SystemClock),
         Box::new(SettingsStore::in_config_directory()?),
+        Box::new(ExternalOpener),
     );
     let environment = Environment::new(desktop_dpi::read())
         .with_language(locale::read())
@@ -131,6 +133,7 @@ fn open_ledger(folder: &Path, account: &Account) -> Result<(Ledger, Ports), Laun
         Box::new(journal),
         Box::new(SystemClock),
         Box::new(SettingsStore::in_config_directory()?),
+        Box::new(ExternalOpener),
     );
     Ok((ledger, ports))
 }

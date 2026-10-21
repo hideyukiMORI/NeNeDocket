@@ -6,6 +6,7 @@
 pub mod adapter_failure;
 pub mod appearance;
 mod config_directory;
+pub mod external_opener;
 pub mod locale;
 mod random_id;
 pub mod refresh_ticker;

@@ -310,6 +310,8 @@ mod tests {
     use nene_docket_core::account_id::AccountId;
     use nene_docket_core::admin_command::AdminCommand;
     use nene_docket_core::attachment::Attachment;
+
+    use crate::attachment_text::AttachmentText;
     use nene_docket_core::field_value::FieldValue;
     use nene_docket_core::item::Item;
     use nene_docket_core::item_state::ItemState;
@@ -431,6 +433,14 @@ mod tests {
 
         fn attachment_path(&self, _item: ItemId, attachment: &Attachment) -> String {
             attachment.file_name()
+        }
+
+        fn read_attachment(
+            &self,
+            _item: ItemId,
+            _attachment: &Attachment,
+        ) -> Result<AttachmentText, JournalFailure> {
+            Ok(AttachmentText::new(String::new(), false))
         }
     }
 

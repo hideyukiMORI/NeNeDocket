@@ -4,13 +4,15 @@ use alloc::boxed::Box;
 
 use crate::clock_port::ClockPort;
 use crate::journal_port::JournalPort;
+use crate::opener_port::OpenerPort;
 use crate::settings_port::SettingsPort;
 
-/// ジャーナル・壁時計・設定。増えたらここに足し、`DocketScreen::open` の引数は増やさない。
+/// ジャーナル・壁時計・設定・OS のアプリで開く。増えたらここに足し、`DocketScreen::open` の引数は増やさない。
 pub struct Ports {
     journal: Box<dyn JournalPort>,
     clock: Box<dyn ClockPort>,
     settings: Box<dyn SettingsPort>,
+    opener: Box<dyn OpenerPort>,
 }
 
 impl Ports {
@@ -20,11 +22,13 @@ impl Ports {
         journal: Box<dyn JournalPort>,
         clock: Box<dyn ClockPort>,
         settings: Box<dyn SettingsPort>,
+        opener: Box<dyn OpenerPort>,
     ) -> Self {
         Self {
             journal,
             clock,
             settings,
+            opener,
         }
     }
 
@@ -49,10 +53,16 @@ impl Ports {
     pub fn settings_mut(&mut self) -> &mut dyn SettingsPort {
         self.settings.as_mut()
     }
+
+    /// OS の既定のアプリで開く（FR-022）。
+    #[must_use]
+    pub fn opener(&self) -> &dyn OpenerPort {
+        self.opener.as_ref()
+    }
 }
 
 impl core::fmt::Debug for Ports {
     fn fmt(&self, formatter: &mut core::fmt::Formatter<'_>) -> core::fmt::Result {
-        formatter.write_str("Ports { journal, clock, settings }")
+        formatter.write_str("Ports { journal, clock, settings, opener }")
     }
 }

@@ -12,6 +12,8 @@ mod config_directory;
 #[cfg(windows)]
 pub mod desktop_dpi;
 #[cfg(windows)]
+pub mod external_opener;
+#[cfg(windows)]
 pub mod locale;
 #[cfg(windows)]
 mod random_id;
