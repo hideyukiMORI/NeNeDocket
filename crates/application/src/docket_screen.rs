@@ -205,6 +205,8 @@ pub struct DocketScreen {
     /// 台帳の `keys/` にある名前（履歴の「誰が」）。読み直しのたびに取り直す。
     names: Vec<(AccountId, String)>,
     write_failure: Option<JournalFailure>,
+    /// スナップショットを書けなかった（FR-014）。次に書けたら消す。自分の操作の書きの失敗とは別に持つ（Issue #100）。
+    checkpoint_failure: Option<JournalFailure>,
     read_failure: Option<JournalFailure>,
     admin_failure: Option<JournalFailure>,
     environment: Environment,
@@ -267,6 +269,7 @@ impl DocketScreen {
             ports,
             names,
             write_failure: None,
+            checkpoint_failure: None,
             read_failure,
             admin_failure: None,
             environment,
@@ -541,13 +544,20 @@ impl DocketScreen {
         self.checkpoint();
     }
 
-    /// スナップショットを書く。書けなければ示す（FR-014）。
+    /// スナップショットを書く。書けなければ示し、次の回にまた試す。書けたら知らせを消す（FR-014・Issue #100）。
+    /// 書けていない操作が残る間は試さない（store が拒む・嘘の読み位置を残さない）。その間の知らせは `write_failure` が出している。
     fn checkpoint(&mut self) {
-        let snapshot = self.ledger.snapshot();
-        if let Err(failure) = self.ports.journal_mut().checkpoint(&snapshot) {
-            self.write_failure = Some(failure);
+        if self.write_failure == Some(JournalFailure::Unwritable) {
+            return;
         }
-        self.checkpointed = self.ledger.generation();
+        let snapshot = self.ledger.snapshot();
+        match self.ports.journal_mut().checkpoint(&snapshot) {
+            Ok(()) => {
+                self.checkpoint_failure = None;
+                self.checkpointed = self.ledger.generation();
+            }
+            Err(failure) => self.checkpoint_failure = Some(failure),
+        }
     }
 
     /// 利用者に示す降格（FR-014）。無ければ空。
@@ -555,6 +565,11 @@ impl DocketScreen {
     pub fn notices(&self) -> Vec<Notice> {
         let mut notices = Vec::new();
         notices.extend(self.write_failure.map(Notice::Journal));
+        notices.extend(
+            self.checkpoint_failure
+                .filter(|failure| self.write_failure != Some(*failure))
+                .map(Notice::Journal),
+        );
         notices.extend(self.read_failure.map(Notice::Journal));
         notices.extend(self.admin_failure.map(Notice::Journal));
         notices.extend(self.open_failure.map(Notice::Open));
@@ -2080,6 +2095,7 @@ impl DocketScreen {
 mod tests {
     use alloc::boxed::Box;
     use alloc::rc::Rc;
+    use core::cell::Cell;
     use core::cell::RefCell;
 
     use nene_docket_core::appearance::Appearance;
@@ -2145,6 +2161,8 @@ mod tests {
         synced: Rc<RefCell<usize>>,
         checkpoints: Rc<RefCell<Vec<LedgerSnapshot>>>,
         fail_write: bool,
+        /// 共有が切れている（途中で戻せる・Issue #100）。スナップショットを書けない。
+        outage: Rc<Cell<bool>>,
         fail_read: bool,
         rejected: usize,
         admission: AdmissionReport,
@@ -2160,6 +2178,7 @@ mod tests {
                 synced: Rc::default(),
                 checkpoints: Rc::default(),
                 fail_write: false,
+                outage: Rc::default(),
                 fail_read: false,
                 rejected: 0,
                 admission: AdmissionReport::open(),
@@ -2224,7 +2243,7 @@ mod tests {
         }
 
         fn checkpoint(&mut self, snapshot: &LedgerSnapshot) -> Result<(), JournalFailure> {
-            if self.fail_write {
+            if self.fail_write || self.outage.get() {
                 return Err(JournalFailure::Unwritable);
             }
             self.checkpoints.borrow_mut().push(snapshot.clone());
@@ -2861,6 +2880,52 @@ mod tests {
                 .iter()
                 .any(|text| text.contains("cannot write"))
         );
+    }
+
+    /// 読み直しの刻みを `count` 回。
+    fn ticks(screen: &mut DocketScreen, count: u64) {
+        for _tick in 0..count {
+            screen.step(&FrameInput::new(BOUNDS, PointerInput::absent()).with_refresh());
+        }
+    }
+
+    #[test]
+    fn a_failed_checkpoint_is_shown_retried_and_cleared_once_it_is_written() {
+        let journal = FakeJournal::default();
+        let outage = Rc::clone(&journal.outage);
+        let checkpoints = Rc::clone(&journal.checkpoints);
+        outage.set(true);
+        let (mut screen, spy) = screen_with(journal);
+        // 他人の変更が届いて台帳が変わる（書いたのは他人・こちらの操作は無い）。
+        spy.pending.borrow_mut().extend(others_items(2));
+        ticks(&mut screen, CHECKPOINT_EVERY);
+        assert_eq!(
+            screen.notices(),
+            alloc::vec![Notice::Journal(JournalFailure::Unwritable)]
+        );
+        assert!(checkpoints.borrow().is_empty());
+        // 共有が戻る。台帳が変わっていなくても次の回にまた試し、書けたら知らせを消す。
+        outage.set(false);
+        ticks(&mut screen, CHECKPOINT_EVERY);
+        assert_eq!(checkpoints.borrow().len(), 1);
+        assert!(screen.notices().is_empty());
+    }
+
+    #[test]
+    fn an_unwritten_op_keeps_its_notice_and_no_checkpoint_is_tried_meanwhile() {
+        let journal = FakeJournal {
+            fail_write: true,
+            ..FakeJournal::default()
+        };
+        let checkpoints = Rc::clone(&journal.checkpoints);
+        let (mut screen, _) = screen_with(journal);
+        click(&mut screen, ADD_X, TOOLBAR_Y);
+        ticks(&mut screen, CHECKPOINT_EVERY);
+        assert_eq!(
+            screen.notices(),
+            alloc::vec![Notice::Journal(JournalFailure::Unwritable)]
+        );
+        assert!(checkpoints.borrow().is_empty());
     }
 
     #[test]
