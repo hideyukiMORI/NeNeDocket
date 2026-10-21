@@ -1,4 +1,4 @@
-//! 再起動をまたいで残す設定（FR-012）。最近開いた台帳・他人のジャーナルを読み直す間隔・表示言語・配色・表の列の幅。
+//! 再起動をまたいで残す設定（FR-012）。最近開いた台帳・他人のジャーナルを読み直す間隔・表示言語・配色・表の列の幅と順。
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -6,6 +6,7 @@ use alloc::vec::Vec;
 use nene_docket_core::language_choice::LanguageChoice;
 use nene_docket_core::theme_choice::ThemeChoice;
 
+use crate::column_order::ColumnOrder;
 use crate::column_widths::ColumnWidths;
 
 /// 最近の台帳を覚える数。
@@ -21,6 +22,7 @@ pub struct Settings {
     language: LanguageChoice,
     theme: ThemeChoice,
     columns: ColumnWidths,
+    order: ColumnOrder,
 }
 
 impl Settings {
@@ -33,6 +35,7 @@ impl Settings {
             language: LanguageChoice::System,
             theme: ThemeChoice::System,
             columns: ColumnWidths::initial(),
+            order: ColumnOrder::initial(),
         }
     }
 
@@ -84,6 +87,18 @@ impl Settings {
     #[must_use]
     pub const fn columns(&self) -> ColumnWidths {
         self.columns
+    }
+
+    /// 列の順を変えた設定。
+    #[must_use]
+    pub fn with_order(self, order: ColumnOrder) -> Self {
+        Self { order, ..self }
+    }
+
+    /// 列の順。
+    #[must_use]
+    pub const fn order(&self) -> ColumnOrder {
+        self.order
     }
 
     /// 最近開いた台帳。新しいものが先。
@@ -153,6 +168,22 @@ mod tests {
         assert_eq!(settings.language(), LanguageChoice::Fixed(Language::Korean));
         assert_eq!(settings.theme(), dracula);
         assert_eq!(settings.columns(), ColumnWidths::initial());
+    }
+
+    #[test]
+    fn the_order_rides_along_and_can_be_changed() {
+        let settings = Settings::initial();
+        assert_eq!(settings.order(), ColumnOrder::initial());
+        assert_eq!(
+            settings
+                .clone()
+                .with_order(
+                    ColumnOrder::initial().moved_to(crate::table_column::TableColumn::Due, 0)
+                )
+                .order()
+                .columns()[0],
+            crate::table_column::TableColumn::Due
+        );
         assert_eq!(
             settings
                 .clone()

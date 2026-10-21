@@ -695,7 +695,21 @@ application に設定の版 2・`SettingsPort`・`Environment` の言語と明�
 
 🔴 **正直に:** 列の順（FR-012 の「順」）はまだ。境の見た目は無く（カーソルも変わらない）、つまめる幅は 6 画素。
 
-## 29. 再現
+## 29. Issue #43 — 表の列の順をヘッダのドラッグで変え、設定の版 4 に残す（FR-012 完了・2026-10-21）
+
+同じコンテナ。application: `ColumnOrder`（6 列の並び・`moved_to`）、`TableColumn::keyword / from_keyword`、`Settings::order`、設定ファイルの版 4（`order = …`。版 3・2・1 は既定の順で読み、前の版に `order` があれば拒む）。表のヘッダの見出し（ID 6000〜）をつまんで横に動かし、離した位置の列の前後に入れる（離したフレームで入れる。境のつまみが押下を取っていれば動かない）。見出し・セル・幅はすべて順に従う。adapters: `settings.v4.txt`、無ければ版 3 → 2 → 1。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 338 件 |
+| `make conformance` | 違反なし（219 ファイル） |
+| `make coverage` | core ＋ application regions 98.74% |
+| Xvfb（`:89`） | 「State」の見出しを「#」の上で離して閉じると `order = state,number,title,assignee,due,labels`。開き直すと状態の列が左端（[02-reopened](screenshots/2026-10-21-order-02-reopened.png)） |
+
+テストが要求すること: 見出しを別の列の上で離すと順が変わり設定が 1 度書かれ、同じ場所で離しても書かないこと、見出しとセルの順が変わること、版 4 の往復・版 3 の読み込み（`order` 付きは拒む）・6 列が 1 度ずつ無い `order` の拒否。
+
+## 30. 再現
 
 ```bash
 make prove

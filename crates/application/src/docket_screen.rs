@@ -12,6 +12,7 @@ use alloc::vec::Vec;
 
 use nene_docket_core::account_id::AccountId;
 use nene_docket_core::button;
+use nene_docket_core::button_phase::ButtonPhase;
 use nene_docket_core::checkbox;
 use nene_docket_core::column_width::ColumnWidth;
 use nene_docket_core::draw_command::DrawCommand;
@@ -94,6 +95,8 @@ const LANGUAGE_OPTION: WidgetId = WidgetId::new(300);
 const ROW: WidgetId = WidgetId::new(1_000);
 /// 表のヘッダの列の境（ドラッグで幅を変える・FR-012）。左からの番号を足す。
 const COLUMN_GRIP: WidgetId = WidgetId::new(5_000);
+/// 表のヘッダの見出し（ドラッグで順を変える・FR-012）。左からの番号を足す。
+const COLUMN_HEAD: WidgetId = WidgetId::new(6_000);
 
 /// 1x の寸法（SPECIFICATION 第 2 節・決め打ちしない）。
 const MARGIN_PX: u16 = 8;
@@ -149,6 +152,8 @@ pub struct DocketScreen {
     preview: Option<Item>,
     /// 列の境をドラッグ中か。離したときに設定を書く。
     resizing: Option<TableColumn>,
+    /// 見出しをドラッグ中の列。離した位置へ入れ、設定を書く。
+    moving: Option<TableColumn>,
     bad_due: bool,
     /// 他人が変えた後に上書きした欄（FR-008）。別の行を選ぶまで示す。
     overwrote: Option<EditSlot>,
@@ -204,6 +209,7 @@ impl DocketScreen {
             base: None,
             preview: None,
             resizing: None,
+            moving: None,
             bad_due: false,
             overwrote: None,
             state: SelectState::closed(ItemState::ALL.len(), 0),
@@ -730,7 +736,10 @@ impl DocketScreen {
         let bounds = PixelRect::new(remaining.x(), remaining.y(), inner, remaining.height());
         let rows = u32::try_from(visible).unwrap_or(u32::MAX);
         let widths = self.settings.columns();
-        let columns = TableColumn::ALL
+        let columns = self
+            .settings
+            .order()
+            .columns()
             .into_iter()
             .map(|column| {
                 widths.get(column).map_or(ColumnWidth::Fill, |width| {
@@ -765,12 +774,13 @@ impl DocketScreen {
             };
             // 境を動かさなければ幅はそのまま: 左の列は x - 左端 + 1、右の列は 右端 - x - 隙間。
             let gap = right.x().saturating_sub(left.right()).saturating_sub(1);
-            let (column, physical) = match TableColumn::ALL.get(index).copied() {
+            let order = self.settings.order().columns();
+            let (column, physical) = match order.get(index).copied() {
                 Some(column) if column.is_resizable() => {
                     (column, x.saturating_sub(left.x()).saturating_add(1))
                 }
                 _ => (
-                    TableColumn::ALL
+                    order
                         .get(index.saturating_add(1))
                         .copied()
                         .unwrap_or(TableColumn::Labels),
@@ -786,6 +796,74 @@ impl DocketScreen {
             self.save_settings();
         }
         self.resizing = held;
+    }
+
+    /// 見出しをつまんで横に動かし、離した位置の列へ入れる（FR-012）。境のつまみが押下を取っていれば動かない。
+    fn probe_column_heads(&mut self, cells: &[PixelRect]) {
+        if self.resizing.is_some() {
+            self.moving = None;
+            return;
+        }
+        let order = self.settings.order().columns();
+        let pointer = self.interaction.pointer();
+        let released = pointer.phase() == ButtonPhase::Released;
+        let mut held = None;
+        for (index, (cell, column)) in cells.iter().zip(order).enumerate() {
+            let response = self.interaction.probe(
+                COLUMN_HEAD.indexed(u32::try_from(index).unwrap_or(0)),
+                *cell,
+                false,
+            );
+            if response.phase() == ResponsePhase::Held {
+                held = Some(column);
+            }
+        }
+        // 離したフレームは押している列がまだ残っているので、ここで入れる。
+        let dropped = held
+            .filter(|_| released)
+            .zip(pointer.position().map(PixelPoint::x));
+        if let Some((column, x)) = dropped {
+            self.drop_column(column, cells, x);
+            held = None;
+        }
+        self.moving = held;
+    }
+
+    /// `column` を、`x` が掛かる列の位置へ。順が変われば設定を書く。
+    fn drop_column(&mut self, column: TableColumn, cells: &[PixelRect], x: u16) {
+        let target = cells
+            .iter()
+            .position(|cell| x <= cell.right())
+            .unwrap_or(cells.len().saturating_sub(1));
+        let order = self.settings.order().moved_to(column, target);
+        if order != self.settings.order() {
+            self.settings = self.settings.clone().with_order(order);
+            self.save_settings();
+        }
+    }
+
+    /// 列の見出しの語。
+    const fn heading_of(column: TableColumn) -> Word {
+        match column {
+            TableColumn::Number => Word::Number,
+            TableColumn::Title => Word::FieldName(Field::Title),
+            TableColumn::State => Word::FieldName(Field::State),
+            TableColumn::Assignee => Word::FieldName(Field::Assignee),
+            TableColumn::Due => Word::FieldName(Field::Due),
+            TableColumn::Labels => Word::FieldName(Field::Labels),
+        }
+    }
+
+    /// 列のセルの文字列。
+    fn cell_of(&self, column: TableColumn, item: &Item, number: &str) -> String {
+        match column {
+            TableColumn::Number => String::from(number),
+            TableColumn::Title => item.title().to_owned(),
+            TableColumn::State => self.word(Word::StateName(item.state())).to_owned(),
+            TableColumn::Assignee => item.assignee().to_owned(),
+            TableColumn::Due => EditSlot::Due.text_of(item),
+            TableColumn::Labels => EditSlot::Labels.text_of(item),
+        }
     }
 
     const fn track_of(remaining: PixelRect, width: u16) -> PixelRect {
@@ -1357,17 +1435,14 @@ impl DocketScreen {
             rect: header,
             paint: Paint::Surface,
         });
-        let headings = [
-            Word::Number,
-            Word::FieldName(Field::Title),
-            Word::FieldName(Field::State),
-            Word::FieldName(Field::Assignee),
-            Word::FieldName(Field::Due),
-            Word::FieldName(Field::Labels),
-        ]
-        .map(|word| self.word(word));
+        let headings = self
+            .settings
+            .order()
+            .columns()
+            .map(|column| self.word(Self::heading_of(column)));
         let cells = table.cells(header);
         self.probe_column_grips(header, &cells);
+        self.probe_column_heads(&cells);
         for (cell, heading) in cells.into_iter().zip(headings) {
             commands.push(Self::cell_text(
                 cell,
@@ -1431,14 +1506,11 @@ impl DocketScreen {
         } else {
             Self::number_text(item.id())
         };
-        let texts = [
-            number,
-            shown.title().to_owned(),
-            self.word(Word::StateName(shown.state())).to_owned(),
-            shown.assignee().to_owned(),
-            EditSlot::Due.text_of(shown),
-            EditSlot::Labels.text_of(shown),
-        ];
+        let texts = self
+            .settings
+            .order()
+            .columns()
+            .map(|column| self.cell_of(column, shown, &number));
         for (cell, text) in cells.into_iter().zip(texts) {
             commands.push(Self::cell_text(cell, &text, paint, self.px(MARGIN_PX)));
         }
@@ -1531,7 +1603,6 @@ mod tests {
     use core::cell::RefCell;
 
     use nene_docket_core::appearance::Appearance;
-    use nene_docket_core::button_phase::ButtonPhase;
     use nene_docket_core::logical_clock::LogicalClock;
     use nene_docket_core::op_id::OpId;
     use nene_docket_core::permissions::Permissions;
@@ -1539,6 +1610,7 @@ mod tests {
     use nene_docket_core::signing_key::SigningKey;
 
     use crate::admission_report::AdmissionReport;
+    use crate::column_order::ColumnOrder;
     use crate::member_role::MemberRole;
     use nene_docket_core::pointer_input::PointerInput;
     use nene_docket_core::wall_clock::WallClock;
@@ -2653,6 +2725,34 @@ mod tests {
         screen.step(&pointer(1040, header_y, ButtonPhase::Released));
         idle(&mut screen);
         assert_eq!(spy.saved.borrow().len(), 2);
+    }
+
+    #[test]
+    fn dragging_a_heading_onto_another_column_reorders_and_saves() {
+        let (mut screen, spy) = screen(2);
+        let header_y = 94;
+        // 状態の見出し（630..739）をつまんで番号の列（8..79）の上で離す。
+        screen.step(&pointer(700, header_y, ButtonPhase::Pressed));
+        screen.step(&pointer(400, header_y, ButtonPhase::Held));
+        screen.step(&pointer(40, header_y, ButtonPhase::Held));
+        assert_eq!(screen.settings().order(), ColumnOrder::initial());
+        screen.step(&pointer(40, header_y, ButtonPhase::Released));
+        assert_eq!(
+            screen.settings().order().text(),
+            "state,number,title,assignee,due,labels"
+        );
+        assert_eq!(spy.saved.borrow().len(), 1);
+        // 見出しの順と行のセルの順が変わる。
+        let frame = idle(&mut screen);
+        let shown = texts(&frame);
+        let state = shown.iter().position(|text| text == "State").unwrap();
+        let number = shown.iter().position(|text| text == "#").unwrap();
+        assert!(state < number);
+        // 同じ場所で離しても何も書かない。
+        screen.step(&pointer(40, header_y, ButtonPhase::Pressed));
+        screen.step(&pointer(40, header_y, ButtonPhase::Released));
+        idle(&mut screen);
+        assert_eq!(spy.saved.borrow().len(), 1);
     }
 
     #[test]

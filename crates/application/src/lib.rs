@@ -18,6 +18,7 @@ pub mod admin_command;
 pub mod admission_report;
 pub mod body_pane;
 pub mod clock_port;
+pub mod column_order;
 pub mod column_widths;
 pub mod docket_frame;
 pub mod docket_screen;
