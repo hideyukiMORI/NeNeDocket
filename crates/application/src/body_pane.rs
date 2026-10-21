@@ -11,6 +11,7 @@ use nene_docket_core::scroll_bar;
 use nene_docket_core::scroll_state::ScrollState;
 use nene_docket_core::text_area;
 use nene_docket_core::text_edit::TextEdit;
+use nene_docket_core::ui_scale::UiScale;
 use nene_docket_core::widget_id::WidgetId;
 
 /// 本文の欄の ID。画面の他の部品（1〜15・17〜19・21・100〜・200〜・300〜・1000〜・3000〜・4000〜）と重ならない。
@@ -20,22 +21,24 @@ const BODY_SCROLL: WidgetId = WidgetId::new(20);
 /// ホイール 1 刻みで送る行数。
 const WHEEL_LINES: i32 = 3;
 
-/// 出すかどうかと、欄と、スクロール。
+/// 出すかどうかと、欄と、スクロールと、部品の寸法に掛ける倍率。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct BodyPane {
     shown: bool,
     edit: TextEdit,
     scroll: ScrollState,
+    scale: UiScale,
 }
 
 impl BodyPane {
-    /// 隠れていて、欄は空。
+    /// 隠れていて、欄は空。`scale` は欄の余白とスクロールバーの寸法に掛ける。
     #[must_use]
-    pub fn hidden() -> Self {
+    pub fn hidden(scale: UiScale) -> Self {
         Self {
             shown: false,
             edit: TextEdit::empty(),
             scroll: ScrollState::top(0, 0),
+            scale,
         }
     }
 
@@ -94,7 +97,7 @@ impl BodyPane {
             scroll_width,
             area.height(),
         );
-        let visible = text_area::visible_lines(field, line_px);
+        let visible = text_area::visible_lines(field, line_px, self.scale);
         let lines = u32::try_from(self.edit.line_count()).unwrap_or(u32::MAX);
         let viewport = u32::try_from(visible).unwrap_or(u32::MAX);
         self.scroll = self.scroll.resized(
@@ -113,16 +116,21 @@ impl BodyPane {
                 field,
                 &TextEdit::showing(text),
                 Response::new(ResponsePhase::Idle, false, false),
-                (line_px, 0),
+                (line_px, 0, self.scale),
             )),
             None => commands.extend(text_area::text_area(
                 field,
                 &self.edit,
                 response,
-                (line_px, first),
+                (line_px, first, self.scale),
             )),
         }
-        commands.extend(scroll_bar::scroll_bar(track, self.scroll, track_response));
+        commands.extend(scroll_bar::scroll_bar(
+            track,
+            self.scroll,
+            track_response,
+            self.scale,
+        ));
     }
 
     /// カーソルの行が見えるまで送る。
@@ -204,7 +212,7 @@ mod tests {
 
     #[test]
     fn toggles_and_draws_the_edit_in_the_area() {
-        let mut pane = BodyPane::hidden();
+        let mut pane = BodyPane::hidden(UiScale::Single);
         assert!(!pane.is_shown());
         pane.toggle();
         assert!(pane.is_shown());
@@ -218,7 +226,7 @@ mod tests {
 
     #[test]
     fn the_wheel_scrolls_a_long_body_and_the_focus_follows_the_caret() {
-        let mut pane = BodyPane::hidden();
+        let mut pane = BodyPane::hidden(UiScale::Single);
         // 72 - 12 = 60 の高さに 20 の行は 3 つ。6 行ある。
         *pane.edit_mut() = TextEdit::showing("1\n2\n3\n4\n5\n6");
         let top = probe(&mut pane, PointerInput::absent());

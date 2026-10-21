@@ -1,6 +1,7 @@
 //! 縦スクロールの状態。
 
 use crate::pixel_rect::PixelRect;
+use crate::ui_scale::UiScale;
 
 /// 中身の高さ・見えている高さ・いまの位置（物理画素）。位置は常に `0..=max_offset` に収まる。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -11,8 +12,8 @@ pub struct ScrollState {
 }
 
 impl ScrollState {
-    /// つまみの最小の長さ。
-    const MIN_THUMB_PX: u32 = 16;
+    /// つまみの最小の長さ（1x）。
+    const MIN_THUMB_PX: u16 = 16;
 
     /// 中身と見えている高さから、先頭で始める。
     #[must_use]
@@ -80,9 +81,9 @@ impl ScrollState {
         self.scrolled_to(offset)
     }
 
-    /// 縦の軌道 `track` の中のつまみの矩形。中身が収まっていれば軌道いっぱい。
+    /// 縦の軌道 `track` の中のつまみの矩形。中身が収まっていれば軌道いっぱい。最小の長さは `scale` を掛ける。
     #[must_use]
-    pub fn thumb(self, track: PixelRect) -> PixelRect {
+    pub fn thumb(self, track: PixelRect, scale: UiScale) -> PixelRect {
         let track_height = u32::from(track.height());
         if self.content <= self.viewport || self.content == 0 {
             return track;
@@ -90,7 +91,7 @@ impl ScrollState {
         let proportional =
             u64::from(track_height) * u64::from(self.viewport) / u64::from(self.content);
         let length = proportional
-            .max(u64::from(Self::MIN_THUMB_PX))
+            .max(u64::from(scale.px(Self::MIN_THUMB_PX)))
             .min(u64::from(track_height));
         let travel = u64::from(track_height).saturating_sub(length);
         let top = travel * u64::from(self.offset) / u64::from(self.max_offset().max(1));
@@ -127,13 +128,16 @@ mod tests {
     fn thumb_is_proportional_and_moves_with_the_offset() {
         let track = PixelRect::new(100, 0, 8, 300);
         let state = ScrollState::top(1200, 300);
-        assert_eq!(state.thumb(track), PixelRect::new(100, 0, 8, 75));
         assert_eq!(
-            state.scrolled_to(900).thumb(track),
+            state.thumb(track, UiScale::Single),
+            PixelRect::new(100, 0, 8, 75)
+        );
+        assert_eq!(
+            state.scrolled_to(900).thumb(track, UiScale::Single),
             PixelRect::new(100, 225, 8, 75)
         );
         assert_eq!(
-            state.scrolled_to(450).thumb(track),
+            state.scrolled_to(450).thumb(track, UiScale::Single),
             PixelRect::new(100, 112, 8, 75)
         );
     }
@@ -141,8 +145,25 @@ mod tests {
     #[test]
     fn thumb_fills_the_track_when_nothing_scrolls_and_never_shrinks_below_the_minimum() {
         let track = PixelRect::new(0, 0, 8, 300);
-        assert_eq!(ScrollState::top(200, 300).thumb(track), track);
-        assert_eq!(ScrollState::top(0, 300).thumb(track), track);
-        assert_eq!(ScrollState::top(1_000_000, 300).thumb(track).height(), 16);
+        assert_eq!(
+            ScrollState::top(200, 300).thumb(track, UiScale::Single),
+            track
+        );
+        assert_eq!(
+            ScrollState::top(0, 300).thumb(track, UiScale::Single),
+            track
+        );
+        assert_eq!(
+            ScrollState::top(1_000_000, 300)
+                .thumb(track, UiScale::Single)
+                .height(),
+            16
+        );
+        assert_eq!(
+            ScrollState::top(1_000_000, 300)
+                .thumb(track, UiScale::Double)
+                .height(),
+            32
+        );
     }
 }

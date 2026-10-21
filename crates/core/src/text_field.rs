@@ -8,13 +8,20 @@ use crate::pixel_rect::PixelRect;
 use crate::response::Response;
 use crate::text_align::TextAlign;
 use crate::text_edit::TextEdit;
+use crate::ui_scale::UiScale;
 
-/// 縁と文字の間。
+/// 縁と文字の間（1x）。
 const PADDING_PX: u16 = 6;
 
 /// 入力欄。フォーカスがあれば強調の縁で、カーソルと選択を描く。確定前の文字列はカーソルの位置に差し込んで描く。
+/// 縁と文字の間は `scale` を掛ける（FR-016）。
 #[must_use]
-pub fn text_field(rect: PixelRect, edit: &TextEdit, response: Response) -> Vec<DrawCommand> {
+pub fn text_field(
+    rect: PixelRect,
+    edit: &TextEdit,
+    response: Response,
+    scale: UiScale,
+) -> Vec<DrawCommand> {
     let (text, caret) = edit.display();
     let border = if response.focused() {
         Paint::Accent
@@ -32,7 +39,7 @@ pub fn text_field(rect: PixelRect, edit: &TextEdit, response: Response) -> Vec<D
         },
         DrawCommand::Clip(rect.inset(1)),
         DrawCommand::Text {
-            rect: rect.inset(PADDING_PX),
+            rect: rect.inset(scale.px(PADDING_PX)),
             text,
             align: TextAlign::Start,
             paint: Paint::Ink,
@@ -57,6 +64,7 @@ mod tests {
             RECT,
             &TextEdit::showing("ab"),
             Response::new(ResponsePhase::Idle, false, false),
+            UiScale::Single,
         );
         assert_eq!(commands.len(), 5);
         assert!(matches!(
@@ -72,7 +80,12 @@ mod tests {
     #[test]
     fn focused_field_shows_the_caret_inside_the_preedit() {
         let edit = TextEdit::showing("ab").with_preedit(Some(Preedit::new("か", 1)));
-        let commands = text_field(RECT, &edit, Response::new(ResponsePhase::Idle, false, true));
+        let commands = text_field(
+            RECT,
+            &edit,
+            Response::new(ResponsePhase::Idle, false, true),
+            UiScale::Single,
+        );
         assert_eq!(
             commands.get(1),
             Some(&DrawCommand::Stroke {
@@ -86,6 +99,20 @@ mod tests {
                 if text == "abか"
                     && *caret == TextCaret::new(3, 3).with_underline(2, 3)
                     && *rect == RECT.inset(PADDING_PX)
+        ));
+    }
+
+    #[test]
+    fn double_scale_doubles_the_padding() {
+        let commands = text_field(
+            PixelRect::new(0, 0, 200, 48),
+            &TextEdit::showing("ab"),
+            Response::new(ResponsePhase::Idle, false, false),
+            UiScale::Double,
+        );
+        assert!(matches!(
+            commands.get(3),
+            Some(DrawCommand::Text { rect, .. }) if *rect == PixelRect::new(12, 12, 176, 24)
         ));
     }
 }
