@@ -1,7 +1,7 @@
 //! 併合。全アカウントのジャーナルの操作から、いまの台帳を作る純関数（ADR 0004 の 6）。
 //!
 //! 入力の順に依らず、同じ操作の集合からは同じ台帳が出る。時刻も乱数も読まない（ARC-007）。
-//! 同じ操作が 2 度来ても（読み直しの重なり）1 度だけ数える。
+//! 同じ操作が 2 度来ても（読み直しの重なり）1 度だけ数える。権限の記録（`Admin`）は台帳を変えない（ADR 0014）。
 
 use alloc::vec::Vec;
 
@@ -33,12 +33,21 @@ where
 {
     ordered(ops)
         .into_iter()
-        .filter(|op| op.kind().item() == item)
+        .filter(|op| op.kind().item() == Some(item))
         .collect()
 }
 
+/// 全部の操作を全順序で（台帳全体の時系列・監査・ADR 0014）。重複は落とす。
+#[must_use]
+pub fn chronicle<'a, I>(ops: I) -> Vec<&'a Op>
+where
+    I: IntoIterator<Item = &'a Op>,
+{
+    ordered(ops)
+}
+
 /// `target` を打ち消す操作の種類。`Create` は `Delete`、`Delete` は `Restore`、`Restore` は `Delete`、
-/// `Set` はその直前に同じ項目が持っていた値を置く `Set`。`target` が無ければ `None`（ADR 0004 の 4）。
+/// `Set` はその直前に同じ項目が持っていた値を置く `Set`。`target` が無いか権限の記録なら `None`（ADR 0004 の 4）。
 #[must_use]
 pub fn inverse_of<'a, I>(ops: I, target: OpId) -> Option<OpKind>
 where
@@ -53,6 +62,7 @@ where
             item: *item,
             value: value_before(&all, target, *item, value.field()),
         },
+        OpKind::Admin(_) => return None,
     })
 }
 
@@ -66,7 +76,11 @@ fn value_before(ordered: &[&Op], target: OpId, item: ItemId, field: Field) -> Fi
                 item: set_item,
                 value,
             } if *set_item == item && value.field() == field => Some(value.clone()),
-            OpKind::Set { .. } | OpKind::Create(_) | OpKind::Delete(_) | OpKind::Restore(_) => None,
+            OpKind::Set { .. }
+            | OpKind::Create(_)
+            | OpKind::Delete(_)
+            | OpKind::Restore(_)
+            | OpKind::Admin(_) => None,
         })
         .last()
         .unwrap_or_else(|| Item::created(item).value_of(field))
@@ -155,6 +169,34 @@ mod tests {
             op(5, A, OpKind::Delete(item)),
             op(6, A, OpKind::Restore(item)),
         ]
+    }
+
+    #[test]
+    fn admin_records_change_nothing_are_not_invertible_and_the_chronicle_keeps_every_op_once() {
+        let item = ItemId::new(A, 1);
+        let record = op(
+            2,
+            B,
+            OpKind::Admin(crate::admin_command::AdminCommand::Permissions(true)),
+        );
+        let ops = [
+            op(1, A, OpKind::Create(item)),
+            record.clone(),
+            record.clone(),
+        ];
+        let docket = merge(&ops);
+        assert_eq!(docket.len(), 1);
+        assert_eq!(docket.orphans(), 0);
+        assert_eq!(merge(ops.iter().rev()), docket);
+        assert_eq!(inverse_of(&ops, record.id()), None);
+        assert!(
+            history(&ops, item)
+                .iter()
+                .all(|op| op.kind().item() == Some(item))
+        );
+        let all = chronicle(ops.iter().rev());
+        assert_eq!(all.len(), 2);
+        assert_eq!(all[1].id(), record.id());
     }
 
     #[test]

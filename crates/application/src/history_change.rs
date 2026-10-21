@@ -1,8 +1,9 @@
-//! 履歴の 1 行の「何を・何から何へ」（FR-006）。文言は表示言語で引く。
+//! 履歴の 1 行の「何を・何から何へ」（FR-006）。権限の変更も 1 行（ADR 0014）。文言は表示言語で引く。
 
 use alloc::format;
 use alloc::string::String;
 
+use nene_docket_core::admin_command::AdminCommand;
 use nene_docket_core::date::Date;
 use nene_docket_core::field::Field;
 use nene_docket_core::field_value::FieldValue;
@@ -28,6 +29,13 @@ pub enum HistoryChange {
         /// 置いた値。
         after: FieldValue,
     },
+    /// 権限を変えた（監査・ADR 0014）。`subject` は相手の名前（`keys/` から）か `グループ: 名前`、`新 ← 旧`。
+    Administered {
+        /// 命令。
+        command: AdminCommand,
+        /// 相手。権限の有効・無効なら空。
+        subject: String,
+    },
 }
 
 impl HistoryChange {
@@ -48,7 +56,29 @@ impl HistoryChange {
                 value_text(language, before),
                 value_text(language, after)
             ),
+            Self::Administered { command, subject } => {
+                let word = wording::text(language, admin_word(command));
+                if subject.is_empty() {
+                    String::from(word)
+                } else {
+                    format!("{word}: {subject}")
+                }
+            }
         }
+    }
+}
+
+/// 権限の命令の語。
+const fn admin_word(command: &AdminCommand) -> Word {
+    match command {
+        AdminCommand::Permissions(true) => Word::PermissionsOn,
+        AdminCommand::Permissions(false) => Word::PermissionsOff,
+        AdminCommand::Allow(_) => Word::Allowed,
+        AdminCommand::Disallow(_) => Word::Disallowed,
+        AdminCommand::Group(..) => Word::Grouped,
+        AdminCommand::Ungroup(..) => Word::Ungrouped,
+        AdminCommand::Succeed(..) => Word::Succeeded,
+        AdminCommand::Owner(_) => Word::OwnerChanged,
     }
 }
 

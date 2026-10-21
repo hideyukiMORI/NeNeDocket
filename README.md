@@ -18,6 +18,7 @@ The account (a random 128-bit id, your `USER` name and a secret key) is created 
 - Put the folder on a network share and a whole team edits it at once. Each account appends to its own journal; readers merge all journals deterministically, so nothing is lost and no file lock is needed.
 - Crash-safe: every operation is appended within seconds, so at most a few seconds of work can be lost.
 - Permissions and groups are optional. Without them, everyone edits.
+- Everything is auditable: every edit and every permission change is an appended, signed journal line; `nene-docket <folder> --audit` prints who did what, when.
 - Every widget (table, select box, text field, scrollbar) is drawn by the app itself: Win32 + Direct2D on Windows, `x11rb` + cairo on Linux. No Electron, no GTK, no Qt, no JVM.
 
 The requirements are in [SPECIFICATION.md](SPECIFICATION.md) (Japanese).

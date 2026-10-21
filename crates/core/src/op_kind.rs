@@ -1,5 +1,6 @@
 //! 操作の種類。
 
+use crate::admin_command::AdminCommand;
 use crate::field_value::FieldValue;
 use crate::item_id::ItemId;
 
@@ -19,17 +20,20 @@ pub enum OpKind {
     Delete(ItemId),
     /// 消した課題を戻す。`Delete` の逆。
     Restore(ItemId),
+    /// 権限を変えた記録（ADR 0014）。台帳の状態は変えず、履歴にだけ出る。戻せない。
+    Admin(AdminCommand),
 }
 
 impl OpKind {
-    /// 触れる課題。
+    /// 触れる課題。権限の記録は課題に触れない。
     #[must_use]
-    pub const fn item(&self) -> ItemId {
+    pub const fn item(&self) -> Option<ItemId> {
         match self {
             Self::Create(item)
             | Self::Delete(item)
             | Self::Restore(item)
-            | Self::Set { item, .. } => *item,
+            | Self::Set { item, .. } => Some(*item),
+            Self::Admin(_) => None,
         }
     }
 }
@@ -41,18 +45,19 @@ mod tests {
     use crate::item_state::ItemState;
 
     #[test]
-    fn every_kind_names_its_item() {
+    fn every_item_kind_names_its_item_and_the_admin_kind_names_none() {
         let item = ItemId::new(AccountId::new(1), 1);
-        assert_eq!(OpKind::Create(item).item(), item);
-        assert_eq!(OpKind::Delete(item).item(), item);
-        assert_eq!(OpKind::Restore(item).item(), item);
+        assert_eq!(OpKind::Create(item).item(), Some(item));
+        assert_eq!(OpKind::Delete(item).item(), Some(item));
+        assert_eq!(OpKind::Restore(item).item(), Some(item));
         assert_eq!(
             OpKind::Set {
                 item,
                 value: FieldValue::State(ItemState::Done)
             }
             .item(),
-            item
+            Some(item)
         );
+        assert_eq!(OpKind::Admin(AdminCommand::Permissions(true)).item(), None);
     }
 }

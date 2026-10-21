@@ -84,4 +84,20 @@ pub enum Word {
     BadGroupName,
     /// 参加者の編集行の「引き継ぎ先」の箱の、引き継がない候補（閉じた箱の名でもある）。
     NoSuccessor,
+    /// 履歴: 権限を有効にした（ADR 0014）。
+    PermissionsOn,
+    /// 履歴: 権限を無効にした。
+    PermissionsOff,
+    /// 履歴: 編集者に加えた（名前が続く）。
+    Allowed,
+    /// 履歴: 編集者から外した。
+    Disallowed,
+    /// 履歴: グループに入れた（`グループ: 名前` が続く）。
+    Grouped,
+    /// 履歴: グループから外した。
+    Ungrouped,
+    /// 履歴: 引き継ぎ（`新 ← 旧` が続く）。
+    Succeeded,
+    /// 履歴: 持ち主を替えた（名前が続く）。
+    OwnerChanged,
 }

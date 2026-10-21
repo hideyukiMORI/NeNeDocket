@@ -68,6 +68,14 @@ const fn japanese(word: Word) -> &'static str {
         Word::Groups => "グループ",
         Word::BadGroupName => "グループ名に「:」は使えません",
         Word::NoSuccessor => "引き継ぎ先なし",
+        Word::PermissionsOn => "権限を有効にした",
+        Word::PermissionsOff => "権限を無効にした",
+        Word::Allowed => "編集者に加えた",
+        Word::Disallowed => "編集者から外した",
+        Word::Grouped => "グループに入れた",
+        Word::Ungrouped => "グループから外した",
+        Word::Succeeded => "引き継ぎ",
+        Word::OwnerChanged => "持ち主を替えた",
     }
 }
 
@@ -120,6 +128,14 @@ const fn english(word: Word) -> &'static str {
         Word::Groups => "Groups",
         Word::BadGroupName => "a group name cannot contain \":\"",
         Word::NoSuccessor => "No successor",
+        Word::PermissionsOn => "turned permissions on",
+        Word::PermissionsOff => "turned permissions off",
+        Word::Allowed => "added an editor",
+        Word::Disallowed => "removed an editor",
+        Word::Grouped => "added to a group",
+        Word::Ungrouped => "removed from a group",
+        Word::Succeeded => "succession",
+        Word::OwnerChanged => "changed the owner",
     }
 }
 
@@ -171,6 +187,14 @@ const fn simplified_chinese(word: Word) -> &'static str {
         Word::Groups => "组",
         Word::BadGroupName => "组名不能包含“:”",
         Word::NoSuccessor => "无继承者",
+        Word::PermissionsOn => "启用了权限",
+        Word::PermissionsOff => "停用了权限",
+        Word::Allowed => "添加了编辑者",
+        Word::Disallowed => "移除了编辑者",
+        Word::Grouped => "加入了组",
+        Word::Ungrouped => "移出了组",
+        Word::Succeeded => "继承",
+        Word::OwnerChanged => "更换了所有者",
     }
 }
 
@@ -222,6 +246,14 @@ const fn traditional_chinese(word: Word) -> &'static str {
         Word::Groups => "群組",
         Word::BadGroupName => "群組名稱不能包含「:」",
         Word::NoSuccessor => "無繼承者",
+        Word::PermissionsOn => "啟用了權限",
+        Word::PermissionsOff => "停用了權限",
+        Word::Allowed => "新增了編輯者",
+        Word::Disallowed => "移除了編輯者",
+        Word::Grouped => "加入了群組",
+        Word::Ungrouped => "移出了群組",
+        Word::Succeeded => "繼承",
+        Word::OwnerChanged => "更換了擁有者",
     }
 }
 
@@ -273,6 +305,14 @@ const fn korean(word: Word) -> &'static str {
         Word::Groups => "그룹",
         Word::BadGroupName => "그룹 이름에 \":\"를 쓸 수 없습니다",
         Word::NoSuccessor => "인계 대상 없음",
+        Word::PermissionsOn => "권한을 켰음",
+        Word::PermissionsOff => "권한을 껐음",
+        Word::Allowed => "편집자를 추가함",
+        Word::Disallowed => "편집자를 제거함",
+        Word::Grouped => "그룹에 추가함",
+        Word::Ungrouped => "그룹에서 제거함",
+        Word::Succeeded => "인계",
+        Word::OwnerChanged => "소유자를 변경함",
     }
 }
 
@@ -325,6 +365,14 @@ const fn spanish(word: Word) -> &'static str {
         Word::Groups => "Grupos",
         Word::BadGroupName => "un nombre de grupo no puede contener \":\"",
         Word::NoSuccessor => "Sin sucesor",
+        Word::PermissionsOn => "activó los permisos",
+        Word::PermissionsOff => "desactivó los permisos",
+        Word::Allowed => "añadió un editor",
+        Word::Disallowed => "quitó un editor",
+        Word::Grouped => "añadió a un grupo",
+        Word::Ungrouped => "quitó de un grupo",
+        Word::Succeeded => "sucesión",
+        Word::OwnerChanged => "cambió el propietario",
     }
 }
 
@@ -333,7 +381,7 @@ mod tests {
     use super::*;
 
     /// 全部の語（`Word` の閉じた集合を 1 か所で列挙する。増えたらここも増える）。
-    const WORDS: [Word; 47] = [
+    const WORDS: [Word; 55] = [
         Word::All,
         Word::StateName(ItemState::Open),
         Word::StateName(ItemState::InProgress),
@@ -381,6 +429,14 @@ mod tests {
         Word::Groups,
         Word::BadGroupName,
         Word::NoSuccessor,
+        Word::PermissionsOn,
+        Word::PermissionsOff,
+        Word::Allowed,
+        Word::Disallowed,
+        Word::Grouped,
+        Word::Ungrouped,
+        Word::Succeeded,
+        Word::OwnerChanged,
     ];
 
     #[test]

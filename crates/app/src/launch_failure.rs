@@ -7,6 +7,9 @@ use core::fmt;
 use nene_docket_adapters_windows::adapter_failure::AdapterFailure;
 #[cfg(not(windows))]
 use nene_docket_adapters_x11::adapter_failure::AdapterFailure;
+use nene_docket_application::journal_failure::JournalFailure;
+use nene_docket_core::language::Language;
+use nene_docket_core::wording;
 use nene_docket_store::store_failure::StoreFailure;
 #[cfg(windows)]
 use nene_docket_ui_win32::win32_failure::Win32Failure as UiFailure;
@@ -22,6 +25,8 @@ pub(crate) enum LaunchFailure {
     Adapter(AdapterFailure),
     /// 台帳のフォルダとジャーナル。
     Store(StoreFailure),
+    /// 画面を開かずにジャーナルへ書く・読むとき（権限の記録・監査）。
+    Journal(JournalFailure),
     /// 画面。
     Ui(UiFailure),
 }
@@ -30,10 +35,13 @@ impl fmt::Display for LaunchFailure {
     fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
             Self::Usage => formatter.write_str(
-                "usage: nene-docket [FOLDER] [--permissions on|off] [--allow ACCOUNT] [--disallow ACCOUNT] [--group NAME ACCOUNT] [--ungroup NAME ACCOUNT] [--succeed NEW OLD] [--owner ACCOUNT]",
+                "usage: nene-docket [FOLDER] [--permissions on|off] [--allow ACCOUNT] [--disallow ACCOUNT] [--group NAME ACCOUNT] [--ungroup NAME ACCOUNT] [--succeed NEW OLD] [--owner ACCOUNT] [--audit]",
             ),
             Self::Adapter(failure) => fmt::Display::fmt(failure, formatter),
             Self::Store(failure) => fmt::Display::fmt(failure, formatter),
+            Self::Journal(failure) => {
+                formatter.write_str(wording::text(Language::English, failure.word()))
+            }
             Self::Ui(failure) => fmt::Display::fmt(failure, formatter),
         }
     }
@@ -48,6 +56,12 @@ impl From<AdapterFailure> for LaunchFailure {
 impl From<StoreFailure> for LaunchFailure {
     fn from(failure: StoreFailure) -> Self {
         Self::Store(failure)
+    }
+}
+
+impl From<JournalFailure> for LaunchFailure {
+    fn from(failure: JournalFailure) -> Self {
+        Self::Journal(failure)
     }
 }
 
