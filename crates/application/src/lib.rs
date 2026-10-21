@@ -16,6 +16,7 @@ pub mod account_file;
 pub mod clock_port;
 pub mod docket_frame;
 pub mod docket_screen;
+pub mod edit_slot;
 pub mod environment;
 pub mod frame_input;
 pub mod journal_failure;

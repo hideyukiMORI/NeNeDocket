@@ -1,4 +1,4 @@
-//! 画面の状態の所有者（ARC-004）。検索欄・絞り込み・完了の表示・表の選択とスクロール・選んだ課題の編集・Undo / Redo。
+//! 画面の状態の所有者（ARC-004）。検索欄・絞り込み・完了の表示・表の選択とスクロール・選んだ課題の編集（題名・担当・期限・状態・削除）・Undo / Redo。
 //!
 //! 即時モード（ADR 0006）。`step` が 1 フレームの入力を受け、鍵を前のフレームのフォーカスに配り、
 //! 部品を問い合わせ、描画命令を返す。業務の判断（どの行を出すか・何が選ばれたか・どの操作を作るか）は
@@ -40,6 +40,7 @@ use nene_docket_core::widget_id::WidgetId;
 
 use crate::account::Account;
 use crate::docket_frame::DocketFrame;
+use crate::edit_slot::EditSlot;
 use crate::environment::Environment;
 use crate::frame_input::FrameInput;
 use crate::journal_failure::JournalFailure;
@@ -56,6 +57,8 @@ const SCROLL: WidgetId = WidgetId::new(5);
 const TITLE: WidgetId = WidgetId::new(6);
 const STATE: WidgetId = WidgetId::new(7);
 const DELETE: WidgetId = WidgetId::new(8);
+const ASSIGNEE: WidgetId = WidgetId::new(9);
+const DUE: WidgetId = WidgetId::new(10);
 const FILTER_OPTION: WidgetId = WidgetId::new(100);
 const STATE_OPTION: WidgetId = WidgetId::new(200);
 const ROW: WidgetId = WidgetId::new(1_000);
@@ -70,6 +73,9 @@ const SCROLL_WIDTH_PX: u16 = 12;
 const NUMBER_WIDTH_PX: u16 = 72;
 const STATE_WIDTH_PX: u16 = 110;
 const ASSIGNEE_WIDTH_PX: u16 = 90;
+const DUE_WIDTH_PX: u16 = 90;
+/// 編集行の担当と期限の欄。
+const EDIT_FIELD_WIDTH_PX: u16 = 100;
 /// ホイール 1 刻みで送る行数。
 const WHEEL_ROWS: i32 = 3;
 /// 番号の列に出す作成者の ID の桁数。
@@ -91,6 +97,9 @@ pub struct DocketScreen {
     scroll: ScrollState,
     selected: Option<ItemId>,
     title: TextEdit,
+    assignee: TextEdit,
+    due: TextEdit,
+    bad_due: bool,
     state: SelectState,
     ledger: Ledger,
     ports: Ports,
@@ -115,6 +124,9 @@ impl DocketScreen {
             scroll: ScrollState::top(0, 0),
             selected: None,
             title: TextEdit::empty(),
+            assignee: TextEdit::empty(),
+            due: TextEdit::empty(),
+            bad_due: false,
             state: SelectState::closed(STATE_OPTIONS.len(), 0),
             ledger: Ledger::open(account, ops),
             ports,
@@ -123,7 +135,7 @@ impl DocketScreen {
         }
     }
 
-    /// 1 フレーム。読み直し → 鍵 → 部品の問い合わせ → 描画命令 → 題名の確定。
+    /// 1 フレーム。読み直し → 鍵 → 部品の問い合わせ → 描画命令 → フォーカスの無い欄の確定。
     pub fn step(&mut self, input: &FrameInput) -> DocketFrame {
         if input.refresh() {
             self.refresh();
@@ -169,9 +181,7 @@ impl DocketScreen {
         ));
         self.notice_commands(notice_rect, &mut commands);
         self.interaction.end();
-        if self.interaction.focus() != Some(TITLE) {
-            self.commit_title();
-        }
+        self.commit_unfocused_slots();
         DocketFrame::new(self.scale, commands)
     }
 
@@ -224,6 +234,9 @@ impl DocketScreen {
         let rejected = self.ports.journal().rejected_lines();
         if rejected > 0 {
             notices.push(Notice::RejectedLines(rejected));
+        }
+        if self.bad_due {
+            notices.push(Notice::NotADate);
         }
         notices
     }
@@ -278,12 +291,46 @@ impl DocketScreen {
         ]
     }
 
-    fn editor_widths(&self) -> [ColumnWidth; 3] {
+    fn editor_widths(&self) -> [ColumnWidth; 5] {
         [
             ColumnWidth::Fill,
+            ColumnWidth::Fixed(self.px(EDIT_FIELD_WIDTH_PX)),
+            ColumnWidth::Fixed(self.px(EDIT_FIELD_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(STATE_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(BUTTON_WIDTH_PX)),
         ]
+    }
+
+    /// 欄の部品の ID。
+    const fn slot_id(slot: EditSlot) -> WidgetId {
+        match slot {
+            EditSlot::Title => TITLE,
+            EditSlot::Assignee => ASSIGNEE,
+            EditSlot::Due => DUE,
+        }
+    }
+
+    /// 鍵を持つ欄。
+    fn focused_slot(&self) -> Option<EditSlot> {
+        EditSlot::ALL
+            .into_iter()
+            .find(|&slot| self.interaction.focus() == Some(Self::slot_id(slot)))
+    }
+
+    const fn slot(&self, slot: EditSlot) -> &TextEdit {
+        match slot {
+            EditSlot::Title => &self.title,
+            EditSlot::Assignee => &self.assignee,
+            EditSlot::Due => &self.due,
+        }
+    }
+
+    const fn slot_mut(&mut self, slot: EditSlot) -> &mut TextEdit {
+        match slot {
+            EditSlot::Title => &mut self.title,
+            EditSlot::Assignee => &mut self.assignee,
+            EditSlot::Due => &mut self.due,
+        }
     }
 
     /// 降格があれば、残りの下 1 段を文言に使う。
@@ -320,6 +367,7 @@ impl DocketScreen {
             ColumnWidth::Fill,
             ColumnWidth::Fixed(self.px(STATE_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(ASSIGNEE_WIDTH_PX)),
+            ColumnWidth::Fixed(self.px(DUE_WIDTH_PX)),
         ])
     }
 
@@ -334,10 +382,11 @@ impl DocketScreen {
 
     /// 確定前の文字列は、フォーカスのある入力欄へ。
     fn take_preedit(&mut self, input: &FrameInput) {
-        match self.interaction.focus() {
-            Some(SEARCH) => self.search = self.search.with_preedit(input.preedit().cloned()),
-            Some(TITLE) => self.title = self.title.with_preedit(input.preedit().cloned()),
-            Some(_) | None => {}
+        if self.interaction.focus() == Some(SEARCH) {
+            self.search = self.search.with_preedit(input.preedit().cloned());
+        } else if let Some(slot) = self.focused_slot() {
+            let edit = self.slot_mut(slot);
+            *edit = edit.with_preedit(input.preedit().cloned());
         }
     }
 
@@ -364,11 +413,18 @@ impl DocketScreen {
     }
 
     fn key_to_focus(&mut self, key: KeyIntent) {
+        if let Some(slot) = self.focused_slot() {
+            if key == KeyIntent::Enter {
+                self.commit_slot(slot);
+            } else {
+                let edit = self.slot_mut(slot);
+                *edit = edit.applied(key);
+            }
+            return;
+        }
         match self.interaction.focus() {
             Some(SEARCH) => self.search = self.search.applied(key),
             Some(FILTER) => self.filter = self.filter.applied(key),
-            Some(TITLE) if key == KeyIntent::Enter => self.commit_title(),
-            Some(TITLE) => self.title = self.title.applied(key),
             Some(STATE) => {
                 let before = self.state.chosen();
                 self.state = self.state.applied(key);
@@ -454,7 +510,7 @@ impl DocketScreen {
 
     /// 課題を作る。検索欄に字があればそれを題名にし、題名の欄にフォーカスを置く。
     fn add_item(&mut self) {
-        self.commit_title();
+        self.commit_unfocused_slots();
         let id = self.ledger.fresh_item_id();
         self.compose(OpKind::Create(id));
         if !self.search.text().is_empty() {
@@ -476,12 +532,19 @@ impl DocketScreen {
         }
     }
 
-    /// 行を選ぶ。編集中の題名はその前に確定する。
+    /// 行を選ぶ。編集中の欄はその前に確定する。
     fn select(&mut self, id: ItemId) {
-        self.commit_title();
+        self.commit_unfocused_slots();
         self.selected = Some(id);
+        self.bad_due = false;
         let item = self.selected_item();
-        self.title = TextEdit::showing(item.as_ref().map_or("", Item::title));
+        for slot in EditSlot::ALL {
+            *self.slot_mut(slot) = TextEdit::showing(
+                &item
+                    .as_ref()
+                    .map_or_else(String::new, |found| slot.text_of(found)),
+            );
+        }
         self.state = SelectState::closed(
             STATE_OPTIONS.len(),
             item.map_or(0, |found| Self::state_index(found.state())),
@@ -491,8 +554,14 @@ impl DocketScreen {
     /// 台帳が変わった後、編集欄をいまの値に合わせる。入力中の欄は触らない。
     fn reload_editor(&mut self) {
         let item = self.selected_item();
-        if self.interaction.focus() != Some(TITLE) {
-            self.title = TextEdit::showing(item.as_ref().map_or("", Item::title));
+        for slot in EditSlot::ALL {
+            if self.interaction.focus() != Some(Self::slot_id(slot)) {
+                *self.slot_mut(slot) = TextEdit::showing(
+                    &item
+                        .as_ref()
+                        .map_or_else(String::new, |found| slot.text_of(found)),
+                );
+            }
         }
         if !self.state.is_open() {
             self.state = SelectState::closed(
@@ -502,15 +571,32 @@ impl DocketScreen {
         }
     }
 
-    /// 題名の欄が課題と違えば `Set` を作る。
-    fn commit_title(&mut self) {
+    /// フォーカスの無い欄を確定する（フレームの終わり・行の選択・追加の前）。
+    fn commit_unfocused_slots(&mut self) {
+        for slot in EditSlot::ALL {
+            if self.interaction.focus() != Some(Self::slot_id(slot)) {
+                self.commit_slot(slot);
+            }
+        }
+    }
+
+    /// 欄が課題と違えば `Set` を作る。期限の形が違えば追記せず示す（FR-014）。
+    fn commit_slot(&mut self, slot: EditSlot) {
         let Some(item) = self.selected_item() else {
             return;
         };
-        if item.title() != self.title.text() {
+        let text = self.slot(slot).text().to_owned();
+        let Some(value) = slot.value_of(&text) else {
+            self.bad_due = true;
+            return;
+        };
+        if slot == EditSlot::Due {
+            self.bad_due = false;
+        }
+        if item.value_of(slot.field()) != value {
             self.compose(OpKind::Set {
                 item: item.id(),
-                value: FieldValue::Title(self.title.text().to_owned()),
+                value,
             });
         }
     }
@@ -542,7 +628,7 @@ impl DocketScreen {
         toolbar: &[PixelRect],
         commands: &mut Vec<DrawCommand>,
     ) -> (PixelRect, Response) {
-        let [search_rect, filter_rect, done_rect, add_rect] = Self::four(toolbar);
+        let [search_rect, filter_rect, done_rect, add_rect] = Self::rects(toolbar);
         let search = self.interaction.probe(SEARCH, search_rect, true);
         commands.extend(text_field::text_field(search_rect, &self.search, search));
         let filter = self.interaction.probe(FILTER, filter_rect, true);
@@ -567,15 +653,20 @@ impl DocketScreen {
         (filter_rect, filter)
     }
 
-    /// 選んだ課題の題名・状態・削除。状態の箱は最後に描く。
+    /// 選んだ課題の題名・担当・期限・状態・削除。状態の箱は最後に描く。
     fn probe_editor(
         &mut self,
         editor: &[PixelRect],
         commands: &mut Vec<DrawCommand>,
     ) -> (PixelRect, Response) {
-        let [title_rect, state_rect, delete_rect, _] = Self::four(editor);
-        let title = self.interaction.probe(TITLE, title_rect, true);
-        commands.extend(text_field::text_field(title_rect, &self.title, title));
+        let [title_rect, assignee_rect, due_rect, state_rect, delete_rect] = Self::rects(editor);
+        for (slot, rect) in EditSlot::ALL
+            .into_iter()
+            .zip([title_rect, assignee_rect, due_rect])
+        {
+            let response = self.interaction.probe(Self::slot_id(slot), rect, true);
+            commands.extend(text_field::text_field(rect, self.slot(slot), response));
+        }
         let state = self.interaction.probe(STATE, state_rect, true);
         if state.clicked() {
             self.state = self.state.toggled();
@@ -588,11 +679,10 @@ impl DocketScreen {
         (state_rect, state)
     }
 
-    /// 4 列の段。足りなければ空の矩形で埋める（起こらないが型の上では `Vec`）。
-    fn four(rects: &[PixelRect]) -> [PixelRect; 4] {
+    /// 段の列。足りなければ空の矩形で埋める（起こらないが型の上では `Vec`）。
+    fn rects<const N: usize>(rects: &[PixelRect]) -> [PixelRect; N] {
         let empty = PixelRect::new(0, 0, 0, 0);
-        let at = |index: usize| rects.get(index).copied().unwrap_or(empty);
-        [at(0), at(1), at(2), at(3)]
+        core::array::from_fn(|index| rects.get(index).copied().unwrap_or(empty))
     }
 
     /// 開いた絞り込みの候補。表より後に問い合わせるので、重なった所では候補が勝つ。候補の列は `select_box` が描く。
@@ -647,7 +737,7 @@ impl DocketScreen {
         for (cell, heading) in table
             .cells(header)
             .into_iter()
-            .zip(["#", "Title", "State", "Assignee"])
+            .zip(["#", "Title", "State", "Assignee", "Due"])
         {
             commands.push(Self::cell_text(
                 cell,
@@ -700,6 +790,7 @@ impl DocketScreen {
             item.title().to_owned(),
             item.state().label().to_owned(),
             item.assignee().to_owned(),
+            EditSlot::Due.text_of(item),
         ];
         for (cell, text) in cells.into_iter().zip(texts) {
             commands.push(Self::cell_text(cell, &text, Paint::Ink, self.px(MARGIN_PX)));
@@ -797,6 +888,9 @@ mod tests {
     const SECOND_ROW_Y: u16 = 150;
     const TOOLBAR_Y: u16 = 20;
     const EDITOR_Y: u16 = 58;
+    /// 編集行の担当の欄（218..318）と期限の欄（326..426）。
+    const ASSIGNEE_X: u16 = 260;
+    const DUE_X: u16 = 370;
 
     /// 書き込みを覚え、読み直しで渡す分を積める偽のジャーナル。
     #[derive(Debug, Default)]
@@ -1136,13 +1230,72 @@ mod tests {
     #[test]
     fn delete_by_key_needs_the_focus_and_a_selection() {
         let (mut screen, spy) = screen(2);
-        keys(&mut screen, &[KeyIntent::Tab; 7]);
+        keys(&mut screen, &[KeyIntent::Tab; 9]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 0);
         click(&mut screen, 100, FIRST_ROW_Y);
-        keys(&mut screen, &[KeyIntent::Tab; 7]);
+        keys(&mut screen, &[KeyIntent::Tab; 9]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 1);
+    }
+
+    #[test]
+    fn the_assignee_field_commits_on_enter_and_shows_in_the_table() {
+        let (mut screen, spy) = screen(2);
+        let first = ItemId::new(OTHER, 1);
+        click(&mut screen, 100, FIRST_ROW_Y);
+        click(&mut screen, ASSIGNEE_X, EDITOR_Y);
+        keys(&mut screen, &chars("rina"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert_eq!(
+            screen.ledger().docket().item(first).map(Item::assignee),
+            Some("rina")
+        );
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert_eq!(spy.written.borrow().len(), 1);
+        let frame = idle(&mut screen);
+        assert!(texts(&frame).iter().filter(|text| *text == "rina").count() >= 2);
+    }
+
+    #[test]
+    fn the_due_field_takes_a_date_refuses_the_rest_and_clears_with_empty() {
+        let (mut screen, spy) = screen(2);
+        let first = ItemId::new(OTHER, 1);
+        click(&mut screen, 100, FIRST_ROW_Y);
+        click(&mut screen, DUE_X, EDITOR_Y);
+        keys(&mut screen, &chars("soon"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert_eq!(screen.notices(), alloc::vec![Notice::NotADate]);
+        assert_eq!(spy.written.borrow().len(), 0);
+        keys(&mut screen, &[KeyIntent::SelectAll]);
+        keys(&mut screen, &chars("2026-12-31"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert!(screen.notices().is_empty());
+        assert_eq!(
+            screen.ledger().docket().item(first).and_then(Item::due),
+            nene_docket_core::date::Date::new(2026, 12, 31)
+        );
+        let frame = idle(&mut screen);
+        assert!(texts(&frame).iter().any(|text| text == "2026-12-31"));
+        keys(&mut screen, &[KeyIntent::SelectAll, KeyIntent::Backspace]);
+        click(&mut screen, 100, SECOND_ROW_Y);
+        assert_eq!(
+            screen.ledger().docket().item(first).and_then(Item::due),
+            None
+        );
+        assert_eq!(spy.written.borrow().len(), 2);
+    }
+
+    #[test]
+    fn selecting_another_row_reloads_every_field_and_drops_the_date_notice() {
+        let (mut screen, _) = screen(2);
+        click(&mut screen, 100, FIRST_ROW_Y);
+        click(&mut screen, DUE_X, EDITOR_Y);
+        keys(&mut screen, &chars("x"));
+        click(&mut screen, 100, SECOND_ROW_Y);
+        assert!(screen.notices().is_empty());
+        let frame = idle(&mut screen);
+        assert!(texts(&frame).iter().all(|text| text != "x"));
     }
 
     #[test]
