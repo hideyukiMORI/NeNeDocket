@@ -23,6 +23,8 @@ pub enum RecordFailure {
     BadValue,
     /// 版 2 の署名の欄が 16 進 128 桁でない。
     BadSignature,
+    /// 改行の無い末尾（書きかけ）が読み直し 4 回伸びない。書き手が途中で止まった（Issue #77）。
+    Unfinished,
 }
 
 impl RecordFailure {
@@ -38,6 +40,7 @@ impl RecordFailure {
             Self::UnknownKind => "unknown operation kind",
             Self::UnknownField => "unknown field",
             Self::BadValue => "unreadable value",
+            Self::Unfinished => "unfinished last line",
             Self::BadSignature => "unreadable signature",
         }
     }

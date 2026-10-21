@@ -2,7 +2,7 @@
 //! 権限を有効にした台帳では版 2（`.v2.log`）に署名して書く（ADR 0010）。
 
 use std::fs::{File, OpenOptions};
-use std::io::Write as _;
+use std::io::{Read as _, Seek as _, SeekFrom, Write as _};
 use std::path::{Path, PathBuf};
 
 use nene_docket_core::account_id::AccountId;
@@ -40,6 +40,7 @@ impl OwnJournal {
     }
 
     /// 同じく開くが、中身は `offset` から読む（スナップショットの後の分だけ・ADR 0015）。
+    /// 最後の行が改行で終わっていなければ（前回の追記の途中で落ちた）、先に改行を足して 1 行の壊れに閉じ込める（Issue #77）。
     ///
     /// # Errors
     ///
@@ -53,7 +54,11 @@ impl OwnJournal {
         std::fs::create_dir_all(journal_directory)?;
         let version = version_for(signing.is_some());
         let path = journal_directory.join(file_name(account, version));
-        let file = OpenOptions::new().append(true).create(true).open(&path)?;
+        let mut file = OpenOptions::new().append(true).create(true).open(&path)?;
+        if ends_without_newline(&path)? {
+            file.write_all(b"\n")?;
+            file.sync_data()?;
+        }
         let read = journal_file::read_since(&path, offset)?;
         let opened = Self {
             path,
@@ -130,6 +135,19 @@ impl OwnJournal {
     }
 }
 
+/// 最後のバイトが改行でないか（空のファイルは偽）。
+fn ends_without_newline(path: &Path) -> Result<bool, StoreFailure> {
+    let mut file = File::open(path)?;
+    let length = file.metadata()?.len();
+    if length == 0 {
+        return Ok(false);
+    }
+    file.seek(SeekFrom::Start(length.saturating_sub(1)))?;
+    let mut last = [0_u8; 1];
+    file.read_exact(&mut last)?;
+    Ok(last != *b"\n")
+}
+
 /// 署名するなら版 2。
 const fn version_for(signed: bool) -> JournalVersion {
     if signed {
@@ -197,6 +215,16 @@ mod tests {
                 .path()
                 .ends_with(file_name(ACCOUNT, JournalVersion::One))
         );
+        let _ignored = std::fs::remove_dir_all(&directory);
+    }
+
+    #[test]
+    fn a_torn_tail_is_closed_on_reopen_and_the_next_append_does_not_join_it() {
+        let directory = scratch("own-torn");
+        let (mut journal, _) = OwnJournal::open(&directory, ACCOUNT, None).unwrap();
+        journal.append(&op(1)).unwrap();
+        journal.append(&op(2)).unwrap();
+        journal.sync().unwrap();
         // 落ちた直後を真似る: 改行の無い断片を足す。
         let mut raw = std::fs::OpenOptions::new()
             .append(true)
@@ -204,9 +232,16 @@ mod tests {
             .unwrap();
         raw.write_all(b"v1\t3\tgarbage").unwrap();
         drop(raw);
-        let (_again, read) = OwnJournal::open(&directory, ACCOUNT, None).unwrap();
+        // 開き直すと改行が足され、断片は 1 行の壊れとして数えられる（次の追記と繋がらない・Issue #77）。
+        let (mut again, read) = OwnJournal::open(&directory, ACCOUNT, None).unwrap();
         assert_eq!(read.ops(), [op(1), op(2)]);
-        assert!(read.has_partial_tail());
+        assert!(!read.has_partial_tail());
+        assert_eq!(read.rejected().len(), 1);
+        again.append(&op(3)).unwrap();
+        again.sync().unwrap();
+        let (_third, after) = OwnJournal::open(&directory, ACCOUNT, None).unwrap();
+        assert_eq!(after.ops(), [op(1), op(2), op(3)]);
+        assert_eq!(after.rejected().len(), 1);
         let _ignored = std::fs::remove_dir_all(&directory);
     }
 
