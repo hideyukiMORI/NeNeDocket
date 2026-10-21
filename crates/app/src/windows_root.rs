@@ -9,19 +9,24 @@ use nene_docket_adapters_windows::system_clock::SystemClock;
 use nene_docket_application::docket_screen::DocketScreen;
 use nene_docket_application::environment::Environment;
 use nene_docket_application::ports::Ports;
+use nene_docket_store::administration;
 use nene_docket_store::file_journal::FileJournal;
 use nene_docket_ui_win32::docket_window;
 
 use crate::arguments::Arguments;
 use crate::launch_failure::LaunchFailure;
 
-/// 依存を結んで走らせる。dpi 対応を先に宣言してから dpi を読む（FR-016）。読み直しの刻みは窓のタイマー。
+/// 依存を結んで走らせる。権限の命令があれば書いて終わる（画面は開かない）。dpi 対応を先に宣言してから dpi を読む（FR-016）。読み直しの刻みは窓のタイマー。
 pub(crate) fn run(arguments: &Arguments) -> Result<(), LaunchFailure> {
     docket_window::declare_dpi_awareness();
     let settings = saved_settings::load()?;
     let folder = arguments.folder_or(settings.latest());
     let account = saved_account::load_or_create()?;
-    let journal = FileJournal::open(&folder, &Arguments::docket_name(&folder), account.id())?;
+    if !arguments.admin().is_empty() {
+        administration::apply(&folder, &account, arguments.admin())?;
+        return Ok(());
+    }
+    let journal = FileJournal::open(&folder, &Arguments::docket_name(&folder), &account)?;
     let settings = saved_settings::remember(settings, &folder)?;
     let ports = Ports::new(
         Box::new(journal),

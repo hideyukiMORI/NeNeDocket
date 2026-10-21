@@ -25,6 +25,12 @@ pub enum Notice {
     Settings(SettingsFailure),
     /// 配色の欄の名前が組み込みに無い。変えていない。
     UnknownTheme,
+    /// 署名か権限が通らず捨てた行がある（FR-010）。
+    UnverifiedLines(usize),
+    /// 台帳にある自分の公開鍵が手元と違う。
+    KeyMismatch,
+    /// 自分はこの台帳の編集者でない。追記は読み手が捨てる。
+    NotAnEditor,
 }
 
 impl Notice {
@@ -41,6 +47,9 @@ impl Notice {
                 String::from(word(Word::CannotWriteSettings))
             }
             Self::UnknownTheme => String::from(word(Word::UnknownTheme)),
+            Self::UnverifiedLines(count) => format!("{}: {count}", word(Word::UnverifiedLines)),
+            Self::KeyMismatch => String::from(word(Word::KeyMismatch)),
+            Self::NotAnEditor => String::from(word(Word::NotAnEditor)),
         }
     }
 }
@@ -59,6 +68,9 @@ mod tests {
             Notice::NotADate,
             Notice::Settings(SettingsFailure::Unwritable),
             Notice::UnknownTheme,
+            Notice::UnverifiedLines(3),
+            Notice::KeyMismatch,
+            Notice::NotAnEditor,
         ];
         for language in Language::ALL {
             for notice in all {
@@ -86,6 +98,11 @@ mod tests {
             Notice::NotADate
                 .describe(Language::Spanish)
                 .contains("AAAA-MM-DD")
+        );
+        assert!(
+            Notice::UnverifiedLines(3)
+                .describe(Language::Korean)
+                .ends_with(": 3")
         );
     }
 }

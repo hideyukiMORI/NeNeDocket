@@ -25,7 +25,7 @@ pub fn read_since(path: &Path, offset: u64) -> Result<JournalRead, StoreFailure>
 /// バイト列を行に割る。`base` はその先頭のファイル内の位置。
 #[must_use]
 pub fn parse(bytes: &[u8], base: u64) -> JournalRead {
-    let mut ops = Vec::new();
+    let mut entries = Vec::new();
     let mut rejected = Vec::new();
     let mut position = base;
     let mut rest = bytes;
@@ -33,7 +33,7 @@ pub fn parse(bytes: &[u8], base: u64) -> JournalRead {
         let (line, after) = rest.split_at(end);
         let text = String::from_utf8_lossy(line);
         match journal_record::decode(text.trim_end_matches('\r')) {
-            Ok(op) => ops.push(op),
+            Ok(entry) => entries.push(entry),
             Err(failure) => rejected.push((position, failure)),
         }
         position = position
@@ -41,7 +41,7 @@ pub fn parse(bytes: &[u8], base: u64) -> JournalRead {
             .saturating_add(1);
         rest = after.get(1..).unwrap_or(&[]);
     }
-    JournalRead::new(ops, position, !rest.is_empty(), rejected)
+    JournalRead::new(entries, position, !rest.is_empty(), rejected)
 }
 
 #[cfg(test)]
@@ -83,7 +83,7 @@ mod tests {
             &text.as_bytes()[usize::try_from(read.next_offset()).unwrap()..],
             read.next_offset(),
         );
-        assert!(again.ops().is_empty());
+        assert!(again.entries().is_empty());
         assert!(again.has_partial_tail());
     }
 
@@ -92,7 +92,7 @@ mod tests {
         let first = journal_record::encode(&op(1));
         let text = format!("{first}\ngarbage\r\n{}\n", journal_record::encode(&op(3)));
         let read = parse(text.as_bytes(), 100);
-        assert_eq!(read.ops().len(), 2);
+        assert_eq!(read.entries().len(), 2);
         assert_eq!(
             read.rejected(),
             [(
@@ -120,9 +120,9 @@ mod tests {
         )
         .unwrap();
         let all = read_since(&path, 0).unwrap();
-        assert_eq!(all.ops().len(), 2);
+        assert_eq!(all.entries().len(), 2);
         let tail = read_since(&path, all.next_offset()).unwrap();
-        assert!(tail.ops().is_empty());
+        assert!(tail.entries().is_empty());
         let from_second = read_since(&path, u64::try_from(first.len() + 1).unwrap()).unwrap();
         assert_eq!(from_second.ops(), [op(2)]);
         assert!(read_since(&directory.join("missing.v1.log"), 0).is_err());

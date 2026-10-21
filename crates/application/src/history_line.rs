@@ -17,22 +17,23 @@ use nene_docket_core::wording;
 
 use crate::history_change::HistoryChange;
 
-/// 「誰が」に出すアカウントの ID の桁数。名前はジャーナルに無い。
+/// 名前が分からないときに「誰が」に出すアカウントの ID の桁数。
 const WHO_DIGITS: usize = 4;
 
-/// 壁時計・アカウント・Undo の追記か・変更。
+/// 壁時計・誰が（`keys/` の名前、無ければ ID の先頭）・Undo の追記か・変更。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct HistoryLine {
     when: WallClock,
-    who: AccountId,
+    who: String,
     undo: bool,
     change: HistoryChange,
 }
 
 impl HistoryLine {
     /// 課題に触れた操作を全順序に並べ、値を追いながら 1 行ずつにする。新しいものが先。
+    /// 「誰が」は `names` にあれば名前、無ければ ID の先頭 4 桁。
     #[must_use]
-    pub fn lines<'a, I>(ops: I, item: ItemId) -> Vec<Self>
+    pub fn lines<'a, I>(ops: I, item: ItemId, names: &[(AccountId, String)]) -> Vec<Self>
     where
         I: IntoIterator<Item = &'a Op>,
     {
@@ -47,7 +48,7 @@ impl HistoryLine {
                 );
                 Self {
                     when: op.wall(),
-                    who: op.id().account(),
+                    who: who_of(op.id().account(), names),
                     undo: op.undoes().is_some(),
                     change,
                 }
@@ -57,10 +58,10 @@ impl HistoryLine {
         lines
     }
 
-    /// 表の 3 列: いつ（UTC）・誰が（ID の先頭）・何を。Undo の追記は表示言語の印を頭に付ける。
+    /// 表の 3 列: いつ（UTC）・誰が・何を。Undo の追記は表示言語の印を頭に付ける。
     #[must_use]
     pub fn columns(&self, language: Language) -> [String; 3] {
-        let who: String = self.who.hex().chars().take(WHO_DIGITS).collect();
+        let who = self.who.clone();
         let change = if self.undo {
             format!(
                 "{}{}",
@@ -84,6 +85,14 @@ impl HistoryLine {
     pub const fn is_undo(&self) -> bool {
         self.undo
     }
+}
+
+/// `keys/` にある名前、無ければ ID の先頭。
+fn who_of(account: AccountId, names: &[(AccountId, String)]) -> String {
+    names.iter().find(|(id, _)| *id == account).map_or_else(
+        || account.hex().chars().take(WHO_DIGITS).collect(),
+        |(_, name)| name.clone(),
+    )
 }
 
 fn change_of(before: &Item, kind: &OpKind) -> HistoryChange {
@@ -177,7 +186,8 @@ mod tests {
     fn lines_show_from_and_to_newest_first_and_mark_undo() {
         let item = ItemId::new(A, 1);
         let ops = sample_ops(item);
-        let lines = HistoryLine::lines(&ops, item);
+        let names = [(B, String::from("beth"))];
+        let lines = HistoryLine::lines(&ops, item, &names);
         let columns: Vec<[String; 3]> = lines
             .iter()
             .map(|line| line.columns(Language::English))
@@ -189,7 +199,7 @@ mod tests {
         assert_eq!(columns[2][2], "Title : a -> b");
         assert_eq!(
             columns[3],
-            ["1970-01-01 00:03", "0000", "State : Open -> Done"]
+            ["1970-01-01 00:03", "beth", "State : Open -> Done"]
         );
         assert_eq!(columns[5][2], "created");
         assert_eq!(lines[5].when(), WallClock::new(60));

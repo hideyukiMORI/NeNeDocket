@@ -1,7 +1,13 @@
-//! コマンドラインの引数。`nene-docket [FOLDER]`。合成ルートに許された唯一の入力（ARC-006）。
-//! フォルダが無ければ設定の最近の台帳（FR-012）、それも無ければ `./docket`。
+//! コマンドラインの引数。合成ルートに許された唯一の入力（ARC-006）。
+//!
+//! `nene-docket [FOLDER]` で台帳を開く。フォルダが無ければ設定の最近の台帳（FR-012）、それも無ければ `./docket`。
+//! 持ち主は `--permissions on|off` / `--allow <account>` / `--disallow <account>` / `--group <name> <account>` /
+//! `--ungroup <name> <account>` で権限を変える（FR-010・ADR 0010）。これらがあれば画面は開かず、書いて終わる。
 
 use std::path::{Path, PathBuf};
+
+use nene_docket_core::account_id::AccountId;
+use nene_docket_store::admin_command::AdminCommand;
 
 use crate::launch_failure::LaunchFailure;
 
@@ -10,25 +16,48 @@ const DEFAULT_FOLDER: &str = "docket";
 /// `docket.v1.txt` を新しく作るときの名前の既定（フォルダ名が取れないとき）。
 const DEFAULT_NAME: &str = "Docket";
 
-/// 台帳のフォルダ（引数に無ければ `None`）。
+/// 台帳のフォルダ（引数に無ければ `None`）と、権限の命令（無ければ空）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(crate) struct Arguments {
     folder: Option<PathBuf>,
+    admin: Vec<AdminCommand>,
 }
 
 impl Arguments {
-    /// プログラム名を除いた引数から。1 つなら台帳のフォルダ。2 つ以上と `-` で始まる語は使い方の誤り。
+    /// プログラム名を除いた引数から。`-` で始まらない語は 1 つまでで台帳のフォルダ。知らない旗・値の無い旗は使い方の誤り。
     pub(crate) fn parse<I: Iterator<Item = String>>(
         mut arguments: I,
     ) -> Result<Self, LaunchFailure> {
-        let folder = arguments.next();
-        if arguments.next().is_some() || folder.as_deref().is_some_and(|text| text.starts_with('-'))
-        {
+        let mut parsed = Self {
+            folder: None,
+            admin: Vec::new(),
+        };
+        while let Some(word) = arguments.next() {
+            if !word.starts_with('-') {
+                parsed.take_folder(word)?;
+                continue;
+            }
+            let command = match word.as_str() {
+                "--permissions" => AdminCommand::Permissions(switch(&mut arguments)?),
+                "--allow" => AdminCommand::Allow(account(&mut arguments)?),
+                "--disallow" => AdminCommand::Disallow(account(&mut arguments)?),
+                "--group" => AdminCommand::Group(name(&mut arguments)?, account(&mut arguments)?),
+                "--ungroup" => {
+                    AdminCommand::Ungroup(name(&mut arguments)?, account(&mut arguments)?)
+                }
+                _ => return Err(LaunchFailure::Usage),
+            };
+            parsed.admin.push(command);
+        }
+        Ok(parsed)
+    }
+
+    /// 旗でない語は台帳のフォルダ。2 つ目は使い方の誤り。
+    fn take_folder(&mut self, word: String) -> Result<(), LaunchFailure> {
+        if self.folder.replace(PathBuf::from(word)).is_some() {
             return Err(LaunchFailure::Usage);
         }
-        Ok(Self {
-            folder: folder.map(PathBuf::from),
-        })
+        Ok(())
     }
 
     /// 台帳のフォルダ。引数、無ければ最近の台帳、それも無ければ `./docket`。
@@ -38,6 +67,11 @@ impl Arguments {
             .unwrap_or_else(|| PathBuf::from(latest.map_or(DEFAULT_FOLDER, |recent| recent)))
     }
 
+    /// 権限の命令。空なら画面を開く。
+    pub(crate) fn admin(&self) -> &[AdminCommand] {
+        &self.admin
+    }
+
     /// 台帳を新しく作るときの名前。フォルダ名。
     pub(crate) fn docket_name(folder: &Path) -> String {
         folder
@@ -45,6 +79,28 @@ impl Arguments {
             .and_then(|name| name.to_str())
             .map_or_else(|| String::from(DEFAULT_NAME), str::to_owned)
     }
+}
+
+fn switch<I: Iterator<Item = String>>(arguments: &mut I) -> Result<bool, LaunchFailure> {
+    match arguments.next().as_deref() {
+        Some("on") => Ok(true),
+        Some("off") => Ok(false),
+        _ => Err(LaunchFailure::Usage),
+    }
+}
+
+fn account<I: Iterator<Item = String>>(arguments: &mut I) -> Result<AccountId, LaunchFailure> {
+    arguments
+        .next()
+        .and_then(|text| AccountId::from_hex(&text))
+        .ok_or(LaunchFailure::Usage)
+}
+
+fn name<I: Iterator<Item = String>>(arguments: &mut I) -> Result<String, LaunchFailure> {
+    arguments
+        .next()
+        .filter(|text| !text.is_empty() && !text.starts_with('-') && !text.contains(':'))
+        .ok_or(LaunchFailure::Usage)
 }
 
 #[cfg(test)]
@@ -63,6 +119,7 @@ mod tests {
             none.folder_or(Some("/srv/recent")),
             Path::new("/srv/recent")
         );
+        assert!(none.admin().is_empty());
         let given = parse(&["/srv/team"]).unwrap();
         assert_eq!(given.folder_or(Some("/srv/recent")), Path::new("/srv/team"));
         assert_eq!(Arguments::docket_name(Path::new("/srv/team")), "team");
@@ -70,8 +127,61 @@ mod tests {
     }
 
     #[test]
-    fn flags_and_extra_words_are_a_usage_error() {
-        assert!(matches!(parse(&["--help"]), Err(LaunchFailure::Usage)));
-        assert!(matches!(parse(&["a", "b"]), Err(LaunchFailure::Usage)));
+    fn admin_flags_are_read_in_order_with_the_folder_anywhere() {
+        let id = AccountId::new(7);
+        let hex = id.hex();
+        let parsed = parse(&[
+            "--permissions",
+            "on",
+            "/srv/team",
+            "--allow",
+            &hex,
+            "--group",
+            "qa",
+            &hex,
+            "--ungroup",
+            "qa",
+            &hex,
+            "--disallow",
+            &hex,
+        ])
+        .unwrap();
+        assert_eq!(parsed.folder_or(None), Path::new("/srv/team"));
+        assert_eq!(
+            parsed.admin(),
+            [
+                AdminCommand::Permissions(true),
+                AdminCommand::Allow(id),
+                AdminCommand::Group(String::from("qa"), id),
+                AdminCommand::Ungroup(String::from("qa"), id),
+                AdminCommand::Disallow(id),
+            ]
+        );
+        assert_eq!(
+            parse(&["--permissions", "off"]).unwrap().admin(),
+            [AdminCommand::Permissions(false)]
+        );
+    }
+
+    #[test]
+    fn unknown_flags_missing_values_and_extra_words_are_a_usage_error() {
+        let hex = AccountId::new(7).hex();
+        for words in [
+            vec!["--help"],
+            vec!["a", "b"],
+            vec!["--permissions"],
+            vec!["--permissions", "maybe"],
+            vec!["--allow"],
+            vec!["--allow", "zz"],
+            vec!["--group", "qa"],
+            vec!["--group", "", &hex],
+            vec!["--group", "a:b", &hex],
+            vec!["--ungroup", "--allow", &hex],
+        ] {
+            assert!(
+                matches!(parse(&words), Err(LaunchFailure::Usage)),
+                "{words:?}"
+            );
+        }
     }
 }

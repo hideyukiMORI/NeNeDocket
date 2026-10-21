@@ -1,9 +1,10 @@
-//! 操作 1 つと、ジャーナルの 1 行の相互変換（版 1・ADR 0004 の 3）。
+//! 操作 1 つと、ジャーナルの 1 行の相互変換（版 1 と版 2・ADR 0004 の 3・ADR 0010）。
 //!
 //! 形（タブ区切り・改行なし）:
 //! `v1 <時計> <アカウント 16 進> <壁時計> <打ち消す操作 or -> <種類> <課題> [<項目> <値>] <検査和 8 桁>`
+//! `v2 <時計> <アカウント 16 進> <壁時計> <打ち消す操作 or -> <種類> <課題> [<項目> <値>] <署名 128 桁> <検査和 8 桁>`
 //! 課題は `<作ったアカウント 16 進>:<連番>`、打ち消す操作は `<時計>:<アカウント 16 進>`。
-//! 検査和は、それより前の欄をタブで結んだバイト列の CRC-32。
+//! 検査和は、それより前の欄をタブで結んだバイト列の CRC-32。署名は `v2` から値までをタブで結んだバイト列への Ed25519 署名。
 
 use nene_docket_core::account_id::AccountId;
 use nene_docket_core::date::Date;
@@ -15,14 +16,15 @@ use nene_docket_core::logical_clock::LogicalClock;
 use nene_docket_core::op::Op;
 use nene_docket_core::op_id::OpId;
 use nene_docket_core::op_kind::OpKind;
+use nene_docket_core::public_key::PublicKey;
+use nene_docket_core::signature::Signature;
+use nene_docket_core::signing_key::SigningKey;
 use nene_docket_core::wall_clock::WallClock;
 
 use crate::crc32::crc32;
 use crate::escape::{escape, unescape};
+use crate::journal_version::JournalVersion;
 use crate::record_failure::RecordFailure;
-
-/// 版の印。
-const VERSION: &str = "v1";
 /// 欄の区切り。
 const SEPARATOR: char = '\t';
 /// 無い値（打ち消す操作・期限）。
@@ -30,27 +32,50 @@ const NONE: &str = "-";
 /// ラベルの区切り。
 const LABEL_SEPARATOR: char = ',';
 
-/// 操作を 1 行にする（改行は付けない）。
-#[must_use]
-pub fn encode(op: &Op) -> String {
+/// 署名する文（版の印から値まで）。
+fn body_of(version: JournalVersion, op: &Op) -> String {
     let mut fields = vec![
-        VERSION.to_owned(),
+        version.tag().to_owned(),
         op.id().clock().tick().to_string(),
         op.id().account().hex(),
         op.wall().seconds().to_string(),
         op.undoes().map_or_else(|| NONE.to_owned(), encode_op_id),
     ];
     fields.extend(encode_kind(op.kind()));
-    let body = fields.join("\t");
+    fields.join("\t")
+}
+
+/// 検査和を付けて行にする。
+fn with_checksum(body: &str) -> String {
     format!("{body}{SEPARATOR}{:08x}", crc32(body.as_bytes()))
 }
 
-/// 1 行を操作に戻す。
+/// 操作を版 1 の 1 行にする（改行は付けない）。
+#[must_use]
+pub fn encode(op: &Op) -> String {
+    with_checksum(&body_of(JournalVersion::One, op))
+}
+
+/// 操作を鍵で署名して版 2 の 1 行にする（改行は付けない）。
+#[must_use]
+pub fn encode_signed(op: &Op, key: &SigningKey) -> String {
+    let body = body_of(JournalVersion::Two, op);
+    let signature = key.sign(body.as_bytes());
+    with_checksum(&format!("{body}{SEPARATOR}{}", signature.hex()))
+}
+
+/// 版 2 の行の署名が `public` の持ち主のものか。
+#[must_use]
+pub fn is_signed_by(op: &Op, signature: &Signature, public: &PublicKey) -> bool {
+    public.verify(body_of(JournalVersion::Two, op).as_bytes(), signature)
+}
+
+/// 1 行を操作（と、版 2 なら署名）に戻す。署名が本物かはここでは見ない（[`is_signed_by`]）。
 ///
 /// # Errors
 ///
-/// 版・欄の数・検査和・数・語のどれかが読めない。
-pub fn decode(line: &str) -> Result<Op, RecordFailure> {
+/// 版・欄の数・検査和・数・語・署名の桁のどれかが読めない。
+pub fn decode(line: &str) -> Result<(Op, Option<Signature>), RecordFailure> {
     let (body, checksum) = line
         .rsplit_once(SEPARATOR)
         .ok_or(RecordFailure::WrongFieldCount)?;
@@ -58,12 +83,19 @@ pub fn decode(line: &str) -> Result<Op, RecordFailure> {
     if crc32(body.as_bytes()) != expected {
         return Err(RecordFailure::ChecksumMismatch);
     }
-    let fields: Vec<&str> = body.split(SEPARATOR).collect();
-    let mut cursor = fields.iter().copied();
+    let mut fields: Vec<&str> = body.split(SEPARATOR).collect();
+    let version = fields
+        .first()
+        .and_then(|tag| JournalVersion::from_tag(tag))
+        .ok_or(RecordFailure::UnknownVersion)?;
+    let signature = if version.is_signed() {
+        let text = fields.pop().ok_or(RecordFailure::WrongFieldCount)?;
+        Some(Signature::from_hex(text).ok_or(RecordFailure::BadSignature)?)
+    } else {
+        None
+    };
+    let mut cursor = fields.iter().copied().skip(1);
     let mut next = || cursor.next().ok_or(RecordFailure::WrongFieldCount);
-    if next()? != VERSION {
-        return Err(RecordFailure::UnknownVersion);
-    }
     let clock = LogicalClock::new(parse_number(next()?)?);
     let account = parse_account(next()?)?;
     let wall = WallClock::new(parse_number(next()?)?);
@@ -72,7 +104,10 @@ pub fn decode(line: &str) -> Result<Op, RecordFailure> {
         text => Some(decode_op_id(text)?),
     };
     let kind = decode_kind(next()?, next()?, &fields)?;
-    Ok(Op::new(OpId::new(clock, account), wall, kind).undoing_if(undoes))
+    Ok((
+        Op::new(OpId::new(clock, account), wall, kind).undoing_if(undoes),
+        signature,
+    ))
 }
 
 fn encode_op_id(id: OpId) -> String {
@@ -262,8 +297,44 @@ mod tests {
         for original in every_kind() {
             let line = encode(&original);
             assert!(!line.contains('\n'), "{line}");
-            assert_eq!(decode(&line).as_ref(), Ok(&original), "{line}");
+            assert_eq!(decode(&line), Ok((original.clone(), None)), "{line}");
         }
+    }
+
+    #[test]
+    fn signed_lines_round_trip_and_verify_only_with_the_signers_key() {
+        let key = SigningKey::from_bytes(&[6_u8; 32]);
+        let other = SigningKey::from_bytes(&[7_u8; 32]);
+        for original in every_kind() {
+            let line = encode_signed(&original, &key);
+            let (op, signature) = decode(&line).unwrap();
+            assert_eq!(op, original);
+            let signature = signature.unwrap();
+            assert!(is_signed_by(&op, &signature, &key.public()));
+            assert!(!is_signed_by(&op, &signature, &other.public()));
+            assert_eq!(line.split('\t').nth_back(1).map(str::len), Some(128));
+        }
+    }
+
+    #[test]
+    fn a_tampered_signed_line_and_an_unsigned_v2_line_are_refused() {
+        let key = SigningKey::from_bytes(&[6_u8; 32]);
+        let original = op(2, OpKind::Create(ItemId::new(B, 7)));
+        let line = encode_signed(&original, &key);
+        // 署名の後の値を変え、検査和は合わせ直す（ファイルを直接いじる人の真似）。
+        let (body, _) = line.rsplit_once('\t').unwrap();
+        let forged = body.replacen("\t2\t", "\t3\t", 1);
+        let (op, signature) = decode(&resigned(&forged)).unwrap();
+        assert!(!is_signed_by(&op, &signature.unwrap(), &key.public()));
+        // 署名の欄が無い版 2 の行。
+        let unsigned = encode(&original).replacen("v1", "v2", 1);
+        let (unsigned_body, _) = unsigned.rsplit_once('\t').unwrap();
+        assert_eq!(
+            decode(&resigned(unsigned_body)),
+            Err(RecordFailure::BadSignature)
+        );
+        let short = body.replacen(&key.sign(b"").hex()[..0], "", 1);
+        assert!(decode(&resigned(&format!("{short}0"))).is_err());
     }
 
     #[test]
@@ -355,7 +426,7 @@ mod tests {
             decode(&resigned(&format!(
                 "v1\t1\t{hex}\t0\t1:{hex}\tcreate\t{item}"
             )))
-            .map(|op| op.undoes().map(|id| id.clock().tick())),
+            .map(|(op, _)| op.undoes().map(|id| id.clock().tick())),
             Ok(Some(1))
         );
         assert_eq!(

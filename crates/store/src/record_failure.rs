@@ -5,7 +5,7 @@ use core::fmt;
 /// 1 行がジャーナルの版 1 の形になっていない理由。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum RecordFailure {
-    /// 先頭の版が `v1` でない。
+    /// 先頭の版が `v1` でも `v2` でもない。
     UnknownVersion,
     /// 欄の数が違う。
     WrongFieldCount,
@@ -21,6 +21,8 @@ pub enum RecordFailure {
     UnknownField,
     /// 値が項目の形になっていない（状態の語・日付・逃がし）。
     BadValue,
+    /// 版 2 の署名の欄が 16 進 128 桁でない。
+    BadSignature,
 }
 
 impl RecordFailure {
@@ -36,6 +38,7 @@ impl RecordFailure {
             Self::UnknownKind => "unknown operation kind",
             Self::UnknownField => "unknown field",
             Self::BadValue => "unreadable value",
+            Self::BadSignature => "unreadable signature",
         }
     }
 }

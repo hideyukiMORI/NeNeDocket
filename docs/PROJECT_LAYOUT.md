@@ -38,7 +38,7 @@ crates/application（nene-docket-application）
     ポートの宣言、台帳の状態の所有者、Undo の束、編集状態、表示フレームの生成、結果型。#![no_std]
 
 crates/core（nene-docket-core）
-    値・不変条件・閉じた選択肢・操作（op）・併合の規則・部品の核（配置・当たり判定・フォーカス・編集状態・描画命令。ADR 0006）・整形。依存 0・#![no_std]
+    値・不変条件・閉じた選択肢・操作（op）・併合の規則・部品の核（配置・当たり判定・フォーカス・編集状態・描画命令。ADR 0006）・整形・署名と検証（ADR 0010）。外部クレートは ed25519-dalek だけ・#![no_std]
 
 xtask
     規約検査・Git 規約・ゲート発火の証明。成果物ではない（publish = false）。依存 0

@@ -14,6 +14,18 @@ pub enum StoreFailure {
     BadDocketFile,
     /// ジャーナルのファイル名からアカウントが読めない。
     BadJournalName(String),
+    /// `keys/` のファイルが鍵の記録の形でない。
+    BadKeyFile(String),
+    /// `permissions.v1.txt` の形が読めない。
+    BadPermissionsFile,
+    /// `permissions.v1.txt` の署名が持ち主の鍵で通らない（鍵が無い・持ち主が違う・改竄）。
+    UnverifiedPermissions,
+    /// 台帳のフォルダに `docket.v1.txt` が無い（権限の操作は在る台帳にだけ）。
+    NoDocket,
+    /// 権限を変えられるのは持ち主だけ。
+    NotTheOwner,
+    /// 台帳にある自分の公開鍵が手元の鍵と違うので、署名しても誰にも通らない。
+    KeyMismatch,
 }
 
 impl fmt::Display for StoreFailure {
@@ -25,6 +37,18 @@ impl fmt::Display for StoreFailure {
             }
             Self::BadDocketFile => formatter.write_str("docket.v1.txt is not readable"),
             Self::BadJournalName(name) => write!(formatter, "not a journal file name: `{name}`"),
+            Self::BadKeyFile(name) => write!(formatter, "not a key record: `keys/{name}`"),
+            Self::BadPermissionsFile => formatter.write_str("permissions.v1.txt is not readable"),
+            Self::UnverifiedPermissions => {
+                formatter.write_str("permissions.v1.txt is not signed by the docket owner")
+            }
+            Self::NoDocket => formatter.write_str("no docket.v1.txt in the folder"),
+            Self::NotTheOwner => {
+                formatter.write_str("only the docket owner may change permissions")
+            }
+            Self::KeyMismatch => {
+                formatter.write_str("the public key in keys/ differs from this account's key")
+            }
         }
     }
 }

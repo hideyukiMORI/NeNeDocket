@@ -184,16 +184,16 @@ UI 層は、application が作った値を描き、利用者の操作を意図�
 
 ### ARC-013 — 外部依存は許可制
 
-- 依存を足すときは ADR を 1 本立てる。中核（core / application）・`store`・xtask は**依存 0** である
+- 依存を足すときは ADR を 1 本立てる。core の外部クレートは `ed25519-dalek` だけ（[ADR 0010](adr/0010-signatures-and-permissions.md)）。application・`store`・xtask は**依存 0** である
 - X11 と描画は `x11rb` と `cairo-rs`、Windows は `windows` だけ（[ADR 0002](adr/0002-no-toolkit-x11rb-cairo-win32-direct2d.md)）。UI ツールキットを入れない
-- 署名（FR-010）の依存は別の ADR で 1 つだけ足す。それまで権限は無い
+- 署名（FR-010）の依存は ADR 0010 の 1 つだけ（Issue #29）
 - バージョンに `*` を書かない（`clippy::wildcard_dependencies`）。版の固定は `Cargo.lock` の仕事であり、マニフェストに `=` を書かない
 - 内部クレート（`publish = false`）同士の path 依存には版を書かない。`deny.toml` の `allow-wildcard-paths = true` はこれだけを通し、外部 crate の `*` は `wildcards = "deny"` が拒む（nene-ruler Issue #26 の継承）
 - `Cargo.lock` をコミットする。ゲートは `--locked` で走り、lock が更新される状態でのゲート通過を拒む
 - ライセンスは**許可制**である。`deny.toml` の `allow` に**実際に使っているものだけ**を書く。
   `make deny` は `--deny license-not-encountered` を付けて走るので、使っていないライセンスを先回りで許可すると落ちる
 
-- 機械強制: **active**（`wildcard_dependencies`・`--locked`・cargo-deny のライセンス／脆弱性／重複版／取得元・CNF-013 の依存 0。実測は P-22 / P-24 / P-25 と [gate-proofs](quality/gate-proofs.md) 第 8 節）
+- 機械強制: **active**（`wildcard_dependencies`・`--locked`・cargo-deny のライセンス／脆弱性／重複版／取得元・CNF-013 の許可表（core・application・store・xtask の外部クレートは表に書いたものだけ）。実測は P-22 / P-24 / P-25 と [gate-proofs](quality/gate-proofs.md) 第 8 節）
 
 ---
 

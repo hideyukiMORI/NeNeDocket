@@ -13,7 +13,7 @@
 | 状態（state） | 課題の進み具合。閉じた集合 | `ItemState`（core） |
 | 操作（op） | 台帳を変える最小の単位。ID（論理時計とアカウント）・壁時計・打ち消す操作の ID・種類（作る・置く・消す・戻す）。不変 | `Op` / `OpId` / `OpKind`（core） |
 | 逆の操作 | ある操作を打ち消す操作。Undo はこれを**追記**し、`undoes` に元の ID を持つ。Redo は Undo を打ち消す | `Op::undoing`（core） |
-| ジャーナル（journal） | 1 つのアカウントが書いた操作の列。追記だけ。版を持つ。1 行 1 操作で末尾に CRC-32 | `journal/<account 16 進>.v1.log`・`journal_record`（store）・ADR 0004 |
+| ジャーナル（journal） | 1 つのアカウントが書いた操作の列。追記だけ。版を持つ。1 行 1 操作で末尾に CRC-32。権限を有効にした台帳では版 2（署名付き） | `journal/<account 16 進>.v1.log` / `.v2.log`・`journal_record`（store）・ADR 0004 / 0010 |
 | 自分のジャーナル | このプロセスのアカウントが書くジャーナル。書くのはこれだけ。起動時に壊れた末尾を数えて捨てる | `OwnJournal`（store） |
 | 読み直し（refresh） | 他人のジャーナルの伸びた分を読んで取り込むこと。読んだ位置をアカウントごとに覚える | `OtherJournals::refresh`（store）・`JournalPort`（application・予定） |
 | 同期（sync） | 自分のジャーナルの追記を記憶装置に確実に書くこと（fsync）。数秒以内 | `OwnJournal::sync`（store） |
@@ -23,10 +23,12 @@
 | 勝者（winner） | 同じ項目への操作のうち、全順序で最後のもの。負けた値は履歴に残る | `merge` の規則 |
 | 履歴（history） | 課題ごとの操作の列。勝者も敗者も含む | `merge::history`（core） |
 | Undo の束 | 自分の操作のうち、まだ戻していないものと戻したもの | `UndoStack`（application） |
-| アカウント（account） | 台帳に書く人。ID・名前・（権限が有効なら）鍵 | `Account` / `AccountId`（core） |
-| 鍵（key） | アカウントの署名鍵。権限を有効にした台帳でだけ使う | 別の ADR |
-| グループ（group） | アカウントの集合。権限の単位 | `Group`（core）・FR-010 |
-| 権限（permission） | 台帳・項目に対して「書ける」かどうか。閲覧は制限しない | `Permission`（core） |
+| アカウント（account） | 台帳に書く人。ID・名前・署名する鍵 | `AccountId`（core）・`Account`（application）・`account.v2.txt`（adapters） |
+| 鍵（key） | アカウントの Ed25519 の鍵対。秘密鍵は設定フォルダ、公開鍵は台帳の `keys/<account>.v1.pub`（名前も） | `SigningKey` / `PublicKey`（core）・`KeyRecord`（application）・`key_file`（store）・ADR 0010 |
+| 署名（signature） | 版 2 の行と `permissions.v1.txt` に付く 64 バイト。読み手が公開鍵で検証し、通らない行は捨てて数える | `Signature`（core）・`verifier`（store）・ADR 0010 |
+| 持ち主（owner） | 台帳を作ったアカウント。権限を有効にし、編集者とグループを決め、`permissions.v1.txt` に署名する | `docket.v1.txt` の `owner`・`administration`（store） |
+| グループ（group） | アカウントの集合。中の全員が書ける | `Permissions::groups`（core）・FR-010 |
+| 権限（permission） | 台帳に「書ける」かどうか（持ち主・編集者・グループの中）。閲覧は制限しない | `Permissions`（core）・`permissions.v1.txt`（store）・`nene-docket --permissions on` |
 | 設定（settings） | 最近開いた台帳・読み直しの間隔・表示言語の希望・配色の希望（列の幅と順はまだ）。版付きの `key = value`（版 2）。形は application、読み書きは adapters | `Settings` / `settings_file`（application）・`saved_settings`（adapters-x11 / adapters-windows） |
 | 表示言語（language） | 画面の語の言語。6 つの閉じた集合。希望（`system` か決まった言語）は設定に、表示する言語は OS の観測値と合わせて解決する | `Language` / `LanguageChoice`（core）・ADR 0011・FR-019 |
 | 語（word）と文言の表 | 画面に出す語の名前と、言語ごとの文字列の表。UI は文字列を書かない | `Word` / `wording::text`（core） |
