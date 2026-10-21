@@ -83,7 +83,9 @@ mod tests {
         assert!(matches!(
             commands.get(3),
             Some(DrawCommand::Text { text, caret: Some(caret), rect, .. })
-                if text == "abか" && *caret == TextCaret::new(3, 3) && *rect == RECT.inset(PADDING_PX)
+                if text == "abか"
+                    && *caret == TextCaret::new(3, 3).with_underline(2, 3)
+                    && *rect == RECT.inset(PADDING_PX)
         ));
     }
 }

@@ -8,7 +8,7 @@ use crate::ui_failure::UiFailure;
 /// 他人のジャーナルを読み直す合図の `ClientMessage` の型。アダプタの刻み（adapters-x11）が同じ名前で intern して送る。
 pub const REFRESH_NAME: &[u8] = b"_NENE_DOCKET_REFRESH";
 
-/// 閉じる要求・題・読み直しの合図に使う atom。
+/// 閉じる要求・題・読み直しの合図・XDND・クリップボードに使う atom。
 #[derive(Debug, Clone, Copy)]
 pub struct Atoms {
     /// `WM_PROTOCOLS`。
@@ -45,6 +45,12 @@ pub struct Atoms {
     pub text_uri_list: Atom,
     /// 変換した選択を受け取る自分の property。
     pub drop_property: Atom,
+    /// `CLIPBOARD`（貼り付け・FR-015 の逃げ道）。
+    pub clipboard: Atom,
+    /// `INCR`（大きな選択を分けて渡す型。受けない）。
+    pub incr: Atom,
+    /// 変換したクリップボードを受け取る自分の property。
+    pub paste_property: Atom,
 }
 
 /// 1 つの atom を intern する。
@@ -77,6 +83,9 @@ impl Atoms {
             xdnd_type_list: intern(connection, b"XdndTypeList")?,
             text_uri_list: intern(connection, b"text/uri-list")?,
             drop_property: intern(connection, b"_NENE_DOCKET_DROP")?,
+            clipboard: intern(connection, b"CLIPBOARD")?,
+            incr: intern(connection, b"INCR")?,
+            paste_property: intern(connection, b"_NENE_DOCKET_PASTE")?,
         })
     }
 }

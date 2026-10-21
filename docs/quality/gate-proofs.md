@@ -985,7 +985,21 @@ Xvfb（2300×700・2 プロセスを横に並べる・読み直しの刻み 3 �
 
 🔴 **正直に:** 施主の共有（NAS）ではまだ測っていない（QLT-013）。読み直しの間隔の自動調整は入れていない（頼みを 1 つに溜めるので、遅い共有では合図が重なっても 1 回の読みにまとまる）。追記 ＋ `sync_data` は今もフレームの中（操作ごと・ローカルで 0.9 ms・SMB では 10〜50 ms になりうる。SPECIFICATION 第 2 節の「2 秒にまとめる」は未実装）。
 
-## 46. 再現
+## 46. Issue #80 — 日本語入力: Windows は IMM32、X11 は貼り付けの逃げ道、確定前の下線（2026-10-21）
+
+同じコンテナ。ADR 0020 を受理。core に `pasted_text`（貼り付け・確定の文字列を 1 字ずつ `KeyIntent::Char` に・改行を揃え制御文字を捨てる）と `TextCaret::underline`（確定前の範囲）。`TextEdit` は改行の字を 1 行の欄では空白、複数行の欄では改行にする。ui-x11 に `clipboard`（Ctrl+V → `ConvertSelection(CLIPBOARD, UTF8_STRING)` → `SelectionNotify`）と cairo の下線。ui-win32 に `ime`（`WM_IME_SETCONTEXT` で組み立ての窓を消す・`WM_IME_COMPOSITION` の `GCS_COMPSTR` / `GCS_CURSORPOS` / `GCS_RESULTSTR`・`ImmSetCandidateWindow` を欄の下）、`composition`（UTF-16 のカーソルを文字の添字に・Linux でテスト）、Direct2D の下線。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 430 件（core 117: `pasted_text`・下線・改行の字 / ui-x11 19: Ctrl+V の判定・下線の画素 / ui-win32 10: UTF-16 のカーソル） |
+| `make conformance` | 違反なし |
+
+Xvfb（1120×600・`LANG=ja_JP.UTF-8`・送り手は scratchpad の `clip-own`: `CLIPBOARD` を持ち `UTF8_STRING` を答える x11rb の 40 行）: 検索欄に Ctrl+V で `日本語の検索 テスト`、「追加」の題名の欄に同じく貼って Enter（[screenshots/2026-10-21-paste-01-title.png](screenshots/2026-10-21-paste-01-title.png)・ジャーナルに `set … title 日本語の検索 テスト`）、本文の欄に `一行目\r\n二行目\tタブ` を貼ると 2 行になりタブは空白（[screenshots/2026-10-21-paste-02-body.png](screenshots/2026-10-21-paste-02-body.png)）。`LANG=en_US.UTF-8` では字が豆腐になる（起動時に選ぶ家族に日本語が無い・ADR 0007 のとおり）。
+
+🔴 **正直に:** Windows の IME は組み立てただけ（`make lint-windows` 0 件）で、確定前の文字列が欄に出ること・候補の窓の位置・`WM_IME_CHAR` を流さないことの実機の確認は施主の Windows（QLT-013）。X11 の IME 本体（XIM）は無く、Ctrl+V の貼り付けだけ。`INCR`（256 KiB 超）と `PRIMARY` は受けない。確定前の下線は Xvfb で出す手段が無い（IM サーバが無い）ので、cairo の画素のテストだけ。
+
+## 47. 再現
 
 ```bash
 make prove

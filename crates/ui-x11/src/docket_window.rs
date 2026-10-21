@@ -13,6 +13,7 @@ use x11rb::rust_connection::RustConnection;
 use x11rb::wrapper::ConnectionExt as _;
 
 use crate::canvas::Canvas;
+use crate::clipboard::Clipboard;
 use crate::display::Display;
 use crate::drop_target::DropTarget;
 use crate::font_family;
@@ -39,6 +40,8 @@ pub struct DocketWindow<'d> {
     surfaces: SurfaceCache,
     /// XDND の受け手（FR-021 の第 2 段）。
     drops: DropTarget,
+    /// クリップボードからの貼り付け（FR-015 の逃げ道）。
+    clipboard: Clipboard,
 }
 
 impl<'d> DocketWindow<'d> {
@@ -84,6 +87,7 @@ impl<'d> DocketWindow<'d> {
             font: None,
             surfaces: SurfaceCache::empty(),
             drops: DropTarget::idle(),
+            clipboard: Clipboard::idle(),
         };
         opened.declare_hints()?;
         connection.map_window(opened.window.window())?;
@@ -185,6 +189,29 @@ impl<'d> DocketWindow<'d> {
     pub fn xdnd_message(&mut self, message: &ClientMessageEvent) -> Result<bool, UiFailure> {
         let window = self.window.window();
         self.drops.client_message(self.display, window, message)
+    }
+
+    /// クリップボードの変換を求める（Ctrl+V）。`time` は鍵のイベントの時刻。
+    ///
+    /// # Errors
+    ///
+    /// X の要求が失敗した。
+    pub fn request_paste(&mut self, time: u32) -> Result<(), UiFailure> {
+        let window = self.window.window();
+        self.clipboard.request(self.display, window, time)
+    }
+
+    /// クリップボードの変換の答え。文字列が取れれば返す。
+    ///
+    /// # Errors
+    ///
+    /// X の要求が失敗した。
+    pub fn clipboard_selection(
+        &mut self,
+        event: &SelectionNotifyEvent,
+    ) -> Result<Option<String>, UiFailure> {
+        let window = self.window.window();
+        self.clipboard.selection_notify(self.display, window, event)
     }
 
     /// 落とす中身の変換の答え。落とされたファイルがあれば位置（窓の座標）とパスの列。

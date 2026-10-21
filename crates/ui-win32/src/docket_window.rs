@@ -15,6 +15,7 @@ use windows::Win32::System::LibraryLoader::GetModuleHandleW;
 use windows::Win32::UI::HiDpi::{
     DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2, SetProcessDpiAwarenessContext,
 };
+use windows::Win32::UI::Input::Ime::ISC_SHOWUICOMPOSITIONWINDOW;
 use windows::Win32::UI::Input::KeyboardAndMouse::{
     GetKeyState, ReleaseCapture, SetCapture, TME_LEAVE, TRACKMOUSEEVENT, TrackMouseEvent,
     VK_CONTROL, VK_SHIFT,
@@ -26,14 +27,17 @@ use windows::Win32::UI::WindowsAndMessaging::{
     CREATESTRUCTW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DispatchMessageW, GWLP_USERDATA,
     GetMessageW, GetWindowLongPtrW, IDC_ARROW, KillTimer, LoadCursorW, MSG, PostQuitMessage,
     RegisterClassExW, SW_SHOW, SetTimer, SetWindowLongPtrW, ShowWindow, TranslateMessage,
-    WINDOW_EX_STYLE, WM_CHAR, WM_DESTROY, WM_DROPFILES, WM_ERASEBKGND, WM_KEYDOWN, WM_LBUTTONDOWN,
+    WINDOW_EX_STYLE, WM_CHAR, WM_DESTROY, WM_DROPFILES, WM_ERASEBKGND, WM_IME_COMPOSITION,
+    WM_IME_ENDCOMPOSITION, WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN,
     WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_PAINT, WM_SIZE, WM_TIMER,
     WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
 };
 use windows::core::{PCWSTR, w};
 
 use nene_docket_core::pixel_point::PixelPoint;
+use nene_docket_core::preedit::Preedit;
 
+use crate::ime;
 use crate::key_input::{self, Modifiers};
 use crate::win32_failure::Win32Failure;
 use crate::windows_app::WindowsApp;
@@ -225,6 +229,10 @@ fn dispatch(
             }
             Some(LRESULT(0))
         }
+        WM_IME_SETCONTEXT
+        | WM_IME_STARTCOMPOSITION
+        | WM_IME_COMPOSITION
+        | WM_IME_ENDCOMPOSITION => ime_message(app, window, (message, wparam, lparam)),
         WM_TIMER if wparam.0 == REFRESH_TIMER => {
             app.refresh();
             Some(LRESULT(0))
@@ -240,6 +248,55 @@ fn dispatch(
         }
         _other => None,
     }
+}
+
+/// IME のメッセージ（FR-015）。確定前の文字列は欄の中に自分で描くので、IME の組み立ての窓は出させず、
+/// 始まり・組み立て・終わりを画面に渡し、候補の窓を欄の位置に置く。
+fn ime_message(
+    app: &mut WindowsApp,
+    window: HWND,
+    (message, wparam, lparam): (u32, WPARAM, LPARAM),
+) -> Option<LRESULT> {
+    match message {
+        WM_IME_SETCONTEXT => {
+            let hidden =
+                LPARAM(lparam.0 & !isize::try_from(ISC_SHOWUICOMPOSITIONWINDOW).unwrap_or(0));
+            Some(default_procedure(window, message, wparam, hidden))
+        }
+        WM_IME_STARTCOMPOSITION => {
+            app.composition(None, Some(Preedit::new("", 0)));
+            place_ime(app, window);
+            Some(LRESULT(0))
+        }
+        WM_IME_COMPOSITION => {
+            let (result, preedit) = ime::read_composition(window, lparam);
+            app.composition(result.as_deref(), Some(preedit));
+            place_ime(app, window);
+            Some(LRESULT(0))
+        }
+        WM_IME_ENDCOMPOSITION => {
+            app.composition(None, None);
+            Some(LRESULT(0))
+        }
+        _other => None,
+    }
+}
+
+/// 候補の窓をフォーカスのある欄の位置に置く。欄が無ければ動かさない。
+fn place_ime(app: &WindowsApp, window: HWND) {
+    if let Some(field) = app.caret_rect() {
+        ime::place_windows(window, field);
+    }
+}
+
+/// 既定の手続きに渡す（引数を変えて渡したいとき）。
+#[expect(
+    unsafe_code,
+    reason = "RS-010: Win32 の DefWindowProcW を呼ぶ（ADR 0002 の 4）"
+)]
+fn default_procedure(window: HWND, message: u32, wparam: WPARAM, lparam: LPARAM) -> LRESULT {
+    // SAFETY: 届いたメッセージをそのまま（lparam だけ変えて）既定の手続きへ渡す。
+    unsafe { DefWindowProcW(window, message, wparam, lparam) }
 }
 
 /// 落とされたファイル（`WM_DROPFILES`）。位置（窓の座標）とパスの列を読んで、1 フレームにする。

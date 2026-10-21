@@ -2,10 +2,11 @@
 
 use nene_docket_application::docket_screen::DocketScreen;
 use nene_docket_application::frame_input::FrameInput;
+use nene_docket_core::pasted_text;
 use nene_docket_core::pointer_input::PointerInput;
 use x11rb::connection::Connection;
 use x11rb::protocol::Event;
-use x11rb::protocol::xproto::ClientMessageEvent;
+use x11rb::protocol::xproto::{ClientMessageEvent, SelectionNotifyEvent};
 
 use crate::display::Display;
 use crate::docket_window::DocketWindow;
@@ -48,7 +49,7 @@ pub fn run(
     }
 }
 
-/// 1 つのイベント。X のイベントは開いた集合なので `if let` の連なりで書く（規約 第 4 節）。XDND は窓の受け手に渡す。
+/// 1 つのイベント。X のイベントは開いた集合なので `if let` の連なりで書く（規約 第 4 節）。XDND とクリップボードは窓に渡す。
 fn step(
     display: &Display,
     window: &mut DocketWindow<'_>,
@@ -75,18 +76,34 @@ fn step(
     } else if let Event::LeaveNotify(_) = event {
         gathering.pointer_mut().left();
     } else if let Event::KeyPress(key) = event {
-        gathering.push_key(display.key_intent(key));
+        if display.paste_requested(key) {
+            window.request_paste(key.time)?;
+        } else {
+            gathering.push_key(display.key_intent(key));
+        }
     } else if let Event::DestroyNotify(_) = event {
         // WM の無い X（Xvfb）では閉じる要求が来ず、窓が直接消される。消えた窓には描けないので戻る。
         return Ok(Flow::Quit);
     } else if let Event::ClientMessage(message) = event {
         return client_message(display, window, gathering, message);
-    } else if let Event::SelectionNotify(notify) = event
-        && let Some((point, paths)) = window.xdnd_selection(notify)?
-    {
-        gathering.push_drop(point, paths);
+    } else if let Event::SelectionNotify(notify) = event {
+        selection(window, gathering, notify)?;
     }
     Ok(Flow::Continue)
+}
+
+/// 選択の変換の答え: XDND の落とし物か、クリップボードの貼り付け（1 字ずつ鍵にする）。
+fn selection(
+    window: &mut DocketWindow<'_>,
+    gathering: &mut Gathering,
+    notify: &SelectionNotifyEvent,
+) -> Result<(), UiFailure> {
+    if let Some((point, paths)) = window.xdnd_selection(notify)? {
+        gathering.push_drop(point, paths);
+    } else if let Some(text) = window.clipboard_selection(notify)? {
+        gathering.push_keys(pasted_text::key_intents(&text));
+    }
+    Ok(())
 }
 
 /// `ClientMessage`: 閉じる要求・読み直しの合図・XDND。

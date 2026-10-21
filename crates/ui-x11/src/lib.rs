@@ -6,6 +6,7 @@
 
 pub mod atoms;
 pub mod canvas;
+mod clipboard;
 pub mod display;
 pub mod docket_window;
 mod drop_target;

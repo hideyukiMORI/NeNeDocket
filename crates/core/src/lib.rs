@@ -51,6 +51,7 @@ pub mod op_id;
 pub mod op_kind;
 pub mod paint;
 pub mod palette;
+pub mod pasted_text;
 pub mod permissions;
 pub mod pixel_point;
 pub mod pixel_rect;

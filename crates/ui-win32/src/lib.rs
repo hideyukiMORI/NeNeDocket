@@ -5,8 +5,11 @@
 //! Win32 に触れるモジュールは Windows でだけ組み立て、純粋なもの（鍵の読み替え・ポインタの追跡）は Linux でもテストする。
 
 pub mod char_assembler;
+pub mod composition;
 #[cfg(windows)]
 pub mod docket_window;
+#[cfg(windows)]
+mod ime;
 pub mod key_input;
 #[cfg(windows)]
 pub mod pen;

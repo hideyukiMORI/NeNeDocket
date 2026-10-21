@@ -44,6 +44,11 @@ impl Gathering {
         self.keys.extend(key);
     }
 
+    /// 貼り付けた文字列の鍵の列。
+    pub(crate) fn push_keys(&mut self, keys: Vec<KeyIntent>) {
+        self.keys.extend(keys);
+    }
+
     /// 落とされたファイル。同じまとまりに 2 度来れば後の分を足す。
     pub(crate) fn push_drop(&mut self, point: PixelPoint, paths: Vec<String>) {
         match &mut self.drop {
@@ -89,6 +94,7 @@ mod tests {
         gathering.push_frame(pressed);
         gathering.push_key(Some(KeyIntent::Tab));
         gathering.push_key(None);
+        gathering.push_keys(vec![KeyIntent::Char('日'), KeyIntent::Char('本')]);
         gathering.push_refresh();
         let frames = gathering.take_frames();
         assert_eq!(frames.len(), 2);
@@ -96,7 +102,7 @@ mod tests {
             frames
                 .first()
                 .map(|f| (f.pointer().phase(), f.keys().len(), f.refresh())),
-            Some((ButtonPhase::Pressed, 1, true))
+            Some((ButtonPhase::Pressed, 3, true))
         );
         assert_eq!(
             frames.get(1).map(|f| (f.pointer().phase(), f.refresh())),
