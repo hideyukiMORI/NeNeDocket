@@ -1,6 +1,6 @@
-//! 設定ファイル（FR-012）の読み書き。設定フォルダの `settings.v3.txt`。形は application の `settings_file`。
+//! 設定ファイル（FR-012）の読み書き。設定フォルダの `settings.v4.txt`。形は application の `settings_file`。
 //!
-//! 版 3 が無ければ版 2（`settings.v2.txt`）、それも無ければ版 1（`settings.v1.txt`）を読む（無い鍵は既定で補う）。書くのは版 3 だけで、前の版は消さない（ARC-009 の移行）。
+//! 版 4 が無ければ版 3（`settings.v3.txt`）、版 2、版 1 の順に読む（無い鍵は既定で補う）。書くのは版 4 だけで、前の版は消さない（ARC-009 の移行）。
 
 use std::fs;
 use std::io;
@@ -15,11 +15,11 @@ use crate::adapter_failure::AdapterFailure;
 use crate::config_directory;
 
 /// いま書く版のファイル名。版は名前にある（ARC-009）。
-const FILE_NAME: &str = "settings.v3.txt";
+const FILE_NAME: &str = "settings.v4.txt";
 /// 読めるだけの前の版のファイル名（新しい順）。
-const PREVIOUS_FILE_NAMES: [&str; 2] = ["settings.v2.txt", "settings.v1.txt"];
+const PREVIOUS_FILE_NAMES: [&str; 3] = ["settings.v3.txt", "settings.v2.txt", "settings.v1.txt"];
 
-/// 設定を読む。版 3、無ければ版 2、無ければ版 1、どれも無ければ初期値。読めない形なら失敗（黙って既定値へ落とさない・FR-014）。
+/// 設定を読む。版 4、無ければ版 3・2・1 の順、どれも無ければ初期値。読めない形なら失敗（黙って既定値へ落とさない・FR-014）。
 ///
 /// # Errors
 ///
@@ -130,7 +130,7 @@ mod tests {
     }
 
     #[test]
-    fn older_versions_are_read_in_order_and_the_store_writes_version_three() {
+    fn older_versions_are_read_in_order_and_the_store_writes_version_four() {
         let root = temp("migrate");
         let path = root.join(FILE_NAME);
         let version_two = root.join("settings.v2.txt");
@@ -151,7 +151,7 @@ mod tests {
         assert!(
             fs::read_to_string(&path)
                 .unwrap()
-                .starts_with("version = 3\n")
+                .starts_with("version = 4\n")
         );
         assert!(previous.exists());
         assert_eq!(load_chain(&chain).unwrap(), changed);

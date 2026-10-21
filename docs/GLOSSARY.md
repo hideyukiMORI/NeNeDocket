@@ -31,7 +31,7 @@
 | 持ち主（owner） | 台帳を作ったアカウント。権限を有効にし、編集者とグループを決め、`permissions.v1.txt` に署名する | `docket.v1.txt` の `owner`・`administration`（store） |
 | グループ（group） | アカウントの集合。中の全員が書ける | `Permissions::groups`（core）・FR-010 |
 | 権限（permission） | 台帳に「書ける」かどうか（持ち主・編集者・グループの中）。閲覧は制限しない | `Permissions`（core）・`permissions.v1.txt`（store）・`nene-docket --permissions on` |
-| 設定（settings） | 最近開いた台帳・読み直しの間隔・表示言語の希望・配色の希望・表の列の幅（順はまだ）。版付きの `key = value`（版 3）。形は application、読み書きは adapters | `Settings` / `settings_file`（application）・`saved_settings`（adapters-x11 / adapters-windows） |
+| 設定（settings） | 最近開いた台帳・読み直しの間隔・表示言語の希望・配色の希望・表の列の幅と順。版付きの `key = value`（版 4）。形は application、読み書きは adapters | `Settings` / `settings_file`（application）・`saved_settings`（adapters-x11 / adapters-windows） |
 | 表示言語（language） | 画面の語の言語。6 つの閉じた集合。希望（`system` か決まった言語）は設定に、表示する言語は OS の観測値と合わせて解決する | `Language` / `LanguageChoice`（core）・ADR 0011・FR-019 |
 | 語（word）と文言の表 | 画面に出す語の名前と、言語ごとの文字列の表。UI は文字列を書かない | `Word` / `wording::text`（core） |
 | 配色（theme） | 名前・明暗・台帳の 8 色。組み込み 125 の元（`ThemeSeed`: 本文の 3 色と出典）から整数の補間で導く。希望（`system` か名前）は設定に | `Theme` / `ThemeSeed` / `theme_catalog` / `theme_derivation` / `ThemeChoice`（core）・ADR 0012 |
