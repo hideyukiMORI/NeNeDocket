@@ -11,6 +11,7 @@ use nene_docket_core::op::Op;
 use nene_docket_core::permissions::Permissions;
 
 use crate::admission_report::AdmissionReport;
+use crate::attachment_text::AttachmentText;
 use crate::journal_failure::JournalFailure;
 use crate::ledger_snapshot::LedgerSnapshot;
 
@@ -102,6 +103,17 @@ pub trait JournalPort {
 
     /// 添付の写しの場所（表示と、外部のアプリで開くため）。
     fn attachment_path(&self, item: ItemId, attachment: &Attachment) -> String;
+
+    /// 添付の写しを文として読む（FR-022）。文字コードは実装が決め（UTF-8・UTF-16 の BOM・`Shift_JIS`）、大きければ先頭だけ。
+    ///
+    /// # Errors
+    ///
+    /// 写しを読めない。
+    fn read_attachment(
+        &self,
+        item: ItemId,
+        attachment: &Attachment,
+    ) -> Result<AttachmentText, JournalFailure>;
 
     /// 持ち主が権限を変える（FR-010）。書いたら鍵と権限を読み直す。
     ///

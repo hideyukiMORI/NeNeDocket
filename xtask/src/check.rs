@@ -499,7 +499,7 @@ const ALLOWED_DEPENDENCIES: [(&str, &[&str]); 9] = [
     ("crates/application/", &["nene-docket-core"]),
     (
         "crates/store/",
-        &["nene-docket-application", "nene-docket-core"],
+        &["nene-docket-application", "nene-docket-core", "encoding_rs"],
     ),
     (
         "crates/adapters-x11/",

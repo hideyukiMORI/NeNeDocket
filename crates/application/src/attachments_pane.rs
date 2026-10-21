@@ -1,5 +1,6 @@
-//! 添付の段（FR-021）。表の下に、選んだ課題の添付（名前・大きさ・SHA-256）を並べる。
+//! 添付の段（FR-021 / FR-022）。表の下に、選んだ課題の添付（名前・大きさ・SHA-256）を並べる。
 //! 上の編集行はパスの欄と「添付する」、行を選んで「外す」。写しの中身が記録と合わない行は印を付ける（FR-014）。
+//! 行を選ぶと下に中身を出す: 文は読み取り専用の欄、CSV / TSV は表、それ以外はパスと「開く」（OS の既定のアプリ）。
 
 use alloc::string::String;
 use alloc::vec::Vec;
@@ -17,11 +18,13 @@ use nene_docket_core::layout::Layout;
 use nene_docket_core::paint::Paint;
 use nene_docket_core::pixel_rect::PixelRect;
 use nene_docket_core::preedit::Preedit;
+use nene_docket_core::response::Response;
 use nene_docket_core::response_phase::ResponsePhase;
 use nene_docket_core::scroll_bar;
 use nene_docket_core::scroll_state::ScrollState;
 use nene_docket_core::table_layout::TableLayout;
 use nene_docket_core::text_align::TextAlign;
+use nene_docket_core::text_area;
 use nene_docket_core::text_edit::TextEdit;
 use nene_docket_core::text_field;
 use nene_docket_core::ui_scale::UiScale;
@@ -29,20 +32,25 @@ use nene_docket_core::widget_id::WidgetId;
 use nene_docket_core::word::Word;
 use nene_docket_core::wording;
 
+use crate::attachment_view::AttachmentView;
 use crate::attachments_action::AttachmentsAction;
+use crate::attachments_context::AttachmentsContext;
 
-/// パスの欄の ID。画面の他の部品（1〜25・28・100〜・200〜・300〜・1000〜・3000〜・4000〜・5000〜・6000〜・7000〜）と重ならない。
+/// パスの欄。
 const ATTACH_PATH: WidgetId = WidgetId::new(26);
-/// 「外す」の ID。
+/// 「外す」。
 const DETACH: WidgetId = WidgetId::new(27);
-/// スクロールバーの ID。
+/// 一覧のスクロールバー。
 const ATTACHMENTS_SCROLL: WidgetId = WidgetId::new(29);
-/// 「添付する」の ID。
+/// 「添付する」。
 const ATTACH: WidgetId = WidgetId::new(30);
-/// 添付の行の ID。見えている順の番号を足す。
+/// 中身のスクロールバー。
+const VIEW_SCROLL: WidgetId = WidgetId::new(31);
+/// 「開く」。
+const OPEN: WidgetId = WidgetId::new(32);
+/// 添付の行（添字を足す）。
 const ATTACHMENT_ROW: WidgetId = WidgetId::new(8_000);
 
-/// 1x の寸法。
 const ROW_PX: u16 = 24;
 const LABEL_WIDTH_PX: u16 = 60;
 const BUTTON_WIDTH_PX: u16 = 90;
@@ -51,20 +59,29 @@ const DIGEST_WIDTH_PX: u16 = 110;
 const PADDING_PX: u16 = 8;
 const GAP_PX: u16 = 4;
 const SCROLL_WIDTH_PX: u16 = 12;
-/// ホイール 1 刻みで送る行数。
+/// 中身の文の 1 行。
+const VIEW_LINE_PX: u16 = 20;
+/// 表の列の幅を字数から決めるときの 1 字（core はフォントを知らない）。
+const CHAR_PX: u16 = 8;
+const MIN_COLUMN_PX: u16 = 60;
+const MAX_COLUMN_PX: u16 = 320;
+/// 中身を出すとき、一覧に残す行の数（見出しを除く）。
+const LIST_ROWS_WITH_VIEW: usize = 3;
+/// ホイール 1 刻みで動く行。
 const WHEEL_ROWS: i32 = 3;
-/// SHA-256 の列に出す桁数。
+/// SHA-256 の先頭だけ出す桁数。
 const DIGEST_DIGITS: usize = 8;
-/// 写しが記録と合わない行の印。
+/// 写しが合わない行の印。
 const ALTERED_MARK: &str = "⚠ ";
 
-/// 出すかどうか・パスの欄・選んだ添付の連番・スクロール・倍率。
+/// 出すかどうか・パスの欄・選んだ添付の連番・一覧と中身のスクロール・倍率。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct AttachmentsPane {
     shown: bool,
     path: TextEdit,
     selected: Option<u32>,
     scroll: ScrollState,
+    view_scroll: ScrollState,
     scale: UiScale,
 }
 
@@ -77,6 +94,7 @@ impl AttachmentsPane {
             path: TextEdit::empty(),
             selected: None,
             scroll: ScrollState::top(0, 0),
+            view_scroll: ScrollState::top(0, 0),
             scale,
         }
     }
@@ -96,6 +114,12 @@ impl AttachmentsPane {
     #[must_use]
     pub const fn path_id() -> WidgetId {
         ATTACH_PATH
+    }
+
+    /// 「開く」の ID（鍵で押す）。
+    #[must_use]
+    pub const fn open_id() -> WidgetId {
+        OPEN
     }
 
     /// 選んだ添付の連番。
@@ -119,6 +143,12 @@ impl AttachmentsPane {
         None
     }
 
+    /// 「開く」を鍵で押した。選んでいれば開く求め。
+    #[must_use]
+    pub fn open_key(&self) -> Option<AttachmentsAction> {
+        self.selected.map(AttachmentsAction::Open)
+    }
+
     /// 確定前の文字列をパスの欄へ。
     pub fn set_preedit(&mut self, preedit: Option<Preedit>) {
         self.path = self.path.with_preedit(preedit);
@@ -134,14 +164,14 @@ impl AttachmentsPane {
         Some(AttachmentsAction::Attach(path))
     }
 
-    /// 段を問い合わせ、描画命令と求めを返す。`altered` は写しが記録と合わない連番。
+    /// 段を問い合わせ、描画命令と求めを返す。
     pub fn probe(
         &mut self,
         interaction: &mut Interaction,
-        (area, item, altered, language): (PixelRect, Option<&Item>, &[u32], Language),
+        context: &AttachmentsContext<'_>,
         commands: &mut Vec<DrawCommand>,
     ) -> Vec<AttachmentsAction> {
-        let attachments = item.map_or(&[][..], Item::attachments);
+        let attachments = context.item().map_or(&[][..], Item::attachments);
         if !attachments
             .iter()
             .any(|attachment| Some(attachment.sequence()) == self.selected)
@@ -149,7 +179,7 @@ impl AttachmentsPane {
             self.selected = None;
         }
         let mut actions = Vec::new();
-        let mut layout = Layout::inside(area, self.px(GAP_PX));
+        let mut layout = Layout::inside(context.area(), self.px(GAP_PX));
         let row = layout.row(
             self.px(ROW_PX),
             &[
@@ -159,29 +189,47 @@ impl AttachmentsPane {
                 ColumnWidth::Fixed(self.px(BUTTON_WIDTH_PX)),
             ],
         );
-        actions.extend(self.edit_row(interaction, (&row, language), commands));
-        let table_area = layout.remaining();
-        let track = PixelRect::new(
-            table_area
-                .right()
-                .saturating_sub(self.px(SCROLL_WIDTH_PX))
-                .saturating_add(1),
-            table_area.y(),
-            self.px(SCROLL_WIDTH_PX),
-            table_area.height(),
-        );
-        let table = self.table(table_area, attachments.len());
-        self.scroll = self
-            .scroll
-            .resized(table.content_height(), u32::from(table.body().height()));
-        self.header(&table, language, commands);
-        self.rows(
-            interaction,
-            (&table, attachments, altered, language),
-            commands,
-        );
-        self.scroll_bar(interaction, (track, table_area), commands);
+        actions.extend(self.edit_row(interaction, (&row, context.language()), commands));
+        let view = self.selected.and(context.view());
+        let (list_area, view_area) =
+            self.split(layout.remaining(), attachments.len(), view.is_some());
+        self.list(interaction, (list_area, attachments, context), commands);
+        if let (Some(view_area), Some(view)) = (view_area, view) {
+            actions.extend(self.viewer(
+                interaction,
+                (view_area, view, context.language()),
+                commands,
+            ));
+        }
         actions
+    }
+
+    /// 一覧と中身に分ける。中身を出すなら一覧は見出し ＋ 3 行まで、残りが中身（1 行分も無ければ出さない）。
+    fn split(
+        &self,
+        area: PixelRect,
+        count: usize,
+        with_view: bool,
+    ) -> (PixelRect, Option<PixelRect>) {
+        if !with_view {
+            return (area, None);
+        }
+        let rows = u16::try_from(count.min(LIST_ROWS_WITH_VIEW).saturating_add(1)).unwrap_or(1);
+        let list_height = self.px(ROW_PX).saturating_mul(rows);
+        let view_top = list_height.saturating_add(self.px(GAP_PX));
+        let view_height = area.height().saturating_sub(view_top);
+        if view_height < self.px(ROW_PX) {
+            return (area, None);
+        }
+        (
+            PixelRect::new(area.x(), area.y(), area.width(), list_height),
+            Some(PixelRect::new(
+                area.x(),
+                area.y().saturating_add(view_top),
+                area.width(),
+                view_height,
+            )),
+        )
     }
 
     /// 編集行: 「パス」の名・欄・「添付する」・「外す」。
@@ -226,6 +274,28 @@ impl AttachmentsPane {
         actions
     }
 
+    /// 一覧: 見出し・行・スクロールバー。
+    fn list(
+        &mut self,
+        interaction: &mut Interaction,
+        (area, attachments, context): (PixelRect, &[Attachment], &AttachmentsContext<'_>),
+        commands: &mut Vec<DrawCommand>,
+    ) {
+        let track = self.track_of(area);
+        let table = self.table(area, attachments.len());
+        self.scroll = self
+            .scroll
+            .resized(table.content_height(), u32::from(table.body().height()));
+        self.header(&table, context.language(), commands);
+        self.rows(interaction, (&table, attachments, context), commands);
+        self.scroll = Self::scrolled(
+            interaction,
+            (ATTACHMENTS_SCROLL, track, area),
+            (self.scroll, self.px(ROW_PX)),
+            commands,
+        );
+    }
+
     fn header(&self, table: &TableLayout, language: Language, commands: &mut Vec<DrawCommand>) {
         let header = table.header();
         commands.push(DrawCommand::Stroke {
@@ -254,11 +324,11 @@ impl AttachmentsPane {
         }
     }
 
-    /// 見えている行。押すと選ぶ。写しが合わない行は印を付ける。
+    /// 見えている行。押すと選ぶ（中身のスクロールは上へ戻る）。写しが合わない行は印と理由を名前に添える。
     fn rows(
         &mut self,
         interaction: &mut Interaction,
-        (table, attachments, altered, language): (&TableLayout, &[Attachment], &[u32], Language),
+        (table, attachments, context): (&TableLayout, &[Attachment], &AttachmentsContext<'_>),
         commands: &mut Vec<DrawCommand>,
     ) {
         commands.push(DrawCommand::Clip(table.body()));
@@ -268,8 +338,9 @@ impl AttachmentsPane {
                 continue;
             };
             let response = interaction.probe(ATTACHMENT_ROW.indexed(index), rect, false);
-            if response.clicked() {
+            if response.clicked() && self.selected != Some(attachment.sequence()) {
                 self.selected = Some(attachment.sequence());
+                self.view_scroll = ScrollState::top(0, 0);
             }
             if self.selected == Some(attachment.sequence()) {
                 commands.push(DrawCommand::Fill {
@@ -282,22 +353,15 @@ impl AttachmentsPane {
                     paint: Paint::Surface,
                 });
             }
-            // 写しが合わない行は名前に印と理由を添える（印の列は広くないので名前の列に出す）。
-            let name = if altered.contains(&attachment.sequence()) {
-                alloc::format!(
-                    "{ALTERED_MARK}{}: {}",
-                    attachment.name(),
-                    wording::text(language, Word::Attachment(AttachmentWord::Altered))
-                )
-            } else {
-                String::from(attachment.name())
-            };
-            let digest: String = attachment
-                .digest_hex()
-                .chars()
-                .take(DIGEST_DIGITS)
-                .collect();
-            let texts = [name, alloc::format!("{}", attachment.bytes()), digest];
+            let texts = [
+                Self::name_of(attachment, context),
+                alloc::format!("{}", attachment.bytes()),
+                attachment
+                    .digest_hex()
+                    .chars()
+                    .take(DIGEST_DIGITS)
+                    .collect(),
+            ];
             for (cell, text) in table.cells(rect).into_iter().zip(texts) {
                 commands.push(Self::cell_text(
                     cell,
@@ -310,36 +374,248 @@ impl AttachmentsPane {
         commands.push(DrawCommand::Unclip);
     }
 
-    /// つまみのドラッグとホイール（ポインタが段の上にあるときだけ）。
-    fn scroll_bar(
+    /// 名前の列。写しが合わなければ印と理由（印の列は広くないので名前の列に出す）。
+    fn name_of(attachment: &Attachment, context: &AttachmentsContext<'_>) -> String {
+        if context.altered().contains(&attachment.sequence()) {
+            alloc::format!(
+                "{ALTERED_MARK}{}: {}",
+                attachment.name(),
+                wording::text(
+                    context.language(),
+                    Word::Attachment(AttachmentWord::Altered)
+                )
+            )
+        } else {
+            String::from(attachment.name())
+        }
+    }
+
+    /// 中身。先頭だけならその旨を 1 行。文・表・パスと「開く」。
+    fn viewer(
         &mut self,
         interaction: &mut Interaction,
-        (track, area): (PixelRect, PixelRect),
+        (area, view, language): (PixelRect, &AttachmentView, Language),
+        commands: &mut Vec<DrawCommand>,
+    ) -> Vec<AttachmentsAction> {
+        let mut area = area;
+        if view.is_truncated() {
+            let note = PixelRect::new(area.x(), area.y(), area.width(), self.px(ROW_PX));
+            commands.push(Self::cell_text(
+                note,
+                wording::text(language, Word::Attachment(AttachmentWord::Truncated)),
+                Paint::Muted,
+                self.px(PADDING_PX),
+            ));
+            area = PixelRect::new(
+                area.x(),
+                area.y().saturating_add(self.px(ROW_PX)),
+                area.width(),
+                area.height().saturating_sub(self.px(ROW_PX)),
+            );
+        }
+        match view {
+            AttachmentView::Text { edit, .. } => {
+                self.view_text(interaction, (area, edit), commands);
+            }
+            AttachmentView::Table { rows, widths, .. } => {
+                self.view_table(interaction, (area, rows, widths), commands);
+            }
+            AttachmentView::Path(path) => {
+                return self.view_path(interaction, (area, path, language), commands);
+            }
+        }
+        Vec::new()
+    }
+
+    /// 文: 読み取り専用の欄。行の単位でスクロール。
+    fn view_text(
+        &mut self,
+        interaction: &mut Interaction,
+        (area, edit): (PixelRect, &TextEdit),
         commands: &mut Vec<DrawCommand>,
     ) {
-        let response = interaction.probe(ATTACHMENTS_SCROLL, track, false);
+        let (line_px, track) = (self.px(VIEW_LINE_PX), self.track_of(area));
+        let field = PixelRect::new(
+            area.x(),
+            area.y(),
+            area.width().saturating_sub(self.px(SCROLL_WIDTH_PX)),
+            area.height(),
+        );
+        let visible = u32::try_from(text_area::visible_lines(field, line_px)).unwrap_or(u32::MAX);
+        let lines = u32::try_from(edit.line_count()).unwrap_or(u32::MAX);
+        self.view_scroll = self.view_scroll.resized(
+            lines.saturating_mul(u32::from(line_px)),
+            visible.saturating_mul(u32::from(line_px)),
+        );
+        let first = usize::try_from(self.view_scroll.offset() / u32::from(line_px.max(1)))
+            .unwrap_or(usize::MAX);
+        commands.extend(text_area::text_area(
+            field,
+            edit,
+            Response::new(ResponsePhase::Idle, false, false),
+            (line_px, first),
+        ));
+        self.view_scroll = Self::scrolled(
+            interaction,
+            (VIEW_SCROLL, track, area),
+            (self.view_scroll, line_px),
+            commands,
+        );
+    }
+
+    /// 表: 最初の行が見出し、列の幅は字数から。
+    fn view_table(
+        &mut self,
+        interaction: &mut Interaction,
+        (area, rows, widths): (PixelRect, &[Vec<String>], &[usize]),
+        commands: &mut Vec<DrawCommand>,
+    ) {
+        let track = self.track_of(area);
+        let bounds = PixelRect::new(
+            area.x(),
+            area.y(),
+            area.width().saturating_sub(self.px(SCROLL_WIDTH_PX)),
+            area.height(),
+        );
+        let body_rows = u32::try_from(rows.len().saturating_sub(1)).unwrap_or(u32::MAX);
+        let columns = widths
+            .iter()
+            .map(|chars| ColumnWidth::Fixed(self.column_px(*chars)))
+            .collect();
+        let table = TableLayout::new(bounds, self.px(ROW_PX), self.px(ROW_PX), body_rows)
+            .with_columns(columns);
+        self.view_scroll = self
+            .view_scroll
+            .resized(table.content_height(), u32::from(table.body().height()));
+        commands.push(DrawCommand::Fill {
+            rect: bounds,
+            paint: Paint::Surface,
+        });
+        commands.push(DrawCommand::Stroke {
+            rect: bounds,
+            paint: Paint::Border,
+        });
+        commands.push(DrawCommand::Clip(bounds.inset(1)));
+        if let Some(heading) = rows.first() {
+            self.cells((&table, table.header()), (heading, Paint::Muted), commands);
+        }
+        for (index, rect) in table.visible_rows(self.view_scroll.offset()) {
+            if let Some(row) = usize::try_from(index)
+                .ok()
+                .and_then(|i| rows.get(i.saturating_add(1)))
+            {
+                self.cells((&table, rect), (row, Paint::Ink), commands);
+            }
+        }
+        commands.push(DrawCommand::Unclip);
+        self.view_scroll = Self::scrolled(
+            interaction,
+            (VIEW_SCROLL, track, area),
+            (self.view_scroll, self.px(ROW_PX)),
+            commands,
+        );
+    }
+
+    fn cells(
+        &self,
+        (table, rect): (&TableLayout, PixelRect),
+        (row, paint): (&[String], Paint),
+        commands: &mut Vec<DrawCommand>,
+    ) {
+        for (cell, text) in table.cells(rect).into_iter().zip(row) {
+            commands.push(Self::cell_text(cell, text, paint, self.px(PADDING_PX)));
+        }
+    }
+
+    /// 字数から列の幅（60〜320 px）。
+    fn column_px(&self, chars: usize) -> u16 {
+        let text = u16::try_from(chars)
+            .unwrap_or(u16::MAX)
+            .saturating_mul(CHAR_PX)
+            .saturating_add(PADDING_PX.saturating_mul(2));
+        self.px(text.clamp(MIN_COLUMN_PX, MAX_COLUMN_PX))
+    }
+
+    /// それ以外: パスと「開く」。
+    fn view_path(
+        &self,
+        interaction: &mut Interaction,
+        (area, path, language): (PixelRect, &str, Language),
+        commands: &mut Vec<DrawCommand>,
+    ) -> Vec<AttachmentsAction> {
+        let mut layout = Layout::inside(area, 0);
+        let row = layout.row(
+            self.px(ROW_PX),
+            &[
+                ColumnWidth::Fill,
+                ColumnWidth::Fixed(self.px(BUTTON_WIDTH_PX)),
+            ],
+        );
+        let (Some(text_rect), Some(button_rect)) = (row.first(), row.get(1)) else {
+            return Vec::new();
+        };
+        commands.push(DrawCommand::Clip(*text_rect));
+        commands.push(Self::cell_text(
+            *text_rect,
+            path,
+            Paint::Ink,
+            self.px(PADDING_PX),
+        ));
+        commands.push(DrawCommand::Unclip);
+        let open = interaction.probe(OPEN, *button_rect, true);
+        commands.extend(button::button(
+            *button_rect,
+            wording::text(language, Word::Attachment(AttachmentWord::Open)),
+            open,
+        ));
+        if open.clicked() {
+            return self.open_key().into_iter().collect();
+        }
+        Vec::new()
+    }
+
+    /// つまみのドラッグとホイール（ポインタが `area` の上にあるときだけ）。動かした後の状態を返す。
+    fn scrolled(
+        interaction: &mut Interaction,
+        (id, track, area): (WidgetId, PixelRect, PixelRect),
+        (state, step_px): (ScrollState, u16),
+        commands: &mut Vec<DrawCommand>,
+    ) -> ScrollState {
+        let mut state = state;
+        let response = interaction.probe(id, track, false);
         let pointer = interaction.pointer();
         if let Some(point) = pointer
             .position()
             .filter(|_| response.phase() == ResponsePhase::Held)
         {
             let into = u64::from(point.y().saturating_sub(track.y()));
-            let offset = into * u64::from(self.scroll.content()) / u64::from(track.height().max(1));
-            self.scroll = self
-                .scroll
-                .scrolled_to(u32::try_from(offset).unwrap_or(u32::MAX));
+            let offset = into * u64::from(state.content()) / u64::from(track.height().max(1));
+            state = state.scrolled_to(u32::try_from(offset).unwrap_or(u32::MAX));
         }
         if pointer.position().is_some_and(|point| area.contains(point)) {
             let wheel = i32::from(pointer.wheel())
                 .saturating_mul(WHEEL_ROWS)
-                .saturating_mul(i32::from(self.px(ROW_PX)));
-            self.scroll = self.scroll.scrolled_by(wheel);
+                .saturating_mul(i32::from(step_px));
+            state = state.scrolled_by(wheel);
         }
-        commands.extend(scroll_bar::scroll_bar(track, self.scroll, response));
+        commands.extend(scroll_bar::scroll_bar(track, state, response));
+        state
     }
 
     const fn px(&self, base: u16) -> u16 {
         self.scale.px(base)
+    }
+
+    /// 右端のスクロールバーの溝。
+    fn track_of(&self, area: PixelRect) -> PixelRect {
+        PixelRect::new(
+            area.right()
+                .saturating_sub(self.px(SCROLL_WIDTH_PX))
+                .saturating_add(1),
+            area.y(),
+            self.px(SCROLL_WIDTH_PX),
+            area.height(),
+        )
     }
 
     fn table(&self, area: PixelRect, count: usize) -> TableLayout {

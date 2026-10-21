@@ -7,6 +7,7 @@ use std::path::{Path, PathBuf};
 
 use nene_docket_application::account::Account;
 use nene_docket_application::admission_report::AdmissionReport;
+use nene_docket_application::attachment_text::AttachmentText;
 use nene_docket_application::journal_failure::JournalFailure;
 use nene_docket_application::journal_port::JournalPort;
 use nene_docket_application::key_record::KeyRecord;
@@ -453,6 +454,16 @@ impl JournalPort for FileJournal {
         attachment_store::path_of(self.folder.root(), item, attachment)
             .to_string_lossy()
             .into_owned()
+    }
+
+    fn read_attachment(
+        &self,
+        item: ItemId,
+        attachment: &Attachment,
+    ) -> Result<AttachmentText, JournalFailure> {
+        attachment_store::read_text(self.folder.root(), item, attachment)
+            .map(|(text, truncated)| AttachmentText::new(text, truncated))
+            .map_err(|_failure| JournalFailure::AttachmentUnreadable)
     }
 }
 

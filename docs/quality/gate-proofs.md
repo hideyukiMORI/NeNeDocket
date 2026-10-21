@@ -875,7 +875,26 @@ Xvfb（`:101` / `:102`・`scratchpad/attach.sh` / `attach2.sh` / `attach3.sh`・
 
 🔴 **正直に:** 元のファイルは丸ごと記憶に読む（大きなファイルの上限は無い）。写しを消す経路は無い。ビューワーはまだ（#63 / #64 / #66）。
 
-## 40. 再現
+## 40. Issue #63 — 添付の中身: 文と表は段の中、それ以外は OS の既定のアプリ（ADR 0017 受理・2026-10-21）
+
+同じコンテナ。core に `AttachmentKind`（拡張子）と `csv`（`"` の囲み・`""`・`\r\n`）、`AttachmentWord` に 3 語（開く・先頭だけ・開けない）。application に `AttachmentView`（文 / 表 / パス）・`AttachmentViewCache`・`AttachmentsContext`・`OpenerPort` / `OpenFailure`・`Ports` の 4 つ目・添付の段の中身（行を選ぶと一覧は見出し ＋ 3 行に縮み、下に `text_area` の読み取り専用か表かパスと「開く」）。store に `encoding_rs`（唯一の外部クレート・CNF-013 の表）と `attachment_store::read_text`（BOM → UTF-8 → `Shift_JIS`・256 KiB で先頭だけ・最後の行は落とす）。adapters-x11 に `ExternalOpener`（`xdg-open`・終わりは別スレッドで待つ）、adapters-windows に `ShellExecuteW` 版（Windows では未実行）。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` / `deny` | 差分なし・0 件・0 件・警告なし・ok（`encoding_rs` は `(Apache-2.0 OR MIT) AND BSD-3-Clause`・`allow` は変えていない） |
+| `make test` | 398 件（core 108・application 110・store 56・adapters-x11 10・xtask 81） |
+| `make conformance` | 違反なし（251 ファイル） |
+| `make coverage` | 行 97.60%・region 97.14%（閾値 90） |
+
+Xvfb（`:103` 英語 / `:104` 日本語・`scratchpad/view.sh` / `view2.sh`・偽の `xdg-open` を `PATH` に置き、呼ばれたパスを記録）: 課題に `memo.txt`（UTF-8・日本語 5 行）・`sales.csv`（`Shift_JIS`・`\r\n`・`"みかん, 小"` の囲み）・`book.xlsx`（乱数 200 バイト）を添付し、段を高くして行を選ぶ。
+
+1. `memo.txt` → 5 行が読み取り専用の欄に出る（[01-text](screenshots/2026-10-21-view-01-text.png)）
+2. `sales.csv` → 見出し「品名・数量・単価」と 2 行の表（`"みかん, 小"` は 1 欄）。`Shift_JIS` が読めている（[02-csv](screenshots/2026-10-21-view-02-csv.png)）
+3. `book.xlsx` → 写しのパスと「開く」。押すと `opened.log` に `xdg-open <写しのパス>` が 1 行（[03-path](screenshots/2026-10-21-view-03-path.png)）
+
+🔴 **正直に:** 英語の UI では日本語の字が □ になる（起動時に言語でフォントの家族を選ぶ・ADR 0007 の既知の制約で、本文の欄も同じ）。`xdg-open` の先は記録だけ（コンテナに既定のアプリは無い）。Windows の `ShellExecuteW` は lint だけ。
+
+## 41. 再現
 
 ```bash
 make prove

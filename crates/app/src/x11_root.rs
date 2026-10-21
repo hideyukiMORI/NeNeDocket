@@ -1,6 +1,7 @@
 //! X11（Linux）の合成ルート（ARC-006）。設定・アカウント・ジャーナル・時計・刻みを結び、X11 の画面を起動する。
 
 use nene_docket_adapters_x11::appearance;
+use nene_docket_adapters_x11::external_opener::ExternalOpener;
 use nene_docket_adapters_x11::locale;
 use nene_docket_adapters_x11::refresh_ticker::RefreshTicker;
 use nene_docket_adapters_x11::saved_account;
@@ -57,6 +58,7 @@ pub(crate) fn run(arguments: &Arguments) -> Result<(), LaunchFailure> {
         Box::new(journal),
         Box::new(SystemClock),
         Box::new(SettingsStore::in_config_directory()?),
+        Box::new(ExternalOpener::xdg_open()),
     );
     let display = Display::connect()?;
     let environment = display
@@ -143,6 +145,7 @@ fn open_ledger(folder: &Path, account: &Account) -> Result<(Ledger, Ports), Laun
         Box::new(journal),
         Box::new(SystemClock),
         Box::new(SettingsStore::in_config_directory()?),
+        Box::new(ExternalOpener::xdg_open()),
     );
     Ok((ledger, ports))
 }

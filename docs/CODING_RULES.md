@@ -230,8 +230,9 @@
 | --- | --- | --- | --- |
 | `x11rb` 0.14（default-features 無し） | X プロトコル（純 Rust・libX11 不要）。ui-x11（adapters-x11 ができたらそこも） | [ADR 0002](adr/0002-no-toolkit-x11rb-cairo-win32-direct2d.md) | Issue #5 で導入。`cargo deny list` の実測で MIT / Apache-2.0 / Apache-2.0 WITH LLVM-exception |
 | `cairo-rs` 0.22（default-features 無し） | `ImageSurface` への図形と文字の描画。ui-x11 | 同上・[ADR 0007](adr/0007-japanese-font-family-chosen-at-startup.md) | Issue #5 で導入 |
-| `windows` / `windows-numerics` | Win32・Direct2D・DirectWrite。adapters-windows と ui-win32 | 同上 | 未導入 |
-| 署名（候補: `ed25519-dalek`） | FR-010 の権限 | 別の ADR | 未決 |
+| `windows` / `windows-numerics` | Win32・Direct2D・DirectWrite。adapters-windows と ui-win32 | 同上・[ADR 0009](adr/0009-windows-port-plain-window-and-timer.md) | Issue #22 で導入（Windows では未実行） |
+| `ed25519-dalek` 2（default-features 無し） | FR-010 の署名。core の唯一の外部クレート | [ADR 0010](adr/0010-signatures-and-permissions.md) | Issue #29 で導入。BSD-3-Clause |
+| `encoding_rs` 0.8（default-features 無し・`alloc`） | 添付の文字コード（UTF-8・UTF-16 の BOM・`Shift_JIS`）。store の唯一の外部クレート | [ADR 0017](adr/0017-attachment-viewers-and-external-open.md) | Issue #63 で導入。`(Apache-2.0 OR MIT) AND BSD-3-Clause`・依存は `cfg-if` |
 
 版は `Cargo.lock` で固定し、マニフェストに `*` や `=` を書かない。ゲートは lock が更新される状態を拒む（QLT-011）。
 

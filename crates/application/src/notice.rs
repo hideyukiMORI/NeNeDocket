@@ -8,6 +8,7 @@ use nene_docket_core::word::Word;
 use nene_docket_core::wording;
 
 use crate::journal_failure::JournalFailure;
+use crate::open_failure::OpenFailure;
 use crate::settings_failure::SettingsFailure;
 
 /// 画面の下に出す 1 行の元。閉じた集合（RS-002）。
@@ -35,6 +36,8 @@ pub enum Notice {
     NotAnEditor,
     /// 欄を読み込んだ後に他人が変えた値を上書きした（FR-008）。履歴で選び直せる。
     Overwrote,
+    /// 添付を OS の既定のアプリで開けなかった（FR-022）。
+    Open(OpenFailure),
 }
 
 impl Notice {
@@ -56,6 +59,7 @@ impl Notice {
             Self::KeyMismatch => String::from(word(Word::KeyMismatch)),
             Self::NotAnEditor => String::from(word(Word::NotAnEditor)),
             Self::Overwrote => String::from(word(Word::Overwrote)),
+            Self::Open(failure) => String::from(word(failure.word())),
         }
     }
 }
@@ -82,6 +86,7 @@ mod tests {
             Notice::KeyMismatch,
             Notice::NotAnEditor,
             Notice::Overwrote,
+            Notice::Open(OpenFailure::CannotOpen),
         ];
         for language in Language::ALL {
             for notice in all {
