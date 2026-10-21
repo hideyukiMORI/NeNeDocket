@@ -1,6 +1,6 @@
 # いまのタスク — NeNe Docket
 
-> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #56 まで）。
+> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #61 の段階 1 まで）。
 
 ## 状態
 
@@ -31,16 +31,19 @@
 | 署名と権限（FR-010） | ✅ Issue #29・[ADR 0010](../adr/0010-signatures-and-permissions.md) 受理。core に `ed25519-dalek`、`account.v2.txt` に秘密鍵、台帳の `keys/` と `permissions.v1.txt`、ジャーナル版 2（署名付き）。持ち主はコマンドライン（`--permissions on` / `--allow` / `--group`）。Xvfb で 3 アカウント（gate-proofs 第 22 節） |
 | 鍵の交代と持ち主の交代（ADR 0013） | ✅ Issue #51・[ADR 0013](../adr/0013-key-rotation-and-one-key-per-machine.md) 受理。`--succeed NEW OLD` で引き継ぎ（古い ID の履歴は新しい名前・参加者の段から消える）、`--owner ACCOUNT` で持ち主の交代（前の持ち主の署名 ＋ `handover`・新しい持ち主が開くと署名し直す）。鍵を失くした持ち主は `docket.v1.txt` を手で直す（gate-proofs 第 32 節）。引き継ぎは参加者の段の編集行の「引き継ぎ先」からも（Issue #54・第 34 節）。新しい ID は古い ID の編集者・グループを受け継ぐ |
 | 監査（FR-020） | ✅ Issue #56・[ADR 0014](../adr/0014-administration-is-journaled-for-audit.md) 受理。権限の変更も `admin` の行としてジャーナルに追記（署名付き）。履歴の段は課題を選んでいなければ台帳全体の時系列、`--audit` でテキスト。読んだ記録は残さない（gate-proofs 第 36 節） |
-| FR-017 の実測（1 万件・1 年分の併合） | ✅ Issue #24。30 万操作・45 MB を 0.6〜0.7 秒で併合（gate-proofs 第 20 節）。スナップショットはまだ要らない |
+| FR-017 の実測（1 万件・1 年分の併合） | ✅ Issue #24。30 万操作・45 MB を 0.6〜0.7 秒で併合（gate-proofs 第 20 節） |
+| 大容量でも軽い（FR-017 を 10 万件・300 万操作に）| 🟡 Issue #61・[ADR 0015](../adr/0015-large-dockets-snapshot-and-incremental-merge.md) 受理。段階 1（表の一覧のキャッシュ・増分の併合）で 10 万件の 1 フレーム 22 ms → 1.4 ms。起動（300 万操作で 8.5 秒）とメモリ（703 MB）は段階 2（スナップショットと索引）で（gate-proofs 第 37 節） |
+| 添付とビューワー（FR-021 / FR-022） | ❌ Issue #62（添付の記録と段・`--attach`）→ #63（テキスト・CSV・外部起動・`encoding_rs`）→ #64（PNG・JPEG）→ #65（ドラッグ＆ドロップ）→ #66（PDF・`hayro` を試す）。施主 2026-10-21「全部推しで」 |
 | CI の `check`（`make ci`）と commit-msg フック | ✅ PR #3 で CI が動き、枝名で落ちた（gate-proofs 第 10 節）。QLT-005・GIT-001・GIT-003 を active に |
 | ruleset（main の保護・squash-only） | 未設定。施主が GitHub で設定したら gate-proofs に記録する |
 
 ## 次に行うこと
 
 1. **ruleset（main の保護・squash-only・`check` を必須）を施主が GitHub で設定する。** 設定したら gate-proofs に記録し、GIT-002 / GIT-004 を active に。PR は harness の枝 `claude/cloud-session-qus6l5` から squash で merge している（件名は PR のタイトル・GIT-003 の形）
-2. 持ち主の交代はコマンドラインのまま（施主の決定）。引き継ぎを取り消す経路は無い（要るなら Issue）
+2. **Issue #61 の段階 2**: アカウントごとのスナップショット `snapshot/<account>.v1.txt` と索引 `.idx`、`Ledger` から `ops` を外し、履歴・Undo の逆の値・監査をジャーナルから引く（ADR 0015 の 3〜5）
+3. 添付（Issue #62 → #63 → #64 → #65 → #66）
+4. 持ち主の交代はコマンドラインのまま（施主の決定）。引き継ぎを取り消す経路は無い（要るなら Issue）
 3. **IME の実測は施主の WSLg で**: fcitx5 か ibus を入れ、`XMODIFIERS=@im=fcitx` で XIM の preedit が x11rb の窓に届く経路（XIM プロトコルの自前実装か、IM サーバの D-Bus か）を決める ADR
-4. スナップショットの ADR は、1 年分の併合が 1 秒を超えてから（いまは 0.7 秒）
 5. 環境の setup script（環境の設定）に DEVELOPMENT_WORKFLOW 第 9 節の行を置く。リポジトリ側のフック（`.claude/hooks/session-start.sh`）には `mingw-w64` を足した（Issue #24）
 6. **施主の Windows で exe を動かす**（Issue #22 の受け入れ）。見えた欠陥は Issue にする
 

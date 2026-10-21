@@ -165,6 +165,10 @@ pub struct DocketScreen {
     state: SelectState,
     history: HistoryPane,
     ledger: Ledger,
+    /// 表に出す課題の一覧のキャッシュと、その鍵（台帳の世代・検索・絞り込み・完了の表示）。
+    /// 10 万件を毎フレーム絞り込むと 1 フレームが 20 ms を超えるので、鍵が変わったときだけ作り直す（FR-017）。
+    visible_cache: Vec<ItemId>,
+    visible_key: Option<(u64, String, usize, bool)>,
     ports: Ports,
     /// 台帳の `keys/` にある名前（履歴の「誰が」）。読み直しのたびに取り直す。
     names: Vec<(AccountId, String)>,
@@ -220,6 +224,8 @@ impl DocketScreen {
             state: SelectState::closed(ItemState::ALL.len(), 0),
             history: HistoryPane::hidden(environment.scale()),
             ledger: Ledger::open(account, ops),
+            visible_cache: Vec::new(),
+            visible_key: None,
             ports,
             names,
             write_failure: None,
@@ -256,7 +262,7 @@ impl DocketScreen {
         let whole_area = table_area;
         let (table_area, [body_area, members_area, history_area]) = self.split_panes(table_area);
         self.preview = self.history_preview(history_area, input);
-        let visible = self.visible_ids();
+        let visible = self.cached_visible_ids();
         let table = self.table_layout(table_area, visible.len());
         let track = Self::track_of(table_area, self.px(SCROLL_WIDTH_PX));
         self.scroll = self
@@ -497,6 +503,21 @@ impl DocketScreen {
     }
 
     /// 絞り込んだ後の課題の ID。表に出す順。1 フレームに 1 度だけ数える（FR-002）。
+    /// 鍵（台帳の世代・検索・絞り込み・完了の表示）が前のフレームと同じならキャッシュを返す。
+    fn cached_visible_ids(&mut self) -> Vec<ItemId> {
+        let key = (
+            self.ledger.generation(),
+            String::from(self.search.text()),
+            self.filter.chosen(),
+            self.show_done,
+        );
+        if self.visible_key.as_ref() != Some(&key) {
+            self.visible_cache = self.visible_ids();
+            self.visible_key = Some(key);
+        }
+        self.visible_cache.clone()
+    }
+
     fn visible_ids(&self) -> Vec<ItemId> {
         let wanted = self
             .filter

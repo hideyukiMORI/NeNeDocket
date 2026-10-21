@@ -813,7 +813,27 @@ Xvfb（`:100`・`scratchpad/panes.sh`）: 参加者の段を出す（自動の�
 
 Xvfb（`:101`・`scratchpad/audit.sh`）: alice が台帳を作り、bob が参加。alice の `--permissions on --allow <bob> --group qa <bob>` で `permissions.v1.txt` が書かれ、alice のジャーナル（版 2）に `admin - permissions on` / `admin - allow <bob>` / `admin - group qa <bob>` の署名付き 3 行が追記された。`--audit` は English で `turned permissions on` / `added an editor: bob` / `added to a group: qa: bob`、bob の `LANG=ja_JP.UTF-8` では `権限を有効にした` / `編集者に加えた: bob` / `グループに入れた: qa: bob`（いつ・誰が・何を、タブ区切り・古い順）。画面で履歴の段を出す（課題を選ばない）と同じ 3 行が新しい順に出た（[01-history-all](screenshots/2026-10-21-audit-01-history-all.png)）。参加者の段で bob の「編集者」を外すと `removed an editor: bob` が加わり、`--audit` にも出た（[02-after-disallow](screenshots/2026-10-21-audit-02-after-disallow.png)）。権限を有効にする前の alice の版 1 の 2 行は、これまで通り捨てて数える（`lines failing signature or permission: 2`）。
 
-## 37. 再現
+## 37. Issue #61 — 大容量の実測と段階 1（表の一覧のキャッシュ・増分の併合・2026-10-21）
+
+リポジトリの外の計測用クレート（scratchpad の `bench/src/year.rs`・release・このコンテナ）。3 アカウントで `<件数> <1 件あたりの操作数>` のジャーナル（版 1）を一時フォルダに書き、`FileJournal::open` → `refresh` → `Ledger::open`、続けて `DocketScreen::open` と 1 フレーム（何もしない・検索 1 字・読み直しで何も届かない）を測り、RSS を `/proc/self/status` から読んだ。2 回目は OS のキャッシュが効いている。
+
+| 規模 | 起動（読む＋併合） | 何もしない 1 フレーム | 検索 1 字 | 読み直し（何も無い） | RSS |
+| --- | --- | --- | --- | --- | --- |
+| 1 万件・30 万操作・45 MB | 0.87〜0.92 s | 1.0 ms | 1.6 ms | 1.4 ms | 127 MB |
+| 10 万件・100 万操作・151 MB（段階 1 の前） | 2.7〜3.0 s | **21.6〜23.4 ms** | 26〜30 ms | **25.6〜26.7 ms** | 276 MB |
+| 10 万件・100 万操作（段階 1 の後） | 3.0 s | **1.4 ms** | 27.7 ms | **0.27 ms** | 275 MB |
+| 10 万件・300 万操作・460 MB（段階 1 の後） | **8.5〜10.0 s** | 1.4〜1.7 ms | 29〜31 ms | 0.2 ms | **703 MB** |
+
+段階 1: `DocketScreen` が（台帳の世代・検索・絞り込み・完了の表示）を鍵に表の一覧を持ち、`Ledger::absorb` は後の操作だけなら併合し直さずに当てる（`generation` / `last_applied`）。1 フレームと読み直しは目標の中。起動 3 秒とメモリは段階 2（スナップショットと索引・ADR 0015）で。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 369 件（`absorb` が後の操作を当て、前の操作が届けば併合し直して同じ台帳） |
+| `make conformance` | 違反なし（227 ファイル） |
+| `make coverage` | core ＋ application の region 98.83%（閾値 90） |
+
+## 38. 再現
 
 ```bash
 make prove

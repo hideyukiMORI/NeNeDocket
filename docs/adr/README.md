@@ -30,9 +30,9 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0012](0012-theme-model-and-builtin-colorschemes.md) | 配色は nene-nib の組み込み 125 テーマを写し、台帳の 8 色は本文の 3 色から整数の補間で導く。希望は設定に残し `system` は OS の明暗に従う | 受理 |
 | [0013](0013-key-rotation-and-one-key-per-machine.md) | 鍵は 1 台に 1 つ。同じ人の 2 台目は別のアカウントで、鍵の交代は持ち主が署名した引き継ぎで表す | 受理（Issue #51） |
 | [0014](0014-administration-is-journaled-for-audit.md) | 権限の変更もジャーナルに追記し、台帳全体の時系列を監査として出す（`OpKind::Admin`・履歴の段・`--audit`） | 受理（Issue #56） |
+| [0015](0015-large-dockets-snapshot-and-incremental-merge.md) | 大容量でも軽い: 派生値のキャッシュ・増分の併合・アカウントごとのスナップショットと索引 | 受理（Issue #61・段階 1 実装済み、段階 2 進行中） |
 
 ## これから書くもの（Issue が立ったら）
 
 - 文字入力（IME）の方式（FR-015）
 - 利用者のテーマファイル（nene-nib の `.v1.theme`・ADR 0012 の 7）
-- スナップショット（ジャーナルが長くなったとき・FR-017。2026-10-21 の実測では 1 年分 0.6 秒で、まだ要らない。gate-proofs 第 20 節）

@@ -17,7 +17,8 @@ use nene_docket_core::wall_clock::WallClock;
 use crate::account::Account;
 use crate::undo_stack::UndoStack;
 
-/// 自分のアカウント・見た操作・併合した台帳・時計・Undo の束・次に作る課題の番号。
+/// 自分のアカウント・見た操作・併合した台帳・時計・Undo の束・次に作る課題の番号・
+/// 台帳が変わった回数（画面が派生値のキャッシュを捨てる合図・FR-017）・全順序で最後に当てた操作。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Ledger {
     account: Account,
@@ -26,6 +27,8 @@ pub struct Ledger {
     clock: LogicalClock,
     undo: UndoStack,
     next_sequence: u32,
+    generation: u64,
+    last_applied: Option<OpId>,
 }
 
 impl Ledger {
@@ -52,6 +55,7 @@ impl Ledger {
             .max()
             .unwrap_or(0)
             .saturating_add(1);
+        let last_applied = ops.iter().map(Op::id).max();
         Self {
             docket: merge::merge(&ops),
             account,
@@ -59,19 +63,43 @@ impl Ledger {
             clock,
             undo,
             next_sequence,
+            generation: 0,
+            last_applied,
         }
     }
 
-    /// 他人の操作を取り込む。空なら何もしない。
+    /// 台帳が変わった回数。変わるたびに 1 増える（派生値のキャッシュの鍵）。
+    #[must_use]
+    pub const fn generation(&self) -> u64 {
+        self.generation
+    }
+
+    /// 他人の操作を取り込む。空なら何もしない。全部が全順序で最後に当てた操作より後なら、併合し直さずに順に当てる
+    /// （読み直しの普段の形・FR-017）。そうでなければ併合し直す（同じ集合からは同じ台帳・ADR 0004 の 6）。
     pub fn absorb(&mut self, fresh: Vec<Op>) {
         if fresh.is_empty() {
             return;
         }
-        for op in fresh {
+        let mut fresh = fresh;
+        fresh.sort_by_key(Op::id);
+        let appendable = self
+            .last_applied
+            .is_none_or(|last| fresh.first().is_some_and(|first| first.id() > last));
+        for op in &fresh {
             self.clock = self.clock.seen(op.id().clock());
-            self.ops.push(op);
         }
-        self.docket = merge::merge(&self.ops);
+        if appendable {
+            for op in &fresh {
+                self.docket = core::mem::replace(&mut self.docket, Docket::empty()).applied(op);
+            }
+            self.last_applied = fresh.last().map(Op::id);
+            self.ops.extend(fresh);
+        } else {
+            self.ops.extend(fresh);
+            self.docket = merge::merge(&self.ops);
+            self.last_applied = self.ops.iter().map(Op::id).max();
+        }
+        self.generation = self.generation.saturating_add(1);
     }
 
     /// 自分の操作を 1 つ作り、台帳に当て、Undo の束に積む。呼び手がジャーナルへ追記する。
@@ -117,7 +145,9 @@ impl Ledger {
     fn push_own(&mut self, op: Op) {
         self.docket = core::mem::replace(&mut self.docket, Docket::empty()).applied(&op);
         self.undo.record(&op);
+        self.last_applied = Some(op.id());
         self.ops.push(op);
+        self.generation = self.generation.saturating_add(1);
     }
 
     /// 併合した台帳。
@@ -184,6 +214,47 @@ mod tests {
                 value: FieldValue::Title(String::from(title)),
             },
         )
+    }
+
+    #[test]
+    fn absorbing_later_ops_applies_them_in_place_and_earlier_ops_remerge_to_the_same_docket() {
+        let account = me();
+        let item = ItemId::new(OTHER, 1);
+        let later = |clock: u64, kind: OpKind| {
+            Op::new(
+                OpId::new(LogicalClock::new(clock), OTHER),
+                WallClock::new(0),
+                kind,
+            )
+        };
+        let mut ledger = Ledger::open(account.clone(), alloc::vec![later(1, OpKind::Create(item))]);
+        assert_eq!(ledger.generation(), 0);
+        // 後の操作: 併合し直さずに当てる（世代が進み、台帳は同じ）。
+        ledger.absorb(alloc::vec![later(
+            3,
+            OpKind::Set {
+                item,
+                value: FieldValue::Title(String::from("b")),
+            },
+        )]);
+        assert_eq!(ledger.generation(), 1);
+        assert_eq!(ledger.docket().item(item).map(Item::title), Some("b"));
+        // 前の操作（時計 2）が後から届く: 全順序では 3 の前なので題名は b のまま。併合し直した台帳と同じ。
+        ledger.absorb(alloc::vec![later(
+            2,
+            OpKind::Set {
+                item,
+                value: FieldValue::Title(String::from("a")),
+            },
+        )]);
+        assert_eq!(ledger.generation(), 2);
+        assert_eq!(ledger.docket().item(item).map(Item::title), Some("b"));
+        assert_eq!(ledger.docket(), &merge::merge(ledger.ops()));
+        assert_eq!(ledger.ops().len(), 3);
+        ledger.absorb(Vec::new());
+        assert_eq!(ledger.generation(), 2);
+        ledger.compose(WallClock::new(0), OpKind::Delete(item));
+        assert_eq!(ledger.generation(), 3);
     }
 
     #[test]
