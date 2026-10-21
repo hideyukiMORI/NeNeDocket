@@ -14,8 +14,8 @@ use crate::text_align::TextAlign;
 const PADDING_PX: u16 = 6;
 /// 右端の印の幅。
 const MARK_PX: u16 = 20;
-/// 開いたときの印。
-const MARK: &str = "▾";
+/// 印（下向きの三角）の段の幅。上から順。字形に頼らず矩形で描く（フォントに依らない）。
+const MARK_ROWS: [u16; 4] = [7, 5, 3, 1];
 
 /// 閉じた箱と、開いていれば下に並ぶ候補。`options` は候補の文字列。
 #[must_use]
@@ -107,7 +107,7 @@ fn closed_box(
         MARK_PX,
         rect.height(),
     );
-    alloc::vec![
+    let mut commands = alloc::vec![
         DrawCommand::Fill {
             rect,
             paint: Paint::Surface
@@ -123,14 +123,31 @@ fn closed_box(
             paint: Paint::Ink,
             caret: None,
         },
-        DrawCommand::Text {
-            rect: mark_rect,
-            text: MARK.to_owned(),
-            align: TextAlign::Center,
+    ];
+    commands.extend(mark(mark_rect));
+    commands
+}
+
+/// 下向きの三角。`area` の中央に、1 画素ずつ細くなる段を重ねる。
+fn mark(area: PixelRect) -> Vec<DrawCommand> {
+    let rows = u16::try_from(MARK_ROWS.len()).unwrap_or(u16::MAX);
+    let top = area
+        .y()
+        .saturating_add(area.height().saturating_sub(rows) / 2);
+    let centre = area.x().saturating_add(area.width() / 2);
+    MARK_ROWS
+        .iter()
+        .enumerate()
+        .map(|(index, width)| DrawCommand::Fill {
+            rect: PixelRect::new(
+                centre.saturating_sub(width / 2),
+                top.saturating_add(u16::try_from(index).unwrap_or(u16::MAX)),
+                *width,
+                1,
+            ),
             paint: Paint::Muted,
-            caret: None,
-        },
-    ]
+        })
+        .collect()
 }
 
 #[cfg(test)]
@@ -149,15 +166,25 @@ mod tests {
             SelectState::closed(3, 2),
             Response::new(ResponsePhase::Idle, false, false),
         );
-        assert_eq!(commands.len(), 4);
+        assert_eq!(commands.len(), 3 + 4);
         assert!(matches!(
             commands.get(2),
             Some(DrawCommand::Text { text, rect, .. }) if text == "Done" && rect.width() == 74
         ));
-        assert!(matches!(
+        assert_eq!(
             commands.get(3),
-            Some(DrawCommand::Text { text, rect, align: TextAlign::Center, .. }) if text == MARK && rect.x() == 90
-        ));
+            Some(&DrawCommand::Fill {
+                rect: PixelRect::new(97, 20, 7, 1),
+                paint: Paint::Muted
+            })
+        );
+        assert_eq!(
+            commands.get(6),
+            Some(&DrawCommand::Fill {
+                rect: PixelRect::new(100, 23, 1, 1),
+                paint: Paint::Muted
+            })
+        );
     }
 
     #[test]
@@ -171,7 +198,7 @@ mod tests {
             state,
             Response::new(ResponsePhase::Idle, false, true),
         );
-        assert_eq!(commands.len(), 4 + 3 * 2 + 1);
+        assert_eq!(commands.len(), 7 + 3 * 2 + 1);
         assert_eq!(
             commands.get(1),
             Some(&DrawCommand::Stroke {
@@ -180,7 +207,7 @@ mod tests {
             })
         );
         assert_eq!(
-            commands.get(6),
+            commands.get(9),
             Some(&DrawCommand::Fill {
                 rect: PixelRect::new(10, 58, 100, 24),
                 paint: Paint::Selection

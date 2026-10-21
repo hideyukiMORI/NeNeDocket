@@ -1,7 +1,7 @@
 # ゲート発火の証明 — NeNe Docket
 
-> 記録: 2026-10-21 / Issue #1（文書だけ・第 3 節）、2026-10-21 / Issue #2（機械の移植・第 2〜8 節）、2026-10-21 / Issue #4（部品の核・第 9 節）。以下は実行した結果のみ。
-> 関連: QLT-007 / QLT-011 / QLT-013 / ADR 0001 / ADR 0005 / ADR 0006
+> 記録: 2026-10-21 / Issue #1（文書だけ・第 3 節）、Issue #2（機械の移植・第 2〜8 節）、Issue #4（部品の核・第 9 節）、PR #3（CI・第 10 節）、Issue #5（X11 の窓・第 11 節）。以下は実行した結果のみ。
+> 関連: QLT-007 / QLT-011 / QLT-013 / ADR 0001 / ADR 0005 / ADR 0006 / ADR 0007
 
 ## 1. 環境と範囲
 
@@ -214,7 +214,73 @@ PR #3 を draft から Ready にした。`check.yml` の `check`（ubuntu-24.04�
 
 CI と手元が同じ検証器で同じ結果を出した（QLT-005）。落ちた理由は harness の枝名で、PR 本文に書いた逸脱そのもの。ruleset が無いので、この失敗は merge を止めない（GIT-002 / GIT-004 が planned のまま、の理由）。
 
-## 11. 再現
+## 11. Issue #5 — X11 の窓（2026-10-21）
+
+同じコンテナ。`crates/application`（`#![no_std]`）・`crates/ui-x11`（`x11rb` 0.14 ＋ `cairo-rs` 0.22）・`crates/app` が生まれた。Xvfb / xdotool / ImageMagick / IPA ゴシック。
+
+### 11.1 ゲート
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` | 差分なし |
+| `make lint` | 0 件。`#[expect]` は `crates/app/src/main.rs` の `print_stderr`（RS-014）だけ |
+| `make lint-windows` | 0 件（`xtask`・`core`・`application`。`ui-x11` と `app` は除外） |
+| `make test` | core 51・application 11・ui-x11 16・xtask 81、すべて成功 |
+| `make conformance` | 違反なし（98 ファイル） |
+| `make deny` | ok。`cargo deny list` の実測で `allow` を MIT / Apache-2.0 / Apache-2.0 WITH LLVM-exception にした（`deny.toml` の注釈） |
+| `make doc-check` | 警告なし |
+| `make coverage` | core ＋ application: regions 99.55%・functions 99.62%・lines 99.69% |
+
+### 11.2 実ファイルでの発火
+
+| 規則 | やったこと | 実出力 |
+| --- | --- | --- |
+| CNF-007（ARC-003） | `crates/application/src/lib.rs` の `#![no_std]` を注釈に | `CNF-007: crates/application/src/lib.rs — nene-docket-application は中核クレートだが、先頭の属性に #![no_std] が無い（ARC-003）` |
+| CNF-012（ARC-007） | `crates/ui-x11/src/flow.rs` に `std::env::var("HOME")` を足した | `CNF-012: crates/ui-x11/src/flow.rs:13 — std::env はアダプタと store の外で読まない（ARC-007）` |
+| CNF-013 | `crates/ui-x11/Cargo.toml` に `nene-docket-store` を足した（`--offline`） | **鳴らなかった。** `store` はまだ無いので cargo が先に落ち、`cargo run --offline -p xtask` 自体が組めない。xtask のテスト `cnf013_catches_ui_depending_on_adapters` が同じ向きを見ている。実ファイルは store ができてから |
+
+### 11.3 Xvfb での表示と操作（環境検証・単体テストではない・QLT-013）
+
+Xvfb `:97`（1024×700×24・`-noreset`）、WM 無し。`target/debug/nene-docket` を起動し、`xdotool` で駆動し、`import -window root` で撮った。
+窓は 960×600、`Xft.dpi` は無いので 1x。
+
+| 手順 | `xdotool` | 見えたもの | PNG |
+| --- | --- | --- | --- |
+| 起動 | | 検索欄・絞り込み `All`・`Show done`・`Add`・ヘッダと 19 行。日本語の題名が IPA P ゴシックで出る | [01-initial](screenshots/2026-10-21-xvfb-01-initial.png) |
+| 3 行目をクリック | `mousemove 200 150 click 1` | `#3` の行が選択の色 | （04 に同じ） |
+| 検索欄をクリックして `Windows` を打つ | `mousemove 100 22 click 1; type Windows` | 縁が強調の色、文字とカーソル。表が `Windows` を含む行だけになる | [03-search](screenshots/2026-10-21-xvfb-03-search.png) |
+| Shift+Left × 3 | `key shift+Left ×3` | `ows` が選択の色、カーソルは `d` の右 | [04-selection](screenshots/2026-10-21-xvfb-04-selection.png) |
+| Esc → 絞り込みの箱をクリック | `key Escape; mousemove 660 22 click 1` | 候補 4 つが表の上に重なって出る。`All` が光る | [05-filter-open](screenshots/2026-10-21-xvfb-05-filter-open.png) |
+| `Done` をクリック | `mousemove 660 134 click 1` | 箱が `Done`、表が `Done` の行だけ | [06-filter-done](screenshots/2026-10-21-xvfb-06-filter-done.png) |
+| ホイール下 × 5 | `click 5 ×5` | 15 行分送られ、つまみが下がる | [07-scrolled](screenshots/2026-10-21-xvfb-07-scrolled.png) |
+| `Show done` をクリック | `mousemove 850 22 click 1` | チェックが外れ、`Done` の行が消える | [08-hide-done](screenshots/2026-10-21-xvfb-08-hide-done.png) |
+| `xdotool windowclose` | | WM が無いので `WM_DELETE_WINDOW` は来ず、窓が直接消える。`DestroyNotify` で戻るようにして終了コード 0 |
+
+🔴 **見つかった欠陥:** 最初の起動では日本語が全部豆腐だった。cairo の toy text API は fallback しない（ADR 0007）。
+「日」と U+E000 の `text_extents` を比べる判定は `sans-serif` が Inter に解決すると誤判定した。`text_to_glyphs` の字形番号 0 で判定して `IPAPGothic` が選ばれた。
+絞り込みの印 `▾` も DejaVu に無く豆腐だったので、字形でなく矩形 4 段の三角にした（core の `select_box`）。
+最初の試行では xdotool の x 座標（740）が絞り込みの箱（596〜736）と `Show done`（744〜）の隙間に当たり、候補が開かなかった。アプリの不具合ではない。
+
+### 11.4 1 万件の表の 1 フレーム（FR-002 / FR-017）
+
+リポジトリの外の計測用クレート（scratchpad・`std::time` は製品クレートでは禁止）が、`DocketScreen::step` ＋ `Canvas::render`（cairo・960×600・`IPAPGothic`）を 200 フレーム回した。release ビルド。
+
+| 課題の数 | `step` | `render` | 描画命令の数 |
+| --- | --- | --- | --- |
+| 100 | 0.020 ms | 0.872 ms | 124 |
+| 10,000 | 0.167 ms | 0.693 ms | 124 |
+| 100,000 | 1.866 ms | 0.922 ms | 124 |
+
+1 万件で 1 フレーム 0.9 ms。目標 16 ms の 1/17。10 万件でも 2.8 ms。`step` が件数に比例するのは絞り込みが全件を舐めるためで、配置と描画は見えている行だけ（命令の数が変わらない）。
+
+### 11.5 まだ証明していないこと（Issue #5）
+
+- **IME。** コンテナに IM サーバ（fcitx / ibus）が無く、XIM の preedit は測れない。施主の WSLg で測る（todo 第 3 項）
+- WM のある環境での `WM_DELETE_WINDOW`・題・大きさの変更。Xvfb には WM が無い
+- Windows の見え（Windows 版はまだ無い）
+- `Xft.dpi` が 144 以上のときの 2x の見え（`UiScale::Double` は core のテストだけ）
+
+## 12. 再現
 
 ```bash
 make prove

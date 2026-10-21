@@ -228,8 +228,8 @@
 
 | 依存 | 用途 | 根拠 | 状態 |
 | --- | --- | --- | --- |
-| `x11rb`（feature: `randr` / `xfixes` / `shape`） | X プロトコル（純 Rust・libX11 不要）。adapters-x11 と ui-x11 | [ADR 0002](adr/0002-no-toolkit-x11rb-cairo-win32-direct2d.md) | 未導入（最初の縦切りで足す） |
-| `cairo-rs`（default-features 無し） | `ImageSurface` への図形と文字の描画。ui-x11 | 同上 | 未導入 |
+| `x11rb` 0.14（default-features 無し） | X プロトコル（純 Rust・libX11 不要）。ui-x11（adapters-x11 ができたらそこも） | [ADR 0002](adr/0002-no-toolkit-x11rb-cairo-win32-direct2d.md) | Issue #5 で導入。`cargo deny list` の実測で MIT / Apache-2.0 / Apache-2.0 WITH LLVM-exception |
+| `cairo-rs` 0.22（default-features 無し） | `ImageSurface` への図形と文字の描画。ui-x11 | 同上・[ADR 0007](adr/0007-japanese-font-family-chosen-at-startup.md) | Issue #5 で導入 |
 | `windows` / `windows-numerics` | Win32・Direct2D・DirectWrite。adapters-windows と ui-win32 | 同上 | 未導入 |
 | 署名（候補: `ed25519-dalek`） | FR-010 の権限 | 別の ADR | 未決 |
 

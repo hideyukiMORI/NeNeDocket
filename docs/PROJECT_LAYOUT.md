@@ -7,7 +7,7 @@
 Rust では層を**クレート**で表し、各クレートの `[dependencies]` が import 可能なものの全リストになる（ARC-002）。
 承認された向きの表は `xtask` の CNF-013 が持ち、マニフェストと照合する。
 
-🔴 クレートは具体的な責務とソースがある時だけ作る。**空の将来用モジュールは作らない。** Issue #4 の時点で在るのは `crates/core` と `xtask` だけ。
+🔴 クレートは具体的な責務とソースがある時だけ作る。**空の将来用モジュールは作らない。** Issue #5 の時点で在るのは `crates/core`・`crates/application`・`crates/ui-x11`・`crates/app`・`xtask`。adapters・store・Windows の 2 クレートはまだ無い。
 
 ---
 

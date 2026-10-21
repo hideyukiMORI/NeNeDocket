@@ -1,0 +1,16 @@
+[package]
+name = "nene-docket-application"
+description = "NeNe Docket の振る舞いの調整。ポートの宣言・画面の状態の所有者・表示フレームの生成。#![no_std]"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+# 🔴 依存は core だけ（ARC-002 / CNF-013）。
+[dependencies]
+nene-docket-core = { path = "../core" }

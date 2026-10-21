@@ -1,0 +1,19 @@
+[package]
+name = "nene-docket-ui-x11"
+description = "NeNe Docket の画面（Linux）。x11rb で窓を持ち、core の描画命令を cairo の ImageSurface に描いて転送する。状態を描き、意図を発行する"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+publish = false
+
+[lints]
+workspace = true
+
+# 🔴 内部は application と core だけ（ARC-002 / CNF-013）。外部は x11rb と cairo-rs だけ（ADR 0002）。
+[dependencies]
+nene-docket-application = { path = "../application" }
+nene-docket-core = { path = "../core" }
+cairo-rs = { version = "0.22.9", default-features = false }
+x11rb = { version = "0.14.0", default-features = false }

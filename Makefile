@@ -38,9 +38,9 @@ lint:
 
 ## lint-windows — Windows 版のクレートを Windows のターゲットで検査する（ADR 0002）。
 ## 🔴 Linux の make lint では Windows のコードは cfg で外れて見えない。Windows のコードはここでだけ検査される。
-## X11 のクレートは Windows では組み立てない（cairo が無い）ので、できたら WINDOWS_EXCLUDE に足す。
+## X11 のクレートは Windows では組み立てない（cairo が無い）。合成ルートは Windows の画面ができるまで外す。
 WINDOWS_TARGET := x86_64-pc-windows-gnu
-WINDOWS_EXCLUDE :=
+WINDOWS_EXCLUDE := --exclude nene-docket-ui-x11 --exclude nene-docket
 lint-windows:
 	$(CARGO) clippy --workspace $(WINDOWS_EXCLUDE) --all-targets --locked --target $(WINDOWS_TARGET) -- -D warnings
 
@@ -65,8 +65,7 @@ validate-git:
 ## 導入: cargo install cargo-llvm-cov --locked
 coverage:
 	@command -v cargo-llvm-cov >/dev/null || { echo "coverage: cargo-llvm-cov が無い。cargo install cargo-llvm-cov --locked"; exit 2; }
-## application ができたら -p nene-docket-application を足す。
-	$(CARGO) llvm-cov -p nene-docket-core --locked --summary-only --fail-under-regions 90
+	$(CARGO) llvm-cov -p nene-docket-core -p nene-docket-application --locked --summary-only --fail-under-regions 90
 
 ## deny — 依存の許可制（ARC-013）。方針の正本は deny.toml。
 ## 🔴 --deny license-not-encountered を外さないこと。

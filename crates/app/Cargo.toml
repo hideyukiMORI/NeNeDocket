@@ -1,0 +1,26 @@
+[package]
+name = "nene-docket"
+description = "A small, fast issue tracker for Windows and X11. No server, no toolkit"
+version.workspace = true
+edition.workspace = true
+license.workspace = true
+authors.workspace = true
+repository.workspace = true
+# 配布は GitHub Release のバイナリ。crates.io には出さない。
+publish = false
+
+[[bin]]
+name = "nene-docket"
+path = "src/main.rs"
+
+[lints]
+workspace = true
+
+# 🔴 合成ルートだけが全クレートを見る（ARC-002 / ARC-006）。外部 crate はここに書かない。
+#    OS ごとの画面は target の節で選ぶ（ADR 0002）。Windows の画面はまだ無い。
+[dependencies]
+nene-docket-application = { path = "../application" }
+nene-docket-core = { path = "../core" }
+
+[target.'cfg(not(windows))'.dependencies]
+nene-docket-ui-x11 = { path = "../ui-x11" }

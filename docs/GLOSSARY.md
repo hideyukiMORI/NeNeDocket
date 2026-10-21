@@ -7,6 +7,7 @@
 | 語 | 意味 | 型／場所 |
 | --- | --- | --- |
 | 台帳（docket） | 1 つのフォルダ。課題の集合と、それを作ったジャーナルの全部。ローカルでもネットワーク共有でもよい | `Docket`（application が所有）・フォルダ |
+| 画面の状態の所有者 | 検索欄・絞り込み・完了の表示・表の選択とスクロール・判定を 1 つ持ち、1 フレームの入力で次の状態へ置き換える | `DocketScreen`（application）・ADR 0006 |
 | 課題（item） | 台帳の 1 行。題名・本文・状態・担当・期限・ラベル・並び順を持つ | `Item`（core） |
 | 項目（field） | 課題の 1 つの属性。操作は項目単位で勝敗が付く | `Field`（core・閉じた `enum`） |
 | 状態（state） | 課題の進み具合。閉じた集合 | `ItemState`（core） |
@@ -33,11 +34,12 @@
 | アダプタ（adapter） | ポートの実装。時計・乱数・クリップボード・画面・IME を中核へ渡す | adapters-x11 / adapters-windows |
 | ポートの束 | 合成ルートが中核へ渡すポートの組 | `Ports`（application） |
 | 合成ルート | 依存を結ぶ唯一の場所。端末と終了コードを持つ | `crates/app`（`main`） |
-| 表示フレーム | 最新の状態から生成する、描くための値の組 | `DocketFrame`（application） |
+| フレームの入力 | 窓の大きさ・ポインタ・押された鍵・確定前の文字列。UI が OS のイベントから作る | `FrameInput`（application） |
+| 表示フレーム | 最新の状態から生成する、描くための値の組（描画命令の列と倍率） | `DocketFrame`（application） |
 | 部品（widget） | 自前で描く UI の要素。矩形と状態と判定から描画命令を返す純関数 | `button` / `checkbox` / `text_field` / `select_box` / `scroll_bar`（core）・ADR 0006 |
 | 配置（layout） | 段を上から積み列に割る。表は見えている行だけを計算する | `Layout` / `TableLayout`（core） |
 | 判定（interaction） | フレームをまたぐ状態の持ち主。押している部品とフォーカス。部品ごとに矩形と ID を問い合わせ、ホバー・押下・クリック・フォーカスを返す | `Interaction` / `Response`（core）・ADR 0006 |
-| 意図（intent） | 利用者の操作を application に渡す閉じた型 | `DocketIntent`（application） |
+| 意図（intent） | 利用者の操作を application に渡す閉じた型。即時モードではポインタと鍵の入力そのもの（ADR 0006） | `PointerInput` / `KeyIntent`（core）・`FrameInput`（application） |
 | 編集状態 | 入力欄の文字列・カーソル・選択・確定前の文字列。位置は文字の添字 | `TextEdit`（core）。直前の拒否は `EditSession`（application） |
 | 確定前の文字列（preedit） | IME が組み立て中の文字列。確定で操作になる | `Preedit`（core）・`TextEdit::with_preedit` |
 | 描画命令 | core が出し UI が描く列。塗り・縁・文字（カーソルは文字の添字）・切り抜き。色は意味（`Paint`）で渡す | `DrawCommand` / `Paint`（core） |
