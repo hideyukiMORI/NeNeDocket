@@ -28,6 +28,7 @@ use nene_docket_core::layout::Layout;
 use nene_docket_core::op::Op;
 use nene_docket_core::op_kind::OpKind;
 use nene_docket_core::paint::Paint;
+use nene_docket_core::pixel_point::PixelPoint;
 use nene_docket_core::pixel_rect::PixelRect;
 use nene_docket_core::response::Response;
 use nene_docket_core::response_phase::ResponsePhase;
@@ -65,6 +66,7 @@ use crate::notice::Notice;
 use crate::ports::Ports;
 use crate::settings::Settings;
 use crate::settings_failure::SettingsFailure;
+use crate::table_column::TableColumn;
 
 /// 部品の ID。候補は `*_OPTION` に番号を足し、表の行は `ROW` に見えている順の番号を足す。
 const SEARCH: WidgetId = WidgetId::new(1);
@@ -90,6 +92,8 @@ const FILTER_OPTION: WidgetId = WidgetId::new(100);
 const STATE_OPTION: WidgetId = WidgetId::new(200);
 const LANGUAGE_OPTION: WidgetId = WidgetId::new(300);
 const ROW: WidgetId = WidgetId::new(1_000);
+/// 表のヘッダの列の境（ドラッグで幅を変える・FR-012）。左からの番号を足す。
+const COLUMN_GRIP: WidgetId = WidgetId::new(5_000);
 
 /// 1x の寸法（SPECIFICATION 第 2 節・決め打ちしない）。
 const MARGIN_PX: u16 = 8;
@@ -105,11 +109,10 @@ const LANGUAGE_WIDTH_PX: u16 = 110;
 const THEME_WIDTH_PX: u16 = 130;
 const BUTTON_WIDTH_PX: u16 = 80;
 const SCROLL_WIDTH_PX: u16 = 12;
-const NUMBER_WIDTH_PX: u16 = 72;
+/// 表のヘッダの列の境の、つまめる幅。
+const GRIP_PX: u16 = 6;
+/// 編集行の状態の箱。
 const STATE_WIDTH_PX: u16 = 110;
-const ASSIGNEE_WIDTH_PX: u16 = 90;
-const DUE_WIDTH_PX: u16 = 90;
-const LABELS_WIDTH_PX: u16 = 120;
 /// 編集行の担当と期限の欄。
 const EDIT_FIELD_WIDTH_PX: u16 = 100;
 /// 編集行のラベルの欄。
@@ -144,6 +147,8 @@ pub struct DocketScreen {
     base: Option<Item>,
     /// 履歴の行の上にポインタがあるとき、その時点の課題（表の行と本文の段に再現する・FR-006）。
     preview: Option<Item>,
+    /// 列の境をドラッグ中か。離したときに設定を書く。
+    resizing: Option<TableColumn>,
     bad_due: bool,
     /// 他人が変えた後に上書きした欄（FR-008）。別の行を選ぶまで示す。
     overwrote: Option<EditSlot>,
@@ -198,6 +203,7 @@ impl DocketScreen {
             members: MembersPane::hidden(environment.scale()),
             base: None,
             preview: None,
+            resizing: None,
             bad_due: false,
             overwrote: None,
             state: SelectState::closed(ItemState::ALL.len(), 0),
@@ -720,17 +726,66 @@ impl DocketScreen {
     }
 
     fn table_layout(&self, remaining: PixelRect, visible: usize) -> TableLayout {
-        let width = remaining.width().saturating_sub(self.px(SCROLL_WIDTH_PX));
-        let bounds = PixelRect::new(remaining.x(), remaining.y(), width, remaining.height());
+        let inner = remaining.width().saturating_sub(self.px(SCROLL_WIDTH_PX));
+        let bounds = PixelRect::new(remaining.x(), remaining.y(), inner, remaining.height());
         let rows = u32::try_from(visible).unwrap_or(u32::MAX);
-        TableLayout::new(bounds, self.px(ROW_PX), self.px(ROW_PX), rows).with_columns(alloc::vec![
-            ColumnWidth::Fixed(self.px(NUMBER_WIDTH_PX)),
-            ColumnWidth::Fill,
-            ColumnWidth::Fixed(self.px(STATE_WIDTH_PX)),
-            ColumnWidth::Fixed(self.px(ASSIGNEE_WIDTH_PX)),
-            ColumnWidth::Fixed(self.px(DUE_WIDTH_PX)),
-            ColumnWidth::Fixed(self.px(LABELS_WIDTH_PX)),
-        ])
+        let widths = self.settings.columns();
+        let columns = TableColumn::ALL
+            .into_iter()
+            .map(|column| {
+                widths.get(column).map_or(ColumnWidth::Fill, |width| {
+                    ColumnWidth::Fixed(self.px(width))
+                })
+            })
+            .collect();
+        TableLayout::new(bounds, self.px(ROW_PX), self.px(ROW_PX), rows).with_columns(columns)
+    }
+
+    /// ヘッダの列の境をつまんで幅を変える（FR-012）。境の左の列、題名の右の境なら右の列。離したら設定に書く。
+    fn probe_column_grips(&mut self, header: PixelRect, cells: &[PixelRect]) {
+        let grip = self.px(GRIP_PX);
+        let mut held = None;
+        for (index, (left, right)) in cells.iter().zip(cells.iter().skip(1)).enumerate() {
+            let rect = PixelRect::new(
+                left.right().saturating_sub(grip / 2),
+                header.y(),
+                grip,
+                header.height(),
+            );
+            let response = self.interaction.probe(
+                COLUMN_GRIP.indexed(u32::try_from(index).unwrap_or(0)),
+                rect,
+                false,
+            );
+            if response.phase() != ResponsePhase::Held {
+                continue;
+            }
+            let Some(x) = self.interaction.pointer().position().map(PixelPoint::x) else {
+                continue;
+            };
+            // 境を動かさなければ幅はそのまま: 左の列は x - 左端 + 1、右の列は 右端 - x - 隙間。
+            let gap = right.x().saturating_sub(left.right()).saturating_sub(1);
+            let (column, physical) = match TableColumn::ALL.get(index).copied() {
+                Some(column) if column.is_resizable() => {
+                    (column, x.saturating_sub(left.x()).saturating_add(1))
+                }
+                _ => (
+                    TableColumn::ALL
+                        .get(index.saturating_add(1))
+                        .copied()
+                        .unwrap_or(TableColumn::Labels),
+                    right.right().saturating_sub(x).saturating_sub(gap),
+                ),
+            };
+            let logical = physical / self.scale.factor().max(1);
+            let widths = self.settings.columns().with(column, logical);
+            self.settings = self.settings.clone().with_columns(widths);
+            held = Some(column);
+        }
+        if held.is_none() && self.resizing.is_some() {
+            self.save_settings();
+        }
+        self.resizing = held;
     }
 
     const fn track_of(remaining: PixelRect, width: u16) -> PixelRect {
@@ -1311,7 +1366,9 @@ impl DocketScreen {
             Word::FieldName(Field::Labels),
         ]
         .map(|word| self.word(word));
-        for (cell, heading) in table.cells(header).into_iter().zip(headings) {
+        let cells = table.cells(header);
+        self.probe_column_grips(header, &cells);
+        for (cell, heading) in cells.into_iter().zip(headings) {
             commands.push(Self::cell_text(
                 cell,
                 heading,
@@ -2555,6 +2612,47 @@ mod tests {
             screen.notices(),
             alloc::vec![Notice::Journal(JournalFailure::PermissionsUnwritable)]
         );
+    }
+
+    #[test]
+    fn dragging_a_header_grip_resizes_the_column_and_saves_the_settings() {
+        let (mut screen, spy) = screen(3);
+        // 番号の列は 8..79 で、境は x=79 の辺り（ヘッダ y = 80..108）。
+        let header_y = 94;
+        screen.step(&pointer(79, header_y, ButtonPhase::Pressed));
+        screen.step(&pointer(120, header_y, ButtonPhase::Held));
+        assert_eq!(
+            screen.settings().columns().get(TableColumn::Number),
+            Some(113)
+        );
+        assert!(spy.saved.borrow().is_empty());
+        screen.step(&pointer(120, header_y, ButtonPhase::Released));
+        idle(&mut screen);
+        assert_eq!(spy.saved.borrow().len(), 1);
+        assert_eq!(
+            spy.saved.borrow()[0].columns().get(TableColumn::Number),
+            Some(113)
+        );
+        // 題名の右の境は右の列（状態）の幅を変える。列の間に隙間は無く、右の固定の列は 1039 から 120+90+90+110 なので題名の右端は 629。
+        screen.step(&pointer(629, header_y, ButtonPhase::Pressed));
+        assert_eq!(
+            screen.settings().columns().get(TableColumn::State),
+            Some(110)
+        );
+        screen.step(&pointer(599, header_y, ButtonPhase::Held));
+        assert_eq!(
+            screen.settings().columns().get(TableColumn::State),
+            Some(140)
+        );
+        // 幅は 40 未満にならない。
+        screen.step(&pointer(1040, header_y, ButtonPhase::Held));
+        assert_eq!(
+            screen.settings().columns().get(TableColumn::State),
+            Some(40)
+        );
+        screen.step(&pointer(1040, header_y, ButtonPhase::Released));
+        idle(&mut screen);
+        assert_eq!(spy.saved.borrow().len(), 2);
     }
 
     #[test]

@@ -1,6 +1,8 @@
-//! 設定ファイルの形（FR-012）。版 2: `version = 2`・`refresh_seconds = <秒>`・`language = system|<tag>`・`theme = system|<name>`・`recent = <フォルダ>`（新しいものが先、1 行に 1 つ）。
+//! 設定ファイルの形（FR-012）。版 3: `version = 3`・`refresh_seconds = <秒>`・`language = system|<tag>`・`theme = system|<name>`・
+//! `columns = <番号>,<状態>,<担当>,<期限>,<ラベル>`（論理画素）・`recent = <フォルダ>`（新しいものが先、1 行に 1 つ）。
 //!
-//! 版 1（`language` と `theme` が無い）も読める。版 1 を読んだら言語と配色は `system` で補い、書くのは版 2 だけ（ARC-009 の移行）。
+//! 版 2（`columns` が無い）と版 1（`language` と `theme` も無い）も読める。無い鍵は既定で補い、書くのは版 3 だけ（ARC-009 の移行）。
+//! 前の版にその版に無い鍵があれば知らない鍵として拒む。
 //! 形はここ（純関数）、読み書きはアダプタ。知らない版・知らない鍵・読めない値は `None` で、黙って既定値へ落とさない（FR-014）。
 
 use alloc::string::String;
@@ -9,31 +11,32 @@ use alloc::vec::Vec;
 use nene_docket_core::language_choice::LanguageChoice;
 use nene_docket_core::theme_choice::ThemeChoice;
 
+use crate::column_widths::ColumnWidths;
 use crate::settings::Settings;
 
 /// いま書く版。
-const VERSION: &str = "2";
-/// 読めるだけの前の版。
-const PREVIOUS_VERSION: &str = "1";
+const VERSION: &str = "3";
 
 /// 読み取り中の値。
 struct Reading {
-    /// 版 2 なら真、版 1 なら偽。
-    current_version: Option<bool>,
+    /// 版の番号（3・2・1）。
+    version: Option<u8>,
     refresh_seconds: Option<u64>,
     language: Option<LanguageChoice>,
     theme: Option<ThemeChoice>,
+    columns: Option<ColumnWidths>,
     recent: Vec<String>,
 }
 
-/// 文字列から設定を読む（版 2 か版 1）。
+/// 文字列から設定を読む（版 3・2・1）。
 #[must_use]
 pub fn parse(text: &str) -> Option<Settings> {
     let mut reading = Reading {
-        current_version: None,
+        version: None,
         refresh_seconds: None,
         language: None,
         theme: None,
+        columns: None,
         recent: Vec::new(),
     };
     for line in text.lines() {
@@ -48,15 +51,17 @@ impl Reading {
     fn take(&mut self, key: &str, value: &str) -> Option<()> {
         match key {
             "version" => {
-                self.current_version = Some(match value {
-                    VERSION => true,
-                    PREVIOUS_VERSION => false,
+                self.version = Some(match value {
+                    VERSION => 3,
+                    "2" => 2,
+                    "1" => 1,
                     _ => return None,
                 });
             }
             "refresh_seconds" => self.refresh_seconds = Some(value.parse::<u64>().ok()?),
             "language" => self.language = Some(LanguageChoice::from_keyword(value)?),
             "theme" => self.theme = Some(ThemeChoice::from_keyword(value)?),
+            "columns" => self.columns = Some(ColumnWidths::parse(value)?),
             "recent" if value.is_empty() => return None,
             "recent" => self.recent.push(String::from(value)),
             _ => return None,
@@ -64,27 +69,38 @@ impl Reading {
         Some(())
     }
 
-    /// 版ごとの必須の鍵が揃っていれば設定に。版 1 に言語や配色があれば知らない鍵として拒む。
+    /// 版ごとの必須の鍵が揃っていれば設定に。前の版にその版に無い鍵があれば知らない鍵として拒む。
     fn into_settings(self) -> Option<Settings> {
-        let choices = if self.current_version? {
-            (self.language?, self.theme?)
-        } else if self.language.is_some() || self.theme.is_some() {
+        let version = self.version?;
+        let choices = match version {
+            1 => {
+                if self.language.is_some() || self.theme.is_some() {
+                    return None;
+                }
+                (LanguageChoice::System, ThemeChoice::System)
+            }
+            _ => (self.language?, self.theme?),
+        };
+        let columns = if version == 3 {
+            self.columns?
+        } else if self.columns.is_some() {
             return None;
         } else {
-            (LanguageChoice::System, ThemeChoice::System)
+            ColumnWidths::initial()
         };
-        Some(Settings::new(self.recent, self.refresh_seconds?, choices))
+        Some(Settings::new(self.recent, self.refresh_seconds?, choices).with_columns(columns))
     }
 }
 
-/// 設定を文字列にする（版 2）。`parse` の逆。
+/// 設定を文字列にする（版 3）。`parse` の逆。
 #[must_use]
 pub fn encode(settings: &Settings) -> String {
     let mut text = alloc::format!(
-        "version = {VERSION}\nrefresh_seconds = {}\nlanguage = {}\ntheme = {}\n",
+        "version = {VERSION}\nrefresh_seconds = {}\nlanguage = {}\ntheme = {}\ncolumns = {}\n",
         settings.refresh_seconds(),
         settings.language().keyword(),
-        settings.theme().keyword()
+        settings.theme().keyword(),
+        settings.columns().text()
     );
     for folder in settings.recent() {
         text.push_str("recent = ");
@@ -113,12 +129,34 @@ mod tests {
         let text = encode(&settings);
         assert_eq!(
             text,
-            "version = 2\nrefresh_seconds = 5\nlanguage = ja\ntheme = dracula\nrecent = /srv/team\nrecent = ./docket\n"
+            "version = 3\nrefresh_seconds = 5\nlanguage = ja\ntheme = dracula\ncolumns = 72,110,90,90,120\nrecent = /srv/team\nrecent = ./docket\n"
         );
         assert_eq!(parse(&text), Some(settings));
         assert_eq!(
-            parse("version = 2\nrefresh_seconds = 3\nlanguage = system\ntheme = system\n"),
+            parse(
+                "version = 3\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\n"
+            ),
             Some(Settings::initial())
+        );
+        assert_eq!(
+            parse("version = 3\nrefresh_seconds = 3\nlanguage = system\ntheme = system\n"),
+            None
+        );
+    }
+
+    #[test]
+    fn version_two_is_read_with_default_columns_but_may_not_carry_them() {
+        assert_eq!(
+            parse(
+                "version = 2\nrefresh_seconds = 3\nlanguage = system\ntheme = system\nrecent = /a\n"
+            ),
+            Some(Settings::initial().opened("/a"))
+        );
+        assert_eq!(
+            parse(
+                "version = 2\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\n"
+            ),
+            None
         );
     }
 
@@ -141,7 +179,7 @@ mod tests {
     #[test]
     fn a_different_version_a_missing_key_or_an_unknown_key_is_refused() {
         for text in [
-            "version = 3\nrefresh_seconds = 3\nlanguage = system\ntheme = system\n",
+            "version = 4\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\n",
             "version = 2\nrefresh_seconds = 3\ntheme = system\n",
             "version = 2\nrefresh_seconds = 3\nlanguage = system\n",
             "version = 2\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolor = red\n",
@@ -158,6 +196,7 @@ mod tests {
             "version = 2\nrefresh_seconds = soon\nlanguage = system\ntheme = system\n",
             "version = 2\nrefresh_seconds = 3\nlanguage = fr\ntheme = system\n",
             "version = 2\nrefresh_seconds = 3\nlanguage = system\ntheme = no-such\n",
+            "version = 3\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 1,2\n",
             "version = 2\nrefresh_seconds = 3\nlanguage = system\ntheme = system\nrecent =\n",
         ] {
             assert_eq!(parse(text), None, "{text}");
