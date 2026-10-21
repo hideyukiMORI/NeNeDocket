@@ -36,7 +36,7 @@
 ## 次に行うこと
 
 1. **ruleset（main の保護・squash-only・`check` を必須）を施主が GitHub で設定する。** 設定したら gate-proofs に記録し、GIT-002 / GIT-004 を active に。PR は harness の枝 `claude/cloud-session-qus6l5` から squash で merge している（件名は PR のタイトル・GIT-003 の形）
-2. 鍵の失効・交代の手続き（ADR 0010 の残る穴）。グループを画面から。段の高さの調整
+2. **施主が ADR 0013（鍵の交代・2 台目）を受理・却下する。** 受理なら `succeeds` と `--owner` の Issue。グループを画面から。段の高さの調整
 3. **IME の実測は施主の WSLg で**: fcitx5 か ibus を入れ、`XMODIFIERS=@im=fcitx` で XIM の preedit が x11rb の窓に届く経路（XIM プロトコルの自前実装か、IM サーバの D-Bus か）を決める ADR
 4. スナップショットの ADR は、1 年分の併合が 1 秒を超えてから（いまは 0.7 秒）
 5. 環境の setup script（環境の設定）に DEVELOPMENT_WORKFLOW 第 9 節の行を置く。リポジトリ側のフック（`.claude/hooks/session-start.sh`）には `mingw-w64` を足した（Issue #24）
@@ -45,7 +45,7 @@
 ## 残る穴
 
 - 本文の同時編集は項目単位で勝敗が付く（ADR 0004）。文字単位の併合はしない
-- 同じアカウントを 2 台で同時に開くことは守らない（機械 ID は別 Issue）
+- 同じアカウントを 2 台で同時に開くことは守らない（`KeyMismatch` で示すだけ）。鍵の交代と 2 台目の扱いは [ADR 0013](../adr/0013-key-rotation-and-one-key-per-machine.md) を提案（Issue #45・施主の判断待ち）
 - 権限を有効にしなければ、なりすましは防げない（ファイルを直接編集すれば）。有効にすると、それより前の版 1 の履歴は捨てられて数に出る（ADR 0010）。秘密鍵は設定フォルダの平文
 - SMB の上で本当に壊れないかは、施主の共有で確かめるまで「動く」と書かない（QLT-013）
 - アクセシビリティは無い（ADR 0002）
