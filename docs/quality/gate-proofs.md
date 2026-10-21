@@ -721,7 +721,20 @@ application に設定の版 2・`SettingsPort`・`Environment` の言語と明�
 
 coverage は回していない（application の 2 ファイルの小さな差分で、第 29 節の 98.74% から下がる根拠が無い）。
 
-## 31. 再現
+## 31. Issue #48 — X11 で OS の明暗を GTK の慣習から読む（2026-10-21）
+
+同じコンテナ。adapters-x11 の `appearance::read` は `GTK_THEME` が `:dark` / `:light` で終わればそれ、無ければ `$XDG_CONFIG_HOME/gtk-3.0/settings.ini`（無ければ `~/.config/gtk-3.0/settings.ini`）の `gtk-application-prefer-dark-theme`（`1` / `true` / `0` / `false`）、どちらも無ければ `None`（今まで通りライト）。判定は純関数 `from_gtk_theme` / `from_settings_ini`。`config_directory::base` を共通の根にした。GNOME の `color-scheme`（dconf）は読まない。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `doc-check` | 差分なし・0 件・警告なし |
+| `make test` | 339 件 |
+| `make conformance` | 違反なし（220 ファイル・`env` / `fs` は adapters-x11 の中） |
+| Xvfb（`:88`） | `GTK_THEME=Adwaita:dark` の alice と、`settings.ini` に `gtk-application-prefer-dark-theme=1` を置いた bob が、どちらも既定のダーク（ubuntu-aubergine）で開く（[01-dark-both](screenshots/2026-10-21-dark-01-both.png)） |
+
+Windows の lint と coverage は回していない（adapters-x11 だけの差分）。
+
+## 32. 再現
 
 ```bash
 make prove
