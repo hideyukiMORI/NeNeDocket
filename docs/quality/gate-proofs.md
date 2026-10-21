@@ -1012,7 +1012,19 @@ Xvfb（1120×600・`LANG=ja_JP.UTF-8`・送り手は scratchpad の `clip-own`: 
 
 🔴 **正直に:** Linux ではロックが起きないので、再試行は偽の失敗でしか試していない。施主の Windows での 3 つの手順（2 プロセス・Explorer のプレビューを出したまま権限を変える・Defender を有効にして添付）は**未実施**（設計文書の第 4 節）。結果はこの節に足す。Rust の std の既定の共有モード（`READ | WRITE | DELETE`）は文書から取った値で、実機で `handle.exe` 等で見てはいない。
 
-## 48. 再現
+## 48. Issue #81 — OS のフリーズ・停電・強制終了・スリープ復帰: 止まり方の表と戻ったときの約束（2026-10-21）
+
+同じコンテナ。表は [docs/design/2026-10-21-interruptions.md](../design/2026-10-21-interruptions.md)（8 行・各行にテストか実機の手順）。store に: 追記に失敗した操作の列（`FileJournal::unwritten`・次の追記・同期で古い順に書き直す・残っている間は `checkpoint` を `StoreFailure::Unwritten` で拒む）、自分のジャーナルの開き直し（`OwnJournal::reopen`・追記の失敗で 1 度だけ）、`leftovers`（自分の分と持ち主の分の `.tmp` を次に開いたときに捨てる）、`key_file::read_all` は `.tmp` を読まない。テストの失敗の仕込みは `OwnJournal::fail_next`（`cfg(test)`・`StorageFull`）。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `doc-check` | 差分なし・0 件・警告なし |
+| `make test` | 440 件（store 75: 失敗を 4 回仕込んで 2 つの操作が順に残る・`checkpoint` が拒む / 残骸は自分の分だけ消え他人と添付の分は残る / 2 世代の状態と索引の組は捨てて全部読む / 消えたファイルの後の開き直し / `.tmp` の鍵は飛ばす） |
+| `make conformance` | 違反なし |
+
+🔴 **正直に:** 空き容量ゼロは仕込んだ失敗でしか試していない。施主の実機での 3 手順（共有を切って戻す・スリープして戻す・編集中に電源を切る）は未実施。添付の `.tmp` は消さない（誰のものか分からず、時刻を使わない）と決めた — Issue の「掃除する」から変えた。
+
+## 49. 再現
 
 ```bash
 make prove

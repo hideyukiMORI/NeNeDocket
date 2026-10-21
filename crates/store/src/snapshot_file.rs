@@ -130,7 +130,7 @@ impl StoredSnapshot {
     }
 }
 
-fn paths(root: &Path, account: AccountId) -> (PathBuf, PathBuf) {
+pub(crate) fn paths(root: &Path, account: AccountId) -> (PathBuf, PathBuf) {
     let directory = root.join(DIRECTORY);
     (
         directory.join(format!("{}.v{VERSION}.txt", account.hex())),

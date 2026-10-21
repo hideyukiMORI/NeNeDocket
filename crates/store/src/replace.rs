@@ -20,7 +20,7 @@ pub(crate) fn replace_file(path: &Path, bytes: &[u8]) -> io::Result<()> {
 }
 
 /// `<path>.tmp`。
-fn temporary_name(path: &Path) -> PathBuf {
+pub(crate) fn temporary_name(path: &Path) -> PathBuf {
     let mut name: OsString = path.as_os_str().to_owned();
     name.push(".tmp");
     PathBuf::from(name)

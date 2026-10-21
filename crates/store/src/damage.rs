@@ -274,6 +274,41 @@ mod tests {
     }
 
     #[test]
+    fn a_snapshot_pair_from_two_generations_is_discarded_and_the_ledger_is_read_in_full() {
+        let root = temp("half-rename");
+        docket_with_two_writers(&root);
+        let me = account(ME, 1);
+        let state = root.join("snapshot").join(format!("{}.v1.txt", ME.hex()));
+        let index = root.join("snapshot").join(format!("{}.v1.idx", ME.hex()));
+        // 1 世代目を書き、索引を取っておく。
+        let mut mine = FileJournal::open(&root, "Team", &me).unwrap();
+        let (first, _) = ledger_opening::open(&mut mine, me.clone());
+        mine.checkpoint(&first.snapshot()).unwrap();
+        mine.finish_checkpoint().unwrap();
+        let old_index = fs::read(&index).unwrap();
+        // 操作を 1 つ足し、開き直して（1 世代目から戻り、新しい行を読む）2 世代目を書く。
+        mine.append(&create(7, ME)).unwrap();
+        mine.sync().unwrap();
+        drop(mine);
+        let mut next = FileJournal::open(&root, "Team", &me).unwrap();
+        assert!(next.is_resumed());
+        let (second, _) = ledger_opening::open(&mut next, me.clone());
+        next.checkpoint(&second.snapshot()).unwrap();
+        next.finish_checkpoint().unwrap();
+        drop(next);
+        // 状態は新しく、索引だけ古い（rename の途中で落ちた形）→ 検査和が合わず捨て、全部読んで同じ台帳。
+        fs::write(&index, old_index).unwrap();
+        let mut damaged = FileJournal::open(&root, "Team", &me).unwrap();
+        assert!(!damaged.is_resumed());
+        let (ledger, failure) = ledger_opening::open(&mut damaged, me);
+        assert!(failure.is_none());
+        assert_eq!(ledger.docket(), second.docket());
+        assert_ne!(second.docket(), first.docket());
+        assert!(!state.with_extension("txt.tmp").exists());
+        let _cleaned = fs::remove_dir_all(&root);
+    }
+
+    #[test]
     fn damaged_docket_keys_and_snapshot_files_fail_loudly_or_are_discarded() {
         let root = temp("files");
         docket_with_two_writers(&root);
