@@ -1,6 +1,6 @@
 # いまのタスク — NeNe Docket
 
-> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #35 まで）。
+> GitHub Issue と PR が進行状態の正本。この文書はその要約（2026-10-21 時点・Issue #36 まで）。
 
 ## 状態
 
@@ -21,7 +21,7 @@
 | 設定ファイル（FR-012）: 最近の台帳と読み直しの間隔 | ✅ Issue #16。引数なしで最近の台帳を開く。読めない設定は起動を止めて示す（gate-proofs 第 16 節）。列の幅と順・見えはまだ |
 | ラベルを画面から変える（FR-001） | ✅ Issue #20。`,` 区切り。検索はラベルにも効く（gate-proofs 第 18 節） |
 | 表示言語 6 つと配色 125（FR-019 / FR-012 の見え） | ✅ Issue #27・[ADR 0011](../adr/0011-ui-language-is-a-versioned-setting.md) / [ADR 0012](../adr/0012-theme-model-and-builtin-colorschemes.md)。設定は版 2。Xvfb で日本語・简体中文・한국어・Español と dracula / solarized-light（gate-proofs 第 21 節）。翻訳と配色の見た目は施主の目を通していない |
-| 本文（複数行の欄・FR-001） | ✅ Issue #31。core の `text_area`、道具の段の「本文」、表の下の段（履歴と同時なら 1/4 ずつ）。検索は本文にも。Xvfb で 2 プロセス（gate-proofs 第 23 節） |
+| 本文（複数行の欄・FR-001） | ✅ Issue #31。core の `text_area`、道具の段の「本文」、表の下の段（履歴と同時なら 1/4 ずつ）。検索は本文にも。Xvfb で 2 プロセス（gate-proofs 第 23 節）。スクロールバーは Issue #36（第 26 節） |
 | 参加者の段と画面からの権限（FR-009 / FR-010） | ✅ Issue #33。名前・ID・役。持ち主は「権限」のチェックと行の押下で編集者を切り替える。グループはコマンドラインだけ（gate-proofs 第 24 節） |
 | 履歴から選び直す・上書きの通知（FR-008） | ✅ Issue #35。履歴の `Set` の行を押すとその値を新しい `Set` で追記。欄を読み込んだ後に他人が変えた値を上書きすると通知（gate-proofs 第 25 節） |
 | 課題の履歴の段（FR-006） | ✅ Issue #18。いつ（UTC）・誰が（ID の先頭 4 桁）・何を・何から何へ。Undo の行は控えめな色（gate-proofs 第 17 節） |
@@ -35,7 +35,7 @@
 ## 次に行うこと
 
 1. **PR #3（Issue #1 / #2 / #4）を merge する。** 枝は harness の `claude/cloud-session-qus6l5` で、CI の `make ci` は GIT-002 で落ちている（gate-proofs 第 10 節）。ruleset が無いので merge はできる。施主が squash の件名を PR のタイトル（GIT-003 の形）で付けて merge する。ruleset（main の保護・squash-only・`check` を必須）を設定したら gate-proofs に記録し、GIT-002 / GIT-004 を active に
-2. 鍵の失効・交代の手続き（ADR 0010 の残る穴）。グループを画面から。本文と参加者の段のスクロールバーと高さの調整
+2. 鍵の失効・交代の手続き（ADR 0010 の残る穴）。グループを画面から。段の高さの調整。過去の時点の再現（FR-006 後半）
 3. **IME の実測は施主の WSLg で**: fcitx5 か ibus を入れ、`XMODIFIERS=@im=fcitx` で XIM の preedit が x11rb の窓に届く経路（XIM プロトコルの自前実装か、IM サーバの D-Bus か）を決める ADR
 4. スナップショットの ADR は、1 年分の併合が 1 秒を超えてから（いまは 0.7 秒）
 5. 環境の setup script（環境の設定）に DEVELOPMENT_WORKFLOW 第 9 節の行を置く。リポジトリ側のフック（`.claude/hooks/session-start.sh`）には `mingw-w64` を足した（Issue #24）

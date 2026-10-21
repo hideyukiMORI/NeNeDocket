@@ -85,7 +85,7 @@ const THEME: WidgetId = WidgetId::new(15);
 /// 16 は本文の段の欄（`body_pane`）。
 const BODY_TOGGLE: WidgetId = WidgetId::new(17);
 const MEMBERS_TOGGLE: WidgetId = WidgetId::new(18);
-/// 19 は参加者の段の「権限」のチェック（`members_pane`）。
+/// 19 は参加者の段の「権限」のチェック、21 はそのスクロールバー（`members_pane`）。20 は本文のスクロールバー（`body_pane`）。
 const FILTER_OPTION: WidgetId = WidgetId::new(100);
 const STATE_OPTION: WidgetId = WidgetId::new(200);
 const LANGUAGE_OPTION: WidgetId = WidgetId::new(300);
@@ -603,9 +603,12 @@ impl DocketScreen {
         let Some(area) = area else {
             return;
         };
-        let line_px = self.px(BODY_LINE_PX);
-        self.body
-            .probe(&mut self.interaction, (area, line_px), commands);
+        let (line_px, scroll_width) = (self.px(BODY_LINE_PX), self.px(SCROLL_WIDTH_PX));
+        self.body.probe(
+            &mut self.interaction,
+            (area, line_px, scroll_width),
+            commands,
+        );
     }
 
     fn probe_history(&mut self, area: Option<PixelRect>, commands: &mut Vec<DrawCommand>) {
