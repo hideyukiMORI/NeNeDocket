@@ -79,7 +79,8 @@ impl SelectState {
             | KeyIntent::Backspace
             | KeyIntent::Delete
             | KeyIntent::SelectAll
-            | KeyIntent::Tab => self,
+            | KeyIntent::Tab
+            | KeyIntent::BackTab => self,
         }
     }
 

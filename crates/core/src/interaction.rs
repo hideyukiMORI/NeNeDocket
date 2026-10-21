@@ -120,6 +120,12 @@ impl Interaction {
         self.held
     }
 
+    /// このフレームの入力（`begin` に渡したもの）。
+    #[must_use]
+    pub const fn pointer(&self) -> PointerInput {
+        self.pointer
+    }
+
     fn index_of(&self, id: WidgetId) -> Option<usize> {
         self.order.iter().position(|&candidate| candidate == id)
     }

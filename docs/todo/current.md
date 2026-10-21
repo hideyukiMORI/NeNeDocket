@@ -12,8 +12,9 @@
 | 機械（Cargo / lint の表 / clippy.toml / deny.toml / xtask / Makefile / CI / フック） | ✅ Issue #2・[ADR 0005](../adr/0005-rust-foundation-and-measured-limits.md)。nene-ruler から移植 |
 | ゲート発火の証明 `make prove`（26 件）と `cargo test -p xtask`（80 件） | ✅ Issue #2・[gate-proofs](../quality/gate-proofs.md) 第 4〜8 節。測れた規則は active |
 | 部品の核（配置・判定・フォーカス・編集状態・描画命令）を `crates/core` に | ✅ Issue #4・[ADR 0006](../adr/0006-widget-kernel-in-core.md)。テスト 49 件・region 99.71%。ARC-003 と QLT-009 を active に |
-| ui-x11 / adapters-x11 / store / application / app | ❌ 無い |
-| IME の方式（FR-015） | ❌ ADR 未。X11 の窓を出して XIM を実測してから決める |
+| X11 の窓（application / ui-x11 / app・x11rb ＋ cairo-rs） | ✅ Issue #5・[ADR 0007](../adr/0007-japanese-font-family-chosen-at-startup.md)。Xvfb で表・検索・絞り込み・チェック・追加・スクロールを xdotool で駆動（gate-proofs 第 11 節）。1 万件の 1 フレーム 0.9 ms |
+| adapters-x11 / store / adapters-windows / ui-win32 | ❌ 無い |
+| IME の方式（FR-015） | ❌ ADR 未。コンテナには IM サーバ（fcitx / ibus）が無く XIM を測れない。施主の WSLg で測る |
 | 署名と鍵の方式（FR-010） | ❌ ADR 未。権限の Issue で決める |
 | CI の `check`（`make ci`）と commit-msg フック | ✅ PR #3 で CI が動き、枝名で落ちた（gate-proofs 第 10 節）。QLT-005・GIT-001・GIT-003 を active に |
 | ruleset（main の保護・squash-only） | 未設定。施主が GitHub で設定したら gate-proofs に記録する |
@@ -21,8 +22,8 @@
 ## 次に行うこと
 
 1. **PR #3（Issue #1 / #2 / #4）を merge する。** 枝は harness の `claude/cloud-session-qus6l5` で、CI の `make ci` は GIT-002 で落ちている（gate-proofs 第 10 節）。ruleset が無いので merge はできる。施主が squash の件名を PR のタイトル（GIT-003 の形）で付けて merge する。ruleset（main の保護・squash-only・`check` を必須）を設定したら gate-proofs に記録し、GIT-002 / GIT-004 を active に
-2. **X11 の窓**（ui-x11 ＋ adapters-x11 ＋ app）: x11rb ＋ cairo で窓を出し、core の `DrawCommand` を描き、表 1 枚と入力欄を動かす。Xvfb で撮る。XIM を実測して IME の ADR。依存を足す ADR（x11rb / cairo-rs）と deny.toml の実測
-3. core の `Item` / `Op` / `merge`（ADR 0004）と、同じ操作の集合を別の順で読むテスト。store のジャーナル版 1
+2. core の `Item` / `Op` / `merge`（ADR 0004）と、同じ操作の集合を別の順で読むテスト。store のジャーナル版 1（ファイルを読める 3 区画の 1 つ）
+3. **IME の実測は施主の WSLg で**: fcitx5 か ibus を入れ、`XMODIFIERS=@im=fcitx` で XIM の preedit が x11rb の窓に届く経路（XIM プロトコルの自前実装か、IM サーバの D-Bus か）を決める ADR
 4. 署名の ADR と権限（FR-010）。スナップショットの ADR（FR-017 を実測してから）
 5. 環境の setup script に `cargo-llvm-cov`・`xdotool`・`mingw-w64` を足す（DEVELOPMENT_WORKFLOW 第 9 節）
 
@@ -34,4 +35,5 @@
 - SMB の上で本当に壊れないかは、施主の共有で確かめるまで「動く」と書かない（QLT-013）
 - アクセシビリティは無い（ADR 0002）
 - CNF-014（Windows の 2 クレートの lint の表）は実ファイルでまだ発火させていない。クレートが生まれてから
-- `make lint-windows` は `xtask` と `core` しか見ない。Windows のコードが生まれるまで
+- `make lint-windows` は `xtask`・`core`・`application` を見る。`ui-x11` と `app` は Windows では組めないので外している
+- `xdotool windowclose` は WM の無い Xvfb では `WM_DELETE_WINDOW` を送らず窓を消す。閉じる要求の経路は WSLg で確かめる

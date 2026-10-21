@@ -29,7 +29,7 @@ Claude Code / AI エージェントがこのリポジトリで作業するため
 2. **ゲートを弱めて通さない。** 検査が落ちたらコードを直す。閾値・`forbid` の降格・免除・`deny.toml` を触るのは ADR 相当の判断（QLT-010）
 3. **`planned` を `active` と書かない。** 未実装の強制を実装済みに見せるのは、この規約体系で唯一「壊す」行為（[ADR 0001](docs/adr/0001-strictness-is-mechanically-enforced.md)）
 
-🔴 CI の実行証拠が要る規則（GIT / QLT-005）は planned のまま。UI・store・application のクレートはまだ無い。
+🔴 ruleset が要る規則（GIT-002 / GIT-004）は planned のまま。store・adapters・Windows の 2 クレートはまだ無い。
 
 ---
 
@@ -150,14 +150,15 @@ Issue / 規則 ID:
 現在のタスクは [docs/todo/current.md](docs/todo/current.md)。GitHub Issue が正で、そこは要約。
 
 2026-10-21: Issue #1 で規範文書と ADR 0001〜0004 の初版を置いた。Issue #2 で nene-ruler の機械（lint の表・clippy.toml・deny.toml・xtask・Makefile・CI・フック）を移植し、`make prove` 26 件・`cargo test -p xtask` 80 件・実ファイルの発火を記録して、測れた規則を active にした（ADR 0005）。
-Issue #4 で部品の核（即時モード・ADR 0006）を `crates/core` に置き、ARC-003 と QLT-009 を active にした。次は X11 の窓（ui-x11 と adapters-x11）で表 1 枚を出し、IME を実測して ADR にする。
+Issue #4 で部品の核（即時モード・ADR 0006）を `crates/core` に置き、ARC-003 と QLT-009 を active にした。Issue #5 で X11 の窓（application / ui-x11 / app・x11rb ＋ cairo-rs）を出し、表・検索・絞り込み・スクロールが Xvfb で動いた。日本語は起動時に家族を選んで出す（ADR 0007）。1 万件の 1 フレームは 1 ms 未満（gate-proofs 第 11 節）。
+IME は IM サーバの無いコンテナでは測れない。次は core の `Item` / `Op` / `merge`（ADR 0004）か、施主の WSLg で XIM を測る。
 
 ---
 
 ## 7. 開発環境
 
 クラウドのコンテナ（Claude Code on the web）が主戦場。Linux で、実ディスプレイは無い。
-表示は Xvfb の上で窓を出し `import` で PNG を撮って Read で見る。人が触る手応え・Windows の見え・ネットワーク共有の上での同時編集は施主の実機で確かめる。
+表示は `make screenshot`、操作は Xvfb の上で `xdotool`（手順は gate-proofs 第 11 節）。人が触る手応え・Windows の見え・IME・ネットワーク共有の上での同時編集は施主の実機で確かめる。
 道具の有無は `make doctor`。環境の setup script に置く行は [docs/DEVELOPMENT_WORKFLOW.md](docs/DEVELOPMENT_WORKFLOW.md) 第 9 節。
 
 ---

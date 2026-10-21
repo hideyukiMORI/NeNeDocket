@@ -2,7 +2,7 @@
 
 A small, fast issue tracker for Windows and X11. Rust, no UI toolkit, no server.
 
-> **Status (2026-10-21):** rules and gates are in place and measured (`make prove`, 26 proofs). `crates/core` holds the widget kernel (layout, hit testing, focus, text editing, draw commands; `#![no_std]`, zero dependencies, 99.7% region coverage). No window yet.
+> **Status (2026-10-21):** the X11 window runs on Xvfb: a 10,000-row table with search, a filter box, a checkbox, a button and a scroll bar, all drawn by hand through `x11rb` + cairo, under 1 ms per frame. No journal, no Windows build and no IME yet. Rules and gates are measured (`make prove`, 26 proofs; core + application at 99.5% region coverage).
 
 ## What it will be
 

@@ -3,6 +3,9 @@
 resolver = "3"
 members = [
     "crates/core",
+    "crates/application",
+    "crates/ui-x11",
+    "crates/app",
     "xtask",
 ]
 

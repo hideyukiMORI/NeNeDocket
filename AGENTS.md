@@ -8,14 +8,14 @@ the normative documents live in [docs/](docs/).
 - Product: NeNe Docket — a small, fast issue tracker for Windows and X11. A docket is a folder; put it on a network share and a team edits it together with no server
 - Language / UI: Rust, edition 2024 / none (Win32 + Direct2D on Windows, plain X11 through `x11rb` + cairo `ImageSurface` on Linux; every widget is drawn by hand)
 - Data: one append-only journal per account, merged deterministically by a pure function in core. Undo appends the inverse op. Nothing is ever rewritten ([ADR 0004](docs/adr/0004-append-only-journal-per-account.md))
-- Workspace: `crates/core` + `xtask` today; planned `crates/{application,store,adapters-x11,adapters-windows,ui-x11,ui-win32,app}`
+- Workspace: `crates/{core,application,ui-x11,app}` + `xtask` today; planned `crates/{store,adapters-x11,adapters-windows,ui-win32}`
 - Governing principle: **one meaning, one canonical implementation path, enforced by machines**
 
 ## Status
 
 Issue #1 (2026-10-21) put the documents in place. Issue #2 ported nene-ruler's machinery (`[workspace.lints]`, `clippy.toml`, `deny.toml`, `xtask`, `Makefile`, CI, hooks)
 and measured it here: `make prove` (26 real-tool proofs) and `cargo test -p xtask` (80). The rules that fired are `active` in `docs/QUALITY_GATES.md`; the rest stay `planned`.
-Issue #4 added `crates/core` with the widget kernel (immediate mode, ADR 0006): layout, hit testing, focus, text editing state, draw commands. **No UI, store or application crate yet.**
+Issue #4 added `crates/core` with the widget kernel (immediate mode, ADR 0006). Issue #5 added `crates/application` (the screen state owner), `crates/ui-x11` (x11rb + cairo) and `crates/app`; the window runs on Xvfb with a 10,000-row table, search, filter and scrolling. Japanese is drawn by a font family chosen at startup (ADR 0007). **No store, adapters or Windows crates yet; no IME yet.**
 
 ## Required reading before changing production code
 

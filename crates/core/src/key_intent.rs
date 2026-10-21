@@ -28,6 +28,8 @@ pub enum KeyIntent {
     Escape,
     /// 次の部品へ（Tab）。
     Tab,
+    /// 前の部品へ（Shift+Tab）。
+    BackTab,
     /// 上へ（セレクトボックスの候補）。
     Up,
     /// 下へ。

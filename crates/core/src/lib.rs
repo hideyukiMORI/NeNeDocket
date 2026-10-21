@@ -40,4 +40,5 @@ pub mod text_align;
 pub mod text_caret;
 pub mod text_edit;
 pub mod text_field;
+pub mod ui_scale;
 pub mod widget_id;

@@ -81,6 +81,7 @@ impl TextEdit {
             KeyIntent::Enter
             | KeyIntent::Escape
             | KeyIntent::Tab
+            | KeyIntent::BackTab
             | KeyIntent::Up
             | KeyIntent::Down => self.clone(),
         }
@@ -295,6 +296,7 @@ mod tests {
             KeyIntent::Enter,
             KeyIntent::Escape,
             KeyIntent::Tab,
+            KeyIntent::BackTab,
             KeyIntent::Up,
             KeyIntent::Down,
         ] {
