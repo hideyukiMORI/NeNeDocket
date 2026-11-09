@@ -1117,6 +1117,26 @@ frame (median / max)          step | encode | present
 | present | 1.2 ms | 14.4 ms | `EndDraw` の垂直同期の待ち。encode ＋ present ≒ 16.5 ms で 60 Hz の 1 周期 |
 | 作成 / 初回 / 2 回目 | 1.7 / 0.11 / 0.05 s | 2.0 / 0.12 / 0.05 s | NTFS（＋ Defender）でもほぼ同じ |
 
+**Issue #112 の後（同じ施主の Windows・`nene-docket-112.exe`）**: 筆を色ごとに、1 行の配置を文字列ごとに（2 フレーム分）覚えた。
+
+```text
+bench (windows, window 1102x553): 10000 items x 5 ops = 50000 ops, 1 account
+seed (append + 1 sync)        2.052 s
+first open (read all + merge) 0.118 s
+snapshot write                0.008 s
+second open (from snapshot)   0.060 s
+frame (median / max)          step | encode | present
+  idle   x50                   0.07 ms / 0.11 ms | 0.16 ms / 0.27 ms | 17.34 ms / 21.08 ms
+  search x50                   1.09 ms / 1.75 ms | 0.73 ms / 0.93 ms | 14.84 ms / 18.79 ms
+```
+
+| encode（中央値 / 最大） | #112 の前 | #112 の後 | X11（cairo） |
+| --- | --- | --- | --- |
+| 何もしない | 2.11 / 2.83 ms | **0.16 / 0.27 ms**（約 13 分の 1） | 0.43 / 0.64 ms |
+| 検索 1 字（行が入れ替わり新しい配置を作る） | 2.75 / 2.88 ms | **0.73 / 0.93 ms**（約 4 分の 1） | 0.48 / 0.77 ms |
+
+step と起動は前と同じ（変えていない層）。present が 14 → 17 ms に伸びたのは、encode が縮んだ分だけ `EndDraw` が垂直同期を長く待つから（encode ＋ present はどちらも約 17.5 ms＝60 Hz の 1 周期）。描画はもう周期の 1〜4% で、Windows 版のフレームは垂直同期で決まる。
+
 窓の中の大きさが 1102×553 なのは、`CreateWindowExW` の 1120×600 が枠を含む外の大きさだから（X11 は中の大きさ）。
 
 施主の Windows での手順（#90 に足す）: `nene-docket.exe --bench 10000 %TEMP%\docket-bench-10k` と `--bench 100000 %TEMP%\docket-bench-100k`、NAS なら共有の上の空のフォルダでも 1 回。出た数行をそのまま貼る。終わったらフォルダは消してよい。
