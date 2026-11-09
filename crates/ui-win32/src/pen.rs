@@ -39,6 +39,7 @@ use windows::Win32::Graphics::Dxgi::Common::{DXGI_FORMAT_B8G8R8A8_UNORM, DXGI_FO
 use windows::core::w;
 use windows_numerics::Vector2;
 
+use crate::frame_cache::FrameCache;
 use crate::text_line::TextLine;
 use crate::win32_failure::Win32Failure;
 
@@ -69,6 +70,12 @@ pub struct Pen {
     words: IDWriteFactory,
     /// 添付の画像の bitmap の覚え（ID が鍵・FR-022）。描画は `&self` なので中で可変。
     bitmaps: RefCell<BTreeMap<u64, ID2D1Bitmap>>,
+    /// 色（`0xRRGGBB`）ごとの筆。配色の色の数しか増えない。レンダーターゲットと一緒に捨てる（Issue #112）。
+    brushes: RefCell<BTreeMap<u32, ID2D1Brush>>,
+    /// 直前のフレームの字の形式と、その鍵（大きさ・言語）。
+    format: RefCell<Option<((u16, Language), IDWriteTextFormat)>>,
+    /// その形式で作った 1 行の配置（文字列が鍵・2 フレーム分・Issue #112）。
+    lines: RefCell<FrameCache<String, TextLine>>,
 }
 
 impl Pen {
@@ -111,6 +118,9 @@ impl Pen {
             target,
             words,
             bitmaps: RefCell::new(BTreeMap::new()),
+            brushes: RefCell::new(BTreeMap::new()),
+            format: RefCell::new(None),
+            lines: RefCell::new(FrameCache::empty()),
         })
     }
 
@@ -136,7 +146,7 @@ impl Pen {
     ///
     /// 描画に失敗した（レンダーターゲットを作り直すべき失敗も含む）。
     pub fn paint(&self, frame: &DocketFrame) -> Result<(), Win32Failure> {
-        let format = self.format(f32::from(frame.font_px()), frame.language())?;
+        let format = self.frame_format(frame)?;
         let drawn = self.encode(frame, &format);
         self.finish()?;
         drawn
@@ -153,7 +163,7 @@ impl Pen {
         watch: &dyn StopwatchPort,
     ) -> Result<(Duration, Duration), Win32Failure> {
         let started = watch.elapsed();
-        let format = self.format(f32::from(frame.font_px()), frame.language())?;
+        let format = self.frame_format(frame)?;
         let drawn = self.encode(frame, &format);
         let encoded = watch.elapsed();
         self.finish()?;
@@ -314,6 +324,12 @@ impl Pen {
     )]
     fn brush(&self, palette: &Palette, paint: Paint) -> Result<ID2D1Brush, Win32Failure> {
         let rgb = palette.colour(paint);
+        let key = (u32::from(rgb.red()) << 16_u32)
+            | (u32::from(rgb.green()) << 8_u32)
+            | u32::from(rgb.blue());
+        if let Some(known) = self.brushes.borrow().get(&key) {
+            return Ok(known.clone());
+        }
         let colour = D2D1_COLOR_F {
             r: f32::from(rgb.red()) / 255.0,
             g: f32::from(rgb.green()) / 255.0,
@@ -323,7 +339,9 @@ impl Pen {
         // SAFETY: colour はこの関数の局所で、呼び出しの間だけ読まれる。
         let solid: ID2D1SolidColorBrush =
             unsafe { self.target.CreateSolidColorBrush(&raw const colour, None) }?;
-        Ok(solid.into())
+        let brush: ID2D1Brush = solid.into();
+        self.brushes.borrow_mut().insert(key, brush.clone());
+        Ok(brush)
     }
 
     /// 整数座標の矩形を塗る。
@@ -401,7 +419,7 @@ impl Pen {
         (rect, align, paint): (PixelRect, TextAlign, Paint),
         (text, caret): (&str, Option<TextCaret>),
     ) -> Result<(), Win32Failure> {
-        let line = self.measure(format, text)?;
+        let line = self.line(format, text)?;
         let left = match align {
             TextAlign::Start => f32::from(rect.x()),
             TextAlign::Center => {
@@ -464,6 +482,32 @@ impl Pen {
         unsafe {
             self.target.FillRectangle(&raw const area, brush);
         }
+    }
+
+    /// このフレームの字の形式。大きさと言語が前のフレームと同じなら使い回し、違えば作り直して配置の覚えを捨てる。
+    /// 配置の覚えはここでフレームを 1 つ進める（Issue #112）。
+    fn frame_format(&self, frame: &DocketFrame) -> Result<IDWriteTextFormat, Win32Failure> {
+        let key = (frame.font_px(), frame.language());
+        if let Some((known, format)) = self.format.borrow().as_ref()
+            && *known == key
+        {
+            self.lines.borrow_mut().begin_frame();
+            return Ok(format.clone());
+        }
+        let format = self.format(f32::from(key.0), key.1)?;
+        self.lines.borrow_mut().clear();
+        *self.format.borrow_mut() = Some((key, format.clone()));
+        Ok(format)
+    }
+
+    /// 1 行の配置。同じ文字列を前か今のフレームで測っていれば使い回す。
+    fn line(&self, format: &IDWriteTextFormat, text: &str) -> Result<TextLine, Win32Failure> {
+        if let Some(known) = self.lines.borrow_mut().get(text.to_owned()) {
+            return Ok(known);
+        }
+        let line = self.measure(format, text)?;
+        self.lines.borrow_mut().keep(text.to_owned(), line.clone());
+        Ok(line)
     }
 
     /// 字の形式（家族と大きさ）。

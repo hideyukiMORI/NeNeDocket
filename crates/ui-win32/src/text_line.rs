@@ -2,7 +2,8 @@
 
 use windows::Win32::Graphics::DirectWrite::IDWriteTextLayout;
 
-/// 配置と、その幅・高さ・ベースラインまでの高さ（物理画素）。
+/// 配置と、その幅・高さ・ベースラインまでの高さ（物理画素）。写しは COM の参照を 1 つ増やすだけ（Issue #112）。
+#[derive(Debug, Clone)]
 pub(crate) struct TextLine {
     layout: IDWriteTextLayout,
     width: f32,

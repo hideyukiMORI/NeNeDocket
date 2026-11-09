@@ -8,6 +8,7 @@ pub mod char_assembler;
 pub mod composition;
 #[cfg(windows)]
 pub mod docket_window;
+pub mod frame_cache;
 #[cfg(windows)]
 mod ime;
 pub mod key_input;

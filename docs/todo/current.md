@@ -35,7 +35,7 @@
 | 大容量でも軽い（FR-017 を 10 万件・300 万操作に）| ✅ Issue #61・[ADR 0015](../adr/0015-large-dockets-snapshot-and-incremental-merge.md) 受理。段階 1（表の一覧のキャッシュ・増分の併合）で 1 フレーム 22 ms → 1.4 ms。段階 2（自分のスナップショット `snapshot/<account>.v1.txt` ＋ 索引 `.idx`・操作は記憶に持たず履歴はジャーナルから引く）で 300 万操作の 2 回目の起動 8.5 秒 → 0.9 秒・RSS 703 → 178 MB（目標 150 MB は未達・gate-proofs 第 37・38 節） |
 | 添付（FR-021） | ✅ Issue #62・[ADR 0016](../adr/0016-attachments-copied-into-the-docket.md) 受理。台帳フォルダの `attachments/<課題>/<連番>-<名前>` に写し、`attach`（名前・大きさ・SHA-256 は core に自前）/ `detach` を追記。添付の段（道具の段の「添付」・パスの欄・「添付する」・「外す」）と `--attach`。写しは消さず、改変は `⚠` で示す。Xvfb で 3 アカウント（gate-proofs 第 39 節） |
 | 添付の中身（FR-022） | 🟡 Issue #63・[ADR 0017](../adr/0017-attachment-viewers-and-external-open.md) 受理。行を選ぶと段の下に、文（読み取り専用の欄）・CSV / TSV（表・`Shift_JIS` も・store に `encoding_rs`）・それ以外はパスと「開く」（`xdg-open` / `ShellExecuteW`）。256 KiB で先頭だけ（gate-proofs 第 40 節）。PNG / JPEG は Issue #64・[ADR 0018](../adr/0018-image-viewer-png-jpeg.md) 受理: `crates/media`（`png` / `jpeg-decoder`）で復号し 2,048 画素に縮めて持ち、`DrawCommand::Image` で UI が描く（ホイールで拡大・ドラッグで移動・1 フレーム 1 ms・gate-proofs 第 41 節）。ドラッグ＆ドロップは Issue #65（X11 は XDND・Windows は `WM_DROPFILES`・`FrameInput::with_drop`・表の行ならその課題、段なら選んでいる課題・自前の送り手で Xvfb・gate-proofs 第 42 節）。PDF は Issue #66 で `hayro` 0.8 を試し、[ADR 0019](../adr/0019-pdf-viewer-hayro-rejected-for-now.md) で**今は却下**（A4 1 ページ 5〜15 ms で正しく描けるが、75 クレート・`syn` 2 / 3 などの重複で `deny` が落ちる・クリーンビルド 104 秒。埋め込みなしの CJK はフォントを渡す必要）。OS の既定のビューワーのまま（gate-proofs 第 43 節） |
-| 性能の計測の口 `--bench <件数> <空のフォルダ>` | 🟡 Issue #111。中核（step）・描画（encode）・提示（present）を分けた中央値と最大、作成・初回と 2 回目の起動。X11 は Xvfb で 1 万件・10 万件、施主の Windows で 1 万件（gate-proofs 第 51 節）。step は同じ、Windows の encode は X11 の約 5 倍（2.1〜2.8 ms）。描画の筆と文字の配置の覚えは Issue #112 |
+| 性能の計測の口 `--bench <件数> <空のフォルダ>` | 🟡 Issue #111。中核（step）・描画（encode）・提示（present）を分けた中央値と最大、作成・初回と 2 回目の起動。X11 は Xvfb で 1 万件・10 万件、施主の Windows で 1 万件（gate-proofs 第 51 節）。step は同じ、Windows の encode は X11 の約 5 倍（2.1〜2.8 ms）だったが、Issue #112（筆と 1 行の配置の覚え）で 0.16〜0.73 ms になった（施主の Windows で測定） |
 | CI の `check`（`make ci`）と commit-msg フック | ✅ PR #3 で CI が動き、枝名で落ちた（gate-proofs 第 10 節）。QLT-005・GIT-001・GIT-003 を active に |
 | ruleset（main の保護・squash-only） | 未設定。施主が GitHub で設定したら gate-proofs に記録する |
 
@@ -51,7 +51,6 @@
 - 🟡 #80 日本語入力: ADR 0020。Windows は IMM32（確定前の文字列を欄に・候補の窓は欄の下）、X11 は Ctrl+V の貼り付け、確定前は下線。残り: 施主の Windows での確認・WSLg で XIM が届くかの実測（gate-proofs 第 46 節）
 - 🟡 #81 OS のフリーズ・停電・強制終了・スリープ復帰: 止まり方の表（docs/design・8 行にテスト）、追記に失敗した操作は覚えて書き直す・ハンドルの開き直し・`.tmp` の残骸は自分の分だけ捨てる。残り: 施主の実機の 3 手順（gate-proofs 第 48 節）
 
-0. Issue #112（描画の筆と文字の配置を毎フレーム作らない）の exe を施主の Windows で `--bench 10000` し、第 51 節の encode 2.1〜2.8 ms と比べる
 1. **ruleset（main の保護・squash-only・`check` を必須）を施主が GitHub で設定する。** 設定したら gate-proofs に記録し、GIT-002 / GIT-004 を active に。PR は harness の枝 `claude/cloud-session-qus6l5` から squash で merge している（件名は PR のタイトル・GIT-003 の形）
 2. PDF のビューワーは保留（ADR 0019 の再提案の条件: 施主が依存の重さと `deny.toml` の緩和を受け入れる・`hayro` の重複が消える・実運用で OS のビューワーでは足りないと分かる）
 3. 持ち主の交代はコマンドラインのまま（施主の決定）。引き継ぎを取り消す経路は無い（要るなら Issue）
