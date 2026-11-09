@@ -38,4 +38,10 @@ pub enum KeyIntent {
     Undo,
     /// やり直す（Ctrl+Y）。
     Redo,
+    /// 課題を足す（Ctrl+N・Issue #124）。
+    NewItem,
+    /// 検索の欄へ（Ctrl+F）。
+    Find,
+    /// 使い方（F1）。
+    Help,
 }

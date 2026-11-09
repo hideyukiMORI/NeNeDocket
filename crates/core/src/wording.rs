@@ -7,6 +7,7 @@ use crate::auto_field::AutoField;
 use crate::field::Field;
 use crate::item_state::ItemState;
 use crate::language::Language;
+use crate::toolbar_word::ToolbarWord;
 use crate::word::Word;
 
 /// 言語ごとの文字列。
@@ -78,6 +79,7 @@ const fn japanese(word: Word) -> &'static str {
         Word::OwnerChanged => "持ち主を替えた",
         Word::Attachment(word) => japanese_attachment(word),
         Word::AutoField(field) => japanese_auto_field(field),
+        Word::Toolbar(word) => japanese_toolbar(word),
     }
 }
 
@@ -157,6 +159,7 @@ const fn english(word: Word) -> &'static str {
         Word::OwnerChanged => "changed the owner",
         Word::Attachment(word) => english_attachment(word),
         Word::AutoField(field) => english_auto_field(field),
+        Word::Toolbar(word) => english_toolbar(word),
     }
 }
 
@@ -235,6 +238,7 @@ const fn simplified_chinese(word: Word) -> &'static str {
         Word::OwnerChanged => "更换了所有者",
         Word::Attachment(word) => simplified_chinese_attachment(word),
         Word::AutoField(field) => simplified_chinese_auto_field(field),
+        Word::Toolbar(word) => simplified_chinese_toolbar(word),
     }
 }
 
@@ -313,6 +317,7 @@ const fn traditional_chinese(word: Word) -> &'static str {
         Word::OwnerChanged => "更換了擁有者",
         Word::Attachment(word) => traditional_chinese_attachment(word),
         Word::AutoField(field) => traditional_chinese_auto_field(field),
+        Word::Toolbar(word) => traditional_chinese_toolbar(word),
     }
 }
 
@@ -391,6 +396,7 @@ const fn korean(word: Word) -> &'static str {
         Word::OwnerChanged => "소유자를 변경함",
         Word::Attachment(word) => korean_attachment(word),
         Word::AutoField(field) => korean_auto_field(field),
+        Word::Toolbar(word) => korean_toolbar(word),
     }
 }
 
@@ -469,6 +475,7 @@ const fn spanish(word: Word) -> &'static str {
         Word::OwnerChanged => "cambió el propietario",
         Word::Attachment(word) => spanish_attachment(word),
         Word::AutoField(field) => spanish_auto_field(field),
+        Word::Toolbar(word) => spanish_toolbar(word),
     }
 }
 
@@ -611,12 +618,154 @@ const fn spanish_state(state: ItemState) -> &'static str {
     }
 }
 
+const fn japanese_toolbar(word: ToolbarWord) -> &'static str {
+    match word {
+        ToolbarWord::FilterOpen => "未完了",
+        ToolbarWord::FilterOverdue => "期限超過",
+        ToolbarWord::FilterUnassigned => "未割り当て",
+        ToolbarWord::FilterReview => "確認待ち",
+        ToolbarWord::SearchHint => "題名・本文で検索  Ctrl+F",
+        ToolbarWord::Showing => "{shown} 件を表示（全 {total} 件）",
+        ToolbarWord::Settings => "設定",
+        ToolbarWord::AddItem => "＋ 課題を追加",
+        ToolbarWord::NewItem => "新しい課題",
+        ToolbarWord::DraftHint => "Enter で追加・Esc で取り消し",
+        ToolbarWord::AddedOutside => "{number} を追加しました。今の絞り込みでは表示されません",
+        ToolbarWord::ClearFilter => "絞り込みを外す",
+        ToolbarWord::Close => "閉じる",
+        ToolbarWord::Language => "表示言語",
+        ToolbarWord::Theme => "配色",
+        ToolbarWord::MembersToggle => "参加者と権限",
+    }
+}
+
+const fn english_toolbar(word: ToolbarWord) -> &'static str {
+    match word {
+        ToolbarWord::FilterOpen => "Open",
+        ToolbarWord::FilterOverdue => "Overdue",
+        ToolbarWord::FilterUnassigned => "Unassigned",
+        ToolbarWord::FilterReview => "In review",
+        ToolbarWord::SearchHint => "Search titles and text  Ctrl+F",
+        ToolbarWord::Showing => "Showing {shown} of {total}",
+        ToolbarWord::Settings => "Settings",
+        ToolbarWord::AddItem => "+ New issue",
+        ToolbarWord::NewItem => "New issue",
+        ToolbarWord::DraftHint => "Enter to add · Esc to cancel",
+        ToolbarWord::AddedOutside => "Added {number}. The current filter hides it",
+        ToolbarWord::ClearFilter => "Clear filter",
+        ToolbarWord::Close => "Close",
+        ToolbarWord::Language => "Language",
+        ToolbarWord::Theme => "Colors",
+        ToolbarWord::MembersToggle => "Members and permissions",
+    }
+}
+
+const fn simplified_chinese_toolbar(word: ToolbarWord) -> &'static str {
+    match word {
+        ToolbarWord::FilterOpen => "未完成",
+        ToolbarWord::FilterOverdue => "已逾期",
+        ToolbarWord::FilterUnassigned => "未分配",
+        ToolbarWord::FilterReview => "待确认",
+        ToolbarWord::SearchHint => "搜索标题和正文  Ctrl+F",
+        ToolbarWord::Showing => "显示 {shown} 条（共 {total} 条）",
+        ToolbarWord::Settings => "设置",
+        ToolbarWord::AddItem => "＋ 新建问题",
+        ToolbarWord::NewItem => "新问题",
+        ToolbarWord::DraftHint => "Enter 添加 · Esc 取消",
+        ToolbarWord::AddedOutside => "已添加 {number}。当前筛选下不显示",
+        ToolbarWord::ClearFilter => "清除筛选",
+        ToolbarWord::Close => "关闭",
+        ToolbarWord::Language => "显示语言",
+        ToolbarWord::Theme => "配色",
+        ToolbarWord::MembersToggle => "成员与权限",
+    }
+}
+
+const fn traditional_chinese_toolbar(word: ToolbarWord) -> &'static str {
+    match word {
+        ToolbarWord::FilterOpen => "未完成",
+        ToolbarWord::FilterOverdue => "已逾期",
+        ToolbarWord::FilterUnassigned => "未指派",
+        ToolbarWord::FilterReview => "待確認",
+        ToolbarWord::SearchHint => "搜尋標題與內文  Ctrl+F",
+        ToolbarWord::Showing => "顯示 {shown} 筆（共 {total} 筆）",
+        ToolbarWord::Settings => "設定",
+        ToolbarWord::AddItem => "＋ 新增問題",
+        ToolbarWord::NewItem => "新問題",
+        ToolbarWord::DraftHint => "Enter 新增 · Esc 取消",
+        ToolbarWord::AddedOutside => "已新增 {number}。目前的篩選不會顯示",
+        ToolbarWord::ClearFilter => "清除篩選",
+        ToolbarWord::Close => "關閉",
+        ToolbarWord::Language => "顯示語言",
+        ToolbarWord::Theme => "配色",
+        ToolbarWord::MembersToggle => "成員與權限",
+    }
+}
+
+const fn korean_toolbar(word: ToolbarWord) -> &'static str {
+    match word {
+        ToolbarWord::FilterOpen => "미완료",
+        ToolbarWord::FilterOverdue => "기한 초과",
+        ToolbarWord::FilterUnassigned => "미배정",
+        ToolbarWord::FilterReview => "확인 대기",
+        ToolbarWord::SearchHint => "제목·본문 검색  Ctrl+F",
+        ToolbarWord::Showing => "{shown}건 표시 (전체 {total}건)",
+        ToolbarWord::Settings => "설정",
+        ToolbarWord::AddItem => "＋ 이슈 추가",
+        ToolbarWord::NewItem => "새 이슈",
+        ToolbarWord::DraftHint => "Enter 추가 · Esc 취소",
+        ToolbarWord::AddedOutside => "{number}을(를) 추가했습니다. 현재 필터에서는 보이지 않습니다",
+        ToolbarWord::ClearFilter => "필터 해제",
+        ToolbarWord::Close => "닫기",
+        ToolbarWord::Language => "표시 언어",
+        ToolbarWord::Theme => "배색",
+        ToolbarWord::MembersToggle => "참가자와 권한",
+    }
+}
+
+const fn spanish_toolbar(word: ToolbarWord) -> &'static str {
+    match word {
+        ToolbarWord::FilterOpen => "Abiertas",
+        ToolbarWord::FilterOverdue => "Vencidas",
+        ToolbarWord::FilterUnassigned => "Sin asignar",
+        ToolbarWord::FilterReview => "En revisión",
+        ToolbarWord::SearchHint => "Buscar en títulos y textos  Ctrl+F",
+        ToolbarWord::Showing => "Mostrando {shown} de {total}",
+        ToolbarWord::Settings => "Ajustes",
+        ToolbarWord::AddItem => "+ Nueva incidencia",
+        ToolbarWord::NewItem => "Nueva incidencia",
+        ToolbarWord::DraftHint => "Enter para añadir · Esc para cancelar",
+        ToolbarWord::AddedOutside => "Se añadió {number}. El filtro actual la oculta",
+        ToolbarWord::ClearFilter => "Quitar filtro",
+        ToolbarWord::Close => "Cerrar",
+        ToolbarWord::Language => "Idioma",
+        ToolbarWord::Theme => "Colores",
+        ToolbarWord::MembersToggle => "Miembros y permisos",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// 全部の語（`Word` の閉じた集合を 1 か所で列挙する。増えたらここも増える）。
-    const WORDS: [Word; 76] = [
+    const WORDS: [Word; 92] = [
+        Word::Toolbar(ToolbarWord::FilterOpen),
+        Word::Toolbar(ToolbarWord::FilterOverdue),
+        Word::Toolbar(ToolbarWord::FilterUnassigned),
+        Word::Toolbar(ToolbarWord::FilterReview),
+        Word::Toolbar(ToolbarWord::SearchHint),
+        Word::Toolbar(ToolbarWord::Showing),
+        Word::Toolbar(ToolbarWord::Settings),
+        Word::Toolbar(ToolbarWord::AddItem),
+        Word::Toolbar(ToolbarWord::NewItem),
+        Word::Toolbar(ToolbarWord::DraftHint),
+        Word::Toolbar(ToolbarWord::AddedOutside),
+        Word::Toolbar(ToolbarWord::ClearFilter),
+        Word::Toolbar(ToolbarWord::Close),
+        Word::Toolbar(ToolbarWord::Language),
+        Word::Toolbar(ToolbarWord::Theme),
+        Word::Toolbar(ToolbarWord::MembersToggle),
         Word::All,
         Word::StateName(ItemState::Open),
         Word::StateName(ItemState::InProgress),

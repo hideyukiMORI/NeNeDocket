@@ -4,6 +4,7 @@ use crate::attachment_word::AttachmentWord;
 use crate::auto_field::AutoField;
 use crate::field::Field;
 use crate::item_state::ItemState;
+use crate::toolbar_word::ToolbarWord;
 
 /// 画面の語。閉じた集合（RS-002）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -26,6 +27,8 @@ pub enum Word {
     Number,
     /// 自動の項目の名（表の見出し・Issue #117）。
     AutoField(AutoField),
+    /// 道具の行・下書き・設定の語（Issue #124）。
+    Toolbar(ToolbarWord),
     /// 履歴の「いつ」。
     When,
     /// 履歴の「誰が」。

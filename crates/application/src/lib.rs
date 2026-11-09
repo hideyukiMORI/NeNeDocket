@@ -52,6 +52,7 @@ pub mod key_record;
 pub mod ledger;
 pub mod ledger_opening;
 pub mod ledger_snapshot;
+pub mod list_filter;
 pub mod member;
 pub mod member_role;
 pub mod members_action;

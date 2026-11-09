@@ -48,6 +48,7 @@ use nene_docket_core::text_edit::TextEdit;
 use nene_docket_core::text_field;
 use nene_docket_core::theme::Theme;
 use nene_docket_core::theme_choice::ThemeChoice;
+use nene_docket_core::toolbar_word::ToolbarWord;
 use nene_docket_core::ui_scale::UiScale;
 use nene_docket_core::wall_clock::WallClock;
 use nene_docket_core::widget_id::WidgetId;
@@ -78,6 +79,7 @@ use crate::journal_failure::JournalFailure;
 use crate::journal_port::JournalPort;
 use crate::ledger::Ledger;
 use crate::ledger_opening;
+use crate::list_filter::ListFilter;
 use crate::member::Member;
 use crate::members_action::MembersAction;
 use crate::members_pane::MembersPane;
@@ -90,10 +92,14 @@ use crate::settings_failure::SettingsFailure;
 use crate::table_column::TableColumn;
 use nene_docket_core::admin_command::AdminCommand;
 
+/// 表の一覧のキャッシュの鍵（台帳の世代・検索・絞り込みの札・今日・足したばかりの課題）。
+type VisibleKey = (u64, String, ListFilter, Option<Date>, Option<ItemId>);
+/// 札の件数のキャッシュの鍵（台帳の世代・検索・今日）。
+type CountsKey = (u64, String, Option<Date>);
+
 /// 部品の ID。候補は `*_OPTION` に番号を足し、表の行は `ROW` に見えている順の番号を足す。
 const SEARCH: WidgetId = WidgetId::new(1);
-const FILTER: WidgetId = WidgetId::new(2);
-const SHOW_DONE: WidgetId = WidgetId::new(3);
+/// 2・3 は絞り込みの選択箱と「完了も表示」だった（Issue #124 で絞り込みの札に）。
 const ADD: WidgetId = WidgetId::new(4);
 const SCROLL: WidgetId = WidgetId::new(5);
 const TITLE: WidgetId = WidgetId::new(6);
@@ -108,7 +114,16 @@ const THEME: WidgetId = WidgetId::new(15);
 /// 16 は本文の段の欄（`body_pane`）。
 const MEMBERS_TOGGLE: WidgetId = WidgetId::new(18);
 /// 19 は参加者の段の「権限」のチェック、21 はそのスクロールバー、22〜24 は編集行の「編集者」・グループの欄・「引き継ぎ先」の箱、7000〜 はその候補（`members_pane`）。20 は本文のスクロールバー（`body_pane`）。
-const FILTER_OPTION: WidgetId = WidgetId::new(100);
+/// 絞り込みの札（`ListFilter::ALL` の順の番号を足す・Issue #124）。100 は絞り込みの候補だった。
+const FILTER_CHIP: WidgetId = WidgetId::new(500);
+/// 道具の行の「設定」。
+const SETTINGS_BUTTON: WidgetId = WidgetId::new(34);
+/// 下書きの題名の欄（「＋ 課題を追加」・Ctrl+N）。
+const DRAFT_TITLE: WidgetId = WidgetId::new(35);
+/// 「絞り込みを外す」（足した課題が絞り込みの外にあるとき）。
+const CLEAR_FILTER: WidgetId = WidgetId::new(36);
+/// 設定のペインの「閉じる」。
+const SETTINGS_CLOSE: WidgetId = WidgetId::new(37);
 /// 状態の札（詳細のペイン・`ItemState::ALL` の順の番号を足す・Issue #122）。
 const STATE_CHIP: WidgetId = WidgetId::new(200);
 const LANGUAGE_OPTION: WidgetId = WidgetId::new(300);
@@ -126,17 +141,23 @@ const PANE_GRIP: WidgetId = WidgetId::new(25);
 /// 1x の寸法（SPECIFICATION 第 2 節・決め打ちしない）。
 const MARGIN_PX: u16 = 8;
 const ROW_PX: u16 = 28;
-const FILTER_WIDTH_PX: u16 = 120;
-const SHOW_DONE_WIDTH_PX: u16 = 110;
-const MEMBERS_WIDTH_PX: u16 = 100;
+/// 絞り込みの札 1 つ。
+const FILTER_CHIP_WIDTH_PX: u16 = 104;
+/// 「N 件を表示（全 M 件）」。
+const SHOWING_WIDTH_PX: u16 = 180;
+/// 「設定」。
+const SETTINGS_WIDTH_PX: u16 = 80;
+/// 「＋ 課題を追加」。
+const ADD_WIDTH_PX: u16 = 140;
+/// 選んでいる絞り込みの札の頭の印（色だけに頼らない・WCAG 1.4.1）。`✓` は X11 で選ぶ日本語の家族に字形が無く □ になる
+/// （ADR 0007・Xvfb で確認）ので、JIS X 0208・GB2312・KS X 1001 のどれにもある `●` を使う。
+const CHOSEN_MARK: &str = "●";
 /// 詳細のペインの幅（窓の半分まで・ADR 0022）。
 const DETAIL_WIDTH_PX: u16 = 380;
 /// 詳細のペインの項目名の幅。
 const FIELD_NAME_PX: u16 = 72;
 /// 本文の段の 1 行。
 const BODY_LINE_PX: u16 = 20;
-const LANGUAGE_WIDTH_PX: u16 = 100;
-const THEME_WIDTH_PX: u16 = 120;
 const BUTTON_WIDTH_PX: u16 = 70;
 const SCROLL_WIDTH_PX: u16 = 12;
 /// 台帳全体の時系列（課題を選んでいないとき）に出す操作の上限（ADR 0014 / 0015）。
@@ -154,17 +175,22 @@ const PREVIEW_MARK: &str = "←";
 /// □ になる（ADR 0007）ので、JIS X 0208・GB2312・KS X 1001 のどれにもある `▲` を使う。
 const OVERDUE_MARK: &str = "▲";
 
-/// 絞り込みの候補の数。先頭は「すべて」、以降は [`ItemState::ALL`] の順。
-const FILTER_COUNT: usize = ItemState::ALL.len() + 1;
-
 /// 画面の状態。
 #[derive(Debug)]
 pub struct DocketScreen {
     scale: UiScale,
     interaction: Interaction,
     search: TextEdit,
-    filter: SelectState,
-    show_done: bool,
+    /// 絞り込みの札（Issue #124）。
+    list_filter: ListFilter,
+    /// 下書きの題名（「＋ 課題を追加」の後・Enter で初めて追記する）。
+    draft: Option<TextEdit>,
+    /// 足したばかりで、絞り込みの外でも表に残す課題と、絞り込みの外にあるか（「絞り込みを外す」を知らせる）。
+    kept: Option<(ItemId, bool)>,
+    /// 右のペインに設定を出しているか。
+    settings_open: bool,
+    /// 絞り込みの札ごとの件数（検索だけを当てた数）と台帳の全件、その鍵。
+    counts: Option<(CountsKey, [usize; 6])>,
     scroll: ScrollState,
     selected: Option<ItemId>,
     title: TextEdit,
@@ -201,7 +227,7 @@ pub struct DocketScreen {
     /// 表に出す課題の一覧のキャッシュと、その鍵（台帳の世代・検索・絞り込み・完了の表示）。
     /// 10 万件を毎フレーム絞り込むと 1 フレームが 20 ms を超えるので、鍵が変わったときだけ作り直す（FR-017）。
     visible_cache: Vec<ItemId>,
-    visible_key: Option<(u64, String, usize, bool)>,
+    visible_key: Option<VisibleKey>,
     /// 履歴の段の行のキャッシュと、その鍵（台帳の世代・選んだ課題）。行はジャーナルから引くので毎フレームは読まない（ADR 0015）。
     history_cache: Vec<HistoryLine>,
     history_key: Option<(u64, Option<ItemId>)>,
@@ -243,8 +269,11 @@ impl DocketScreen {
             scale: environment.scale(),
             interaction: Interaction::idle(),
             search: TextEdit::empty(),
-            filter: SelectState::closed(FILTER_COUNT, 0),
-            show_done: true,
+            list_filter: ListFilter::Open,
+            draft: None,
+            kept: None,
+            settings_open: false,
+            counts: None,
             scroll: ScrollState::top(0, 0),
             selected: None,
             title: TextEdit::empty(),
@@ -331,9 +360,8 @@ impl DocketScreen {
             rect: bounds,
             paint: Paint::Background,
         }];
-        let ((filter_rect, filter_response), (language_rect, language_response)) =
-            self.probe_toolbar(&toolbar, &mut commands);
-        self.probe_detail(&detail, &mut commands);
+        self.probe_toolbar(&toolbar, visible.len(), &mut commands);
+        let language = self.probe_detail(&detail, &mut commands);
         self.probe_table(&table, &visible, &mut commands);
         self.probe_panes(
             (whole_area, table_area, track),
@@ -344,16 +372,11 @@ impl DocketScreen {
             ),
             &mut commands,
         );
-        self.probe_filter_options(filter_rect);
-        self.probe_language_options(language_rect);
-        self.box_commands(
-            [
-                (filter_rect, filter_response),
-                (language_rect, language_response),
-            ],
-            &mut commands,
-        );
-        self.notice_commands(notice_rect, &mut commands);
+        if let Some((language_rect, language_response)) = language {
+            self.probe_language_options(language_rect);
+            self.language_box_commands(language_rect, language_response, &mut commands);
+        }
+        self.probe_notice(notice_rect, &mut commands);
         self.interaction.end();
         self.commit_unfocused_slots();
         DocketFrame::new((self.scale, self.language, self.theme), commands)
@@ -375,18 +398,13 @@ impl DocketScreen {
         self.probe_history(history_area, history_lines, commands);
     }
 
-    /// 2 つの箱（絞り込み・言語）を最後に描く（開いた候補が他の部品の上に来る）。
-    fn box_commands(&self, boxes: [(PixelRect, Response); 2], commands: &mut Vec<DrawCommand>) {
-        let [
-            (filter_rect, filter_response),
-            (language_rect, language_response),
-        ] = boxes;
-        commands.extend(select_box::select_box(
-            filter_rect,
-            &self.filter_options(),
-            self.filter,
-            filter_response,
-        ));
+    /// 言語の箱を最後に描く（開いた候補が他の部品の上に来る）。
+    fn language_box_commands(
+        &self,
+        language_rect: PixelRect,
+        language_response: Response,
+        commands: &mut Vec<DrawCommand>,
+    ) {
         commands.extend(select_box::select_box(
             language_rect,
             &self.language_options(),
@@ -398,25 +416,6 @@ impl DocketScreen {
     /// 表示言語の語。
     fn word(&self, word: Word) -> &'static str {
         wording::text(self.language, word)
-    }
-
-    /// 絞り込みの候補の文言。
-    fn filter_options(&self) -> [&'static str; FILTER_COUNT] {
-        let [open, in_progress, review, on_hold, done, cancelled] = self.state_options();
-        [
-            self.word(Word::All),
-            open,
-            in_progress,
-            review,
-            on_hold,
-            done,
-            cancelled,
-        ]
-    }
-
-    /// 状態の候補の文言。
-    fn state_options(&self) -> [&'static str; ItemState::ALL.len()] {
-        ItemState::ALL.map(|state| self.word(Word::StateName(state)))
     }
 
     /// 言語の候補の文言。先頭は「OS に従う」、以降は各言語の自分の名前。
@@ -466,16 +465,22 @@ impl DocketScreen {
         self.selected
     }
 
-    /// 完了を表に出すか。
+    /// 絞り込みの札（Issue #124）。
     #[must_use]
-    pub const fn shows_done(&self) -> bool {
-        self.show_done
+    pub const fn list_filter(&self) -> ListFilter {
+        self.list_filter
     }
 
-    /// 絞り込みの状態。
+    /// 下書きの題名（「＋ 課題を追加」の後）。無ければ `None`。
     #[must_use]
-    pub const fn filter(&self) -> SelectState {
-        self.filter
+    pub fn draft_text(&self) -> Option<&str> {
+        self.draft.as_ref().map(TextEdit::text)
+    }
+
+    /// 右のペインに設定を出しているか。
+    #[must_use]
+    pub const fn shows_settings(&self) -> bool {
+        self.settings_open
     }
 
     /// スクロールの位置。
@@ -632,8 +637,9 @@ impl DocketScreen {
         let key = (
             self.ledger.generation(),
             String::from(self.search.text()),
-            self.filter.chosen(),
-            self.show_done,
+            self.list_filter,
+            self.today,
+            self.kept.map(|(id, _)| id),
         );
         if self.visible_key.as_ref() != Some(&key) {
             self.visible_cache = self.visible_ids();
@@ -642,21 +648,52 @@ impl DocketScreen {
         self.visible_cache.clone()
     }
 
+    /// 絞り込みの札と検索に合う課題。足したばかりの課題は札の外でも残す（Issue #124）。
     fn visible_ids(&self) -> Vec<ItemId> {
-        let wanted = self
-            .filter
-            .chosen()
-            .checked_sub(1)
-            .and_then(|index| ItemState::ALL.get(index).copied());
         self.ledger
             .docket()
             .live_items()
             .into_iter()
-            .filter(|item| wanted.is_none_or(|state| item.state() == state))
-            .filter(|item| self.show_done || !item.state().is_closed())
+            .filter(|item| {
+                self.kept.is_some_and(|(id, _)| id == item.id())
+                    || self.list_filter.matches(item, self.today)
+            })
             .filter(|item| self.matches_search(item))
             .map(Item::id)
             .collect()
+    }
+
+    /// 札ごとの件数（検索だけを当てた数・札どうしは影響しない）と、最後に台帳の全件。鍵が同じならキャッシュ。
+    fn cached_counts(&mut self) -> [usize; 6] {
+        let key = (
+            self.ledger.generation(),
+            String::from(self.search.text()),
+            self.today,
+        );
+        if let Some((known, counts)) = &self.counts
+            && *known == key
+        {
+            return *counts;
+        }
+        {
+            let items = self.ledger.docket().live_items();
+            let searched: Vec<&Item> = items
+                .iter()
+                .copied()
+                .filter(|item| self.matches_search(item))
+                .collect();
+            let mut counts = ListFilter::ALL.map(|filter| {
+                searched
+                    .iter()
+                    .filter(|item| filter.matches(item, self.today))
+                    .count()
+            });
+            let total = items.len();
+            let all: [usize; 6] =
+                core::array::from_fn(|index| counts.get_mut(index).map_or(total, |count| *count));
+            self.counts = Some((key, all));
+            all
+        }
     }
 
     /// 検索欄が空か、題名か本文かラベルに含まれる。
@@ -684,15 +721,19 @@ impl DocketScreen {
         self.scale.px(base)
     }
 
-    fn toolbar_widths(&self) -> [ColumnWidth; 7] {
+    /// 道具の行: 検索・絞り込みの札 5 つ・件数・「設定」・「＋ 課題を追加」（Issue #124）。
+    fn toolbar_widths(&self) -> [ColumnWidth; 9] {
+        let chip = ColumnWidth::Fixed(self.px(FILTER_CHIP_WIDTH_PX));
         [
             ColumnWidth::Fill,
-            ColumnWidth::Fixed(self.px(FILTER_WIDTH_PX)),
-            ColumnWidth::Fixed(self.px(SHOW_DONE_WIDTH_PX)),
-            ColumnWidth::Fixed(self.px(MEMBERS_WIDTH_PX)),
-            ColumnWidth::Fixed(self.px(LANGUAGE_WIDTH_PX)),
-            ColumnWidth::Fixed(self.px(THEME_WIDTH_PX)),
-            ColumnWidth::Fixed(self.px(BUTTON_WIDTH_PX)),
+            chip,
+            chip,
+            chip,
+            chip,
+            chip,
+            ColumnWidth::Fixed(self.px(SHOWING_WIDTH_PX)),
+            ColumnWidth::Fixed(self.px(SETTINGS_WIDTH_PX)),
+            ColumnWidth::Fixed(self.px(ADD_WIDTH_PX)),
         ]
     }
 
@@ -852,7 +893,7 @@ impl DocketScreen {
             main.width().saturating_sub(width).saturating_sub(gap),
             main.height(),
         );
-        let detail = if self.selected.is_some() {
+        let detail = if self.selected.is_some() && self.draft.is_none() && !self.settings_open {
             DetailLayout::of_item(
                 pane,
                 self.px(ROW_PX),
@@ -868,6 +909,7 @@ impl DocketScreen {
     /// ペインの区画を合わせる: 課題を選んでいれば選んだ区画だけ、選んでいなければ台帳全体の履歴。
     fn sync_sections(&mut self) {
         let wanted = match (self.selected, self.section) {
+            _ if self.draft.is_some() || self.settings_open => (false, false, false),
             (Some(_), DetailSection::Body) => (true, false, false),
             (Some(_), DetailSection::Attachments) => (false, true, false),
             (None, _) | (Some(_), DetailSection::History) => (false, false, true),
@@ -885,14 +927,24 @@ impl DocketScreen {
 
     /// 詳細のペイン: 番号と「削除」・題名・状態の札・項目名付きの欄・区画の切り替え（Issue #122・ADR 0022）。
     /// 課題を選んでいなければ何も置かない（区画が台帳全体の履歴）。
-    fn probe_detail(&mut self, detail: &DetailLayout, commands: &mut Vec<DrawCommand>) {
+    /// 下書きと設定を出しているときはそちらを置く（設定は言語の箱を返し、最後に描く）。
+    fn probe_detail(
+        &mut self,
+        detail: &DetailLayout,
+        commands: &mut Vec<DrawCommand>,
+    ) -> Option<(PixelRect, Response)> {
         commands.push(DrawCommand::Fill {
             rect: detail.pane(),
             paint: Paint::Surface,
         });
-        let Some(id) = self.selected else {
-            return;
-        };
+        if self.draft.is_some() {
+            self.probe_draft(detail.pane(), commands);
+            return None;
+        }
+        if self.settings_open {
+            return Some(self.probe_settings(detail.pane(), commands));
+        }
+        let id = self.selected?;
         commands.push(Self::cell_text(
             detail.number(),
             &self.number_text(id),
@@ -902,7 +954,7 @@ impl DocketScreen {
         let delete = self.interaction.probe(DELETE, detail.delete(), true);
         if delete.clicked() {
             self.delete_item();
-            return;
+            return None;
         }
         commands.extend(button::button(
             detail.delete(),
@@ -929,6 +981,92 @@ impl DocketScreen {
             commands.extend(text_field::text_field(rect, self.slot(slot), response));
         }
         self.probe_section_tabs(detail.tabs(), commands);
+        None
+    }
+
+    /// 下書き: 見出し「新しい課題」・題名の欄・案内。Enter で初めて追記する（Issue #124）。
+    fn probe_draft(&mut self, pane: PixelRect, commands: &mut Vec<DrawCommand>) {
+        let mut layout = Layout::inside(pane, self.px(MARGIN_PX));
+        let head = layout.row(self.px(ROW_PX), &[ColumnWidth::Fill]);
+        let title = layout.row(self.px(ROW_PX), &[ColumnWidth::Fill]);
+        let hint = layout.row(self.px(ROW_PX), &[ColumnWidth::Fill]);
+        let [head, title, hint] = [head, title, hint].map(|row| Self::rects::<1>(&row)[0]);
+        commands.push(Self::cell_text(
+            head,
+            self.word(Word::Toolbar(ToolbarWord::NewItem)),
+            Paint::Ink,
+            0,
+        ));
+        let response = self.interaction.probe(DRAFT_TITLE, title, true);
+        if let Some(draft) = &self.draft {
+            commands.extend(text_field::text_field(title, draft, response));
+        }
+        commands.push(Self::cell_text(
+            hint,
+            self.word(Word::Toolbar(ToolbarWord::DraftHint)),
+            Paint::Muted,
+            0,
+        ));
+    }
+
+    /// 設定（この PC だけ）: 見出しと「閉じる」・表示言語・配色・参加者と権限（表の下の段）。言語の箱を返す。
+    fn probe_settings(
+        &mut self,
+        pane: PixelRect,
+        commands: &mut Vec<DrawCommand>,
+    ) -> (PixelRect, Response) {
+        let mut layout = Layout::inside(pane, self.px(MARGIN_PX));
+        let head = layout.row(
+            self.px(ROW_PX),
+            &[
+                ColumnWidth::Fill,
+                ColumnWidth::Fixed(self.px(BUTTON_WIDTH_PX)),
+            ],
+        );
+        let named = [
+            ColumnWidth::Fixed(self.px(FIELD_NAME_PX)),
+            ColumnWidth::Fill,
+        ];
+        let language_row = layout.row(self.px(ROW_PX), &named);
+        let theme_row = layout.row(self.px(ROW_PX), &named);
+        let members_row = layout.row(self.px(ROW_PX), &[ColumnWidth::Fill]);
+        let [title, close] = Self::rects(&head);
+        commands.push(Self::cell_text(
+            title,
+            self.word(Word::Toolbar(ToolbarWord::Settings)),
+            Paint::Ink,
+            0,
+        ));
+        let closed = self.interaction.probe(SETTINGS_CLOSE, close, true);
+        if closed.clicked() {
+            self.settings_open = false;
+        }
+        commands.extend(button::button(
+            close,
+            self.word(Word::Toolbar(ToolbarWord::Close)),
+            closed,
+        ));
+        let [language_name, language_rect] = Self::rects(&language_row);
+        let [theme_name, theme_rect] = Self::rects(&theme_row);
+        for (rect, word) in [
+            (language_name, ToolbarWord::Language),
+            (theme_name, ToolbarWord::Theme),
+        ] {
+            commands.push(Self::cell_text(
+                rect,
+                self.word(Word::Toolbar(word)),
+                Paint::Muted,
+                0,
+            ));
+        }
+        let language = self.interaction.probe(LANGUAGE, language_rect, true);
+        if language.clicked() {
+            self.language_select = self.language_select.toggled();
+        }
+        let theme = self.interaction.probe(THEME, theme_rect, true);
+        commands.extend(text_field::text_field(theme_rect, &self.theme_edit, theme));
+        self.probe_members_toggle(Self::rects::<1>(&members_row)[0], commands);
+        (language_rect, language)
     }
 
     /// 状態の札 6 つ。押せばその状態の `Set` を作る（同じ状態なら何もしない）。
@@ -1251,7 +1389,7 @@ impl DocketScreen {
 
     /// 降格があれば、残りの下 1 段を文言に使う。
     fn split_notice(&self, remaining: PixelRect) -> (PixelRect, Option<PixelRect>) {
-        if self.notices().is_empty() {
+        if self.notices().is_empty() && self.added_outside().is_none() {
             return (remaining, None);
         }
         let line = self.px(ROW_PX);
@@ -1441,6 +1579,10 @@ impl DocketScreen {
     fn take_preedit(&mut self, input: &FrameInput) {
         if self.interaction.focus() == Some(SEARCH) {
             self.search = self.search.with_preedit(input.preedit().cloned());
+        } else if self.interaction.focus() == Some(DRAFT_TITLE) {
+            if let Some(draft) = &self.draft {
+                self.draft = Some(draft.with_preedit(input.preedit().cloned()));
+            }
         } else if self.interaction.focus() == Some(THEME) {
             self.theme_edit = self.theme_edit.with_preedit(input.preedit().cloned());
         } else if self.interaction.focus() == Some(MembersPane::groups_id()) {
@@ -1458,11 +1600,25 @@ impl DocketScreen {
         match key {
             KeyIntent::Tab => self.interaction.focus_next(),
             KeyIntent::BackTab => self.interaction.focus_previous(),
+            KeyIntent::Escape if !self.any_options_open() && self.draft.is_some() => {
+                self.cancel_draft();
+            }
+            KeyIntent::Escape if !self.any_options_open() && self.settings_open => {
+                self.settings_open = false;
+                self.interaction.blur();
+            }
             KeyIntent::Escape if !self.any_options_open() => {
                 self.interaction.blur();
             }
             KeyIntent::Undo => self.undo(),
             KeyIntent::Redo => self.redo(),
+            KeyIntent::NewItem => self.start_draft(),
+            KeyIntent::Find => {
+                self.interaction.focus_on(SEARCH);
+                self.search = self.search.applied(KeyIntent::SelectAll);
+            }
+            // F1 の案内は B2-2（Issue #125）。
+            KeyIntent::Help => {}
             KeyIntent::Char(_)
             | KeyIntent::Move { .. }
             | KeyIntent::Backspace
@@ -1482,7 +1638,7 @@ impl DocketScreen {
         }
         match self.interaction.focus() {
             Some(SEARCH) => self.search = self.search.applied(key),
-            Some(FILTER) => self.filter = self.filter.applied(key),
+            Some(DRAFT_TITLE) => self.draft_key(key),
             Some(LANGUAGE) => {
                 let before = self.language_select.chosen();
                 self.language_select = self.language_select.applied(key);
@@ -1527,7 +1683,6 @@ impl DocketScreen {
     fn key_to_control(&mut self, id: WidgetId, key: KeyIntent) -> bool {
         let pressed = matches!(key, KeyIntent::Enter | KeyIntent::Char(' '));
         match id {
-            SHOW_DONE if pressed => self.show_done = !self.show_done,
             MEMBERS_TOGGLE if pressed => self.members.toggle(),
             id if pressed && self.press_chip(id) => {}
             id if pressed && id == MembersPane::editor_id() => self.press_member_editor(),
@@ -1535,15 +1690,36 @@ impl DocketScreen {
                 let action = self.attachments.open_key();
                 self.act_on_attachments(action);
             }
-            ADD if key == KeyIntent::Enter => self.add_item(),
+            ADD if key == KeyIntent::Enter => self.start_draft(),
             DELETE if key == KeyIntent::Enter => self.delete_item(),
             _ => return false,
         }
         true
     }
 
-    /// 状態の札か区画の札を鍵で押した。札でなければ偽。
+    /// 札（絞り込み・状態・区画）か道具の行のボタン（設定・閉じる・絞り込みを外す）を鍵で押した。それ以外は偽。
     fn press_chip(&mut self, id: WidgetId) -> bool {
+        match id {
+            SETTINGS_BUTTON => {
+                self.toggle_settings();
+                return true;
+            }
+            SETTINGS_CLOSE => {
+                self.settings_open = false;
+                return true;
+            }
+            CLEAR_FILTER => {
+                self.clear_filter();
+                return true;
+            }
+            _ => {}
+        }
+        if let Some(filter) = Self::index_in(id, FILTER_CHIP, ListFilter::ALL.len())
+            .and_then(|index| ListFilter::ALL.get(index).copied())
+        {
+            self.choose_filter(filter);
+            return true;
+        }
         if let Some(index) = Self::index_in(id, STATE_CHIP, ItemState::ALL.len()) {
             self.choose_state(index);
             return true;
@@ -1595,7 +1771,10 @@ impl DocketScreen {
             | KeyIntent::Tab
             | KeyIntent::BackTab
             | KeyIntent::Undo
-            | KeyIntent::Redo => 0_i32,
+            | KeyIntent::Redo
+            | KeyIntent::NewItem
+            | KeyIntent::Find
+            | KeyIntent::Help => 0_i32,
         };
         self.scroll = self
             .scroll
@@ -1666,21 +1845,6 @@ impl DocketScreen {
         }
     }
 
-    /// 課題を作る。検索欄に字があればそれを題名にし、題名の欄にフォーカスを置く。
-    fn add_item(&mut self) {
-        self.commit_unfocused_slots();
-        let id = self.ledger.fresh_item_id();
-        self.compose(OpKind::Create(id));
-        if !self.search.text().is_empty() {
-            self.compose(OpKind::Set {
-                item: id,
-                value: FieldValue::Title(self.search.text().to_owned()),
-            });
-        }
-        self.select(id);
-        self.interaction.focus_on(TITLE);
-    }
-
     /// 選んでいる課題を消す（ジャーナルには残る）。
     fn delete_item(&mut self) {
         if let Some(id) = self.selected {
@@ -1711,6 +1875,11 @@ impl DocketScreen {
     /// 行を選ぶ。編集中の欄はその前に確定する。
     fn select(&mut self, id: ItemId) {
         self.commit_unfocused_slots();
+        self.draft = None;
+        self.settings_open = false;
+        if self.kept.is_some_and(|(kept, _)| kept != id) {
+            self.kept = None;
+        }
         self.selected = Some(id);
         self.bad_due = false;
         self.overwrote = None;
@@ -1848,7 +2017,10 @@ impl DocketScreen {
             | KeyIntent::Tab
             | KeyIntent::BackTab
             | KeyIntent::Undo
-            | KeyIntent::Redo => self.theme_edit = self.theme_edit.applied(key),
+            | KeyIntent::Redo
+            | KeyIntent::NewItem
+            | KeyIntent::Find
+            | KeyIntent::Help => self.theme_edit = self.theme_edit.applied(key),
         }
     }
 
@@ -1878,46 +2050,179 @@ impl DocketScreen {
     fn probe_toolbar(
         &mut self,
         toolbar: &[PixelRect],
+        shown: usize,
         commands: &mut Vec<DrawCommand>,
-    ) -> ((PixelRect, Response), (PixelRect, Response)) {
+    ) {
         let [
             search_rect,
-            filter_rect,
-            done_rect,
-            members_rect,
-            language_rect,
-            theme_rect,
+            open_rect,
+            overdue_rect,
+            unassigned_rect,
+            review_rect,
+            all_rect,
+            showing_rect,
+            settings_rect,
             add_rect,
         ] = Self::rects(toolbar);
         let search = self.interaction.probe(SEARCH, search_rect, true);
         commands.extend(text_field::text_field(search_rect, &self.search, search));
-        let filter = self.interaction.probe(FILTER, filter_rect, true);
-        if filter.clicked() {
-            self.filter = self.filter.toggled();
+        if self.search.text().is_empty() && !search.focused() {
+            commands.push(Self::cell_text(
+                search_rect,
+                self.word(Word::Toolbar(ToolbarWord::SearchHint)),
+                Paint::Muted,
+                self.px(MARGIN_PX),
+            ));
         }
-        let done = self.interaction.probe(SHOW_DONE, done_rect, true);
-        if done.clicked() {
-            self.show_done = !self.show_done;
+        let counts = self.probe_filter_chips(
+            [
+                open_rect,
+                overdue_rect,
+                unassigned_rect,
+                review_rect,
+                all_rect,
+            ],
+            commands,
+        );
+        let total = counts.get(5).copied().unwrap_or(0);
+        let showing = self
+            .word(Word::Toolbar(ToolbarWord::Showing))
+            .replace("{shown}", &format!("{shown}"))
+            .replace("{total}", &format!("{total}"));
+        commands.push(DrawCommand::Text {
+            rect: showing_rect,
+            text: showing,
+            align: TextAlign::End,
+            paint: Paint::Muted,
+            caret: None,
+        });
+        self.probe_toolbar_buttons(settings_rect, add_rect, commands);
+    }
+
+    /// 絞り込みの札 5 つ。選んだ札は印と縁で示し、件数を添える。件数（と最後に全件）を返す。
+    fn probe_filter_chips(
+        &mut self,
+        chips: [PixelRect; 5],
+        commands: &mut Vec<DrawCommand>,
+    ) -> [usize; 6] {
+        let counts = self.cached_counts();
+        for (index, (rect, filter)) in chips.into_iter().zip(ListFilter::ALL).enumerate() {
+            let id = FILTER_CHIP.indexed(u32::try_from(index).unwrap_or(u32::MAX));
+            let response = self.interaction.probe(id, rect, true);
+            if response.clicked() {
+                self.choose_filter(filter);
+            }
+            let chosen = self.list_filter == filter;
+            let count = counts.get(index).copied().unwrap_or(0);
+            let label = if chosen {
+                format!("{CHOSEN_MARK} {} {count}", self.word(filter.word()))
+            } else {
+                format!("{} {count}", self.word(filter.word()))
+            };
+            commands.extend(chip::chip(rect, &label, chosen, response));
         }
-        commands.extend(checkbox::checkbox(
-            done_rect,
-            self.word(Word::ShowDone),
-            self.show_done,
-            done,
+        counts
+    }
+
+    /// 「設定」と「＋ 課題を追加」。
+    fn probe_toolbar_buttons(
+        &mut self,
+        settings_rect: PixelRect,
+        add_rect: PixelRect,
+        commands: &mut Vec<DrawCommand>,
+    ) {
+        let settings = self.interaction.probe(SETTINGS_BUTTON, settings_rect, true);
+        if settings.clicked() {
+            self.toggle_settings();
+        }
+        commands.extend(button::button(
+            settings_rect,
+            self.word(Word::Toolbar(ToolbarWord::Settings)),
+            settings,
         ));
-        self.probe_members_toggle(members_rect, commands);
-        let language = self.interaction.probe(LANGUAGE, language_rect, true);
-        if language.clicked() {
-            self.language_select = self.language_select.toggled();
-        }
-        let theme = self.interaction.probe(THEME, theme_rect, true);
-        commands.extend(text_field::text_field(theme_rect, &self.theme_edit, theme));
         let add = self.interaction.probe(ADD, add_rect, true);
         if add.clicked() {
-            self.add_item();
+            self.start_draft();
         }
-        commands.extend(button::button(add_rect, self.word(Word::Add), add));
-        ((filter_rect, filter), (language_rect, language))
+        commands.extend(button::button(
+            add_rect,
+            self.word(Word::Toolbar(ToolbarWord::AddItem)),
+            add,
+        ));
+    }
+
+    /// 絞り込みの札を選ぶ。足したばかりの課題を残すのも、ここで終わる。
+    fn choose_filter(&mut self, filter: ListFilter) {
+        self.list_filter = filter;
+        self.kept = None;
+    }
+
+    /// 足した課題が絞り込みの外にあれば、その課題。
+    fn added_outside(&self) -> Option<ItemId> {
+        self.kept.filter(|(_, outside)| *outside).map(|(id, _)| id)
+    }
+
+    /// 「絞り込みを外す」: 「すべて」にする。
+    fn clear_filter(&mut self) {
+        self.choose_filter(ListFilter::All);
+    }
+
+    /// 設定のペインを出し入れする。出すときは下書きを捨てる。
+    fn toggle_settings(&mut self) {
+        self.settings_open = !self.settings_open;
+        if self.settings_open {
+            self.draft = None;
+        }
+    }
+
+    /// 下書きを始める（「＋ 課題を追加」・Ctrl+N）。ジャーナルにはまだ何も書かない。
+    fn start_draft(&mut self) {
+        self.commit_unfocused_slots();
+        self.settings_open = false;
+        self.draft = Some(TextEdit::empty());
+        self.interaction.focus_on(DRAFT_TITLE);
+    }
+
+    /// 下書きの欄の鍵。Enter で足して次の下書きへ、ほかは字の編集。
+    fn draft_key(&mut self, key: KeyIntent) {
+        if key == KeyIntent::Enter {
+            self.add_draft();
+            return;
+        }
+        if let Some(draft) = &self.draft {
+            self.draft = Some(draft.applied(key));
+        }
+    }
+
+    /// 下書きの題名で課題を足す（作る ＋ 題名）。空なら何もしない。絞り込みの外なら知らせる。
+    fn add_draft(&mut self) {
+        let Some(title) = self
+            .draft
+            .as_ref()
+            .map(|draft| draft.text().trim().to_owned())
+            .filter(|title| !title.is_empty())
+        else {
+            return;
+        };
+        let id = self.ledger.fresh_item_id();
+        self.compose(OpKind::Create(id));
+        self.compose(OpKind::Set {
+            item: id,
+            value: FieldValue::Title(title),
+        });
+        self.draft = Some(TextEdit::empty());
+        let shown = self
+            .ledger
+            .docket()
+            .item(id)
+            .is_some_and(|item| self.list_filter.matches(item, self.today));
+        self.kept = Some((id, !shown));
+    }
+
+    /// 下書きを捨てる（何も残らない）。
+    fn cancel_draft(&mut self) {
+        self.draft = None;
+        self.interaction.blur();
     }
 
     /// 表の下の参加者の段を出すチェック（設定へ移すまで・B の後半）。
@@ -1928,7 +2233,7 @@ impl DocketScreen {
         }
         commands.extend(checkbox::checkbox(
             rect,
-            self.word(Word::Members),
+            self.word(Word::Toolbar(ToolbarWord::MembersToggle)),
             self.members.is_shown(),
             members,
         ));
@@ -1938,21 +2243,6 @@ impl DocketScreen {
     fn rects<const N: usize>(rects: &[PixelRect]) -> [PixelRect; N] {
         let empty = PixelRect::new(0, 0, 0, 0);
         core::array::from_fn(|index| rects.get(index).copied().unwrap_or(empty))
-    }
-
-    /// 開いた絞り込みの候補。表より後に問い合わせるので、重なった所では候補が勝つ。候補の列は `select_box` が描く。
-    fn probe_filter_options(&mut self, filter_rect: PixelRect) {
-        if !self.filter.is_open() {
-            return;
-        }
-        let rects = select_box::option_rects(filter_rect, FILTER_COUNT);
-        for (index, rect) in rects.into_iter().enumerate() {
-            let id = FILTER_OPTION.indexed(u32::try_from(index).unwrap_or(u32::MAX));
-            if self.interaction.probe(id, rect, false).clicked() {
-                self.filter = self.filter.chosen_at(index);
-                self.interaction.focus_on(FILTER);
-            }
-        }
     }
 
     /// 開いた言語の候補。選べば言語を変えて設定に残す。
@@ -1974,7 +2264,7 @@ impl DocketScreen {
 
     /// 候補の列が開いているあいだ、表は押せない。
     fn any_options_open(&self) -> bool {
-        self.filter.is_open() || self.language_select.is_open() || self.members.options_open()
+        self.language_select.is_open() || self.members.options_open()
     }
 
     /// ヘッダと、見えている行だけ。行はクリックで選ぶ。
@@ -2114,21 +2404,52 @@ impl DocketScreen {
     }
 
     /// 降格の文言を 1 行に並べる（FR-014）。
-    fn notice_commands(&self, rect: Option<PixelRect>, commands: &mut Vec<DrawCommand>) {
+    /// 下の 1 行: 足した課題が絞り込みの外にある知らせ（「絞り込みを外す」）と、降格の知らせ（FR-014）。
+    fn probe_notice(&mut self, rect: Option<PixelRect>, commands: &mut Vec<DrawCommand>) {
         let Some(rect) = rect else {
             return;
         };
-        let words: Vec<String> = self
-            .notices()
-            .into_iter()
-            .map(|notice| notice.describe(self.language))
-            .collect();
         commands.push(DrawCommand::Fill {
             rect,
             paint: Paint::Surface,
         });
+        let mut words: Vec<String> = self
+            .notices()
+            .into_iter()
+            .map(|notice| notice.describe(self.language))
+            .collect();
+        let mut text_rect = rect;
+        if let Some(id) = self.added_outside() {
+            let width = self.px(ADD_WIDTH_PX);
+            let clear = PixelRect::new(
+                rect.right().saturating_sub(width).saturating_add(1),
+                rect.y(),
+                width,
+                rect.height(),
+            );
+            let response = self.interaction.probe(CLEAR_FILTER, clear, true);
+            if response.clicked() {
+                self.clear_filter();
+            }
+            commands.extend(button::button(
+                clear,
+                self.word(Word::Toolbar(ToolbarWord::ClearFilter)),
+                response,
+            ));
+            words.insert(
+                0,
+                self.word(Word::Toolbar(ToolbarWord::AddedOutside))
+                    .replace("{number}", &self.number_text(id)),
+            );
+            text_rect = PixelRect::new(
+                rect.x(),
+                rect.y(),
+                rect.width().saturating_sub(width),
+                rect.height(),
+            );
+        }
         commands.push(Self::cell_text(
-            rect,
+            text_rect,
             &words.join(" / "),
             Paint::Ink,
             self.px(MARGIN_PX),
@@ -2206,14 +2527,20 @@ mod tests {
     const FIRST_ROW_Y: u16 = 86;
     const SECOND_ROW_Y: u16 = 114;
     const TOOLBAR_Y: u16 = 20;
-    /// 道具の段（1360 幅）: 検索 8..684・絞り込み 692..812・完了 820..930・参加者 938..1038・言語 1046..1146・配色 1154..1274・追加 1282..1352。
+    /// 道具の段（1360 幅）: 検索 8..367・札 376..479 / 488..591 / 600..703 / 712..815 / 824..927・件数 936..1115・
+    /// 設定 1124..1203・追加 1212..1351。
     const SEARCH_X: u16 = 50;
-    const FILTER_X: u16 = 750;
-    const SHOW_DONE_X: u16 = 875;
-    const MEMBERS_X: u16 = 988;
-    const LANGUAGE_X: u16 = 1096;
-    const THEME_X: u16 = 1214;
-    const ADD_X: u16 = 1317;
+    /// 絞り込みの札（未完了・期限超過・未割り当て・確認待ち・すべて）の中央。
+    const FILTER_XS: [u16; 5] = [427, 539, 651, 763, 875];
+    const SETTINGS_X: u16 = 1163;
+    const ADD_X: u16 = 1281;
+    /// 設定のペイン: 見出しと「閉じる」44..72（1282..1351）・言語 80..108・配色 116..144・参加者 152..180（欄は 1052..1351）。
+    const LANGUAGE_AT: (u16, u16) = (1200, 94);
+    const THEME_AT: (u16, u16) = (1200, 130);
+    const MEMBERS_AT: (u16, u16) = (1100, 166);
+    const CLOSE_AT: (u16, u16) = (1317, 58);
+    /// 下書きの題名の欄（80..108）。
+    const DRAFT_AT: (u16, u16) = (1100, 94);
     /// 詳細のペイン（972..1351）: 番号と「削除」44..72・題名 80..108・札 116..144 / 152..180・担当 188..216・期限 224..252・
     /// ラベル 260..288・区画の札 296..324・区画 332..591。札は 972..1092・1101..1221・1230..1351、欄は 1052..1351。
     const HEAD_Y: u16 = 58;
@@ -2501,8 +2828,19 @@ mod tests {
         screen.settings = screen.settings.clone().with_order(legacy_order());
     }
 
+    /// 多くのテストは閉じた課題も表に出す前提（Issue #124 の前の既定）なので「すべて」で始める。
+    /// 既定（「未完了」）を見るテストは `screen_in` を使う。
     fn screen_with(journal: FakeJournal) -> (DocketScreen, Spy) {
-        screen_in(journal, Environment::new(None), false)
+        let (mut screen, spy) = screen_in(journal, Environment::new(None), false);
+        screen.list_filter = ListFilter::All;
+        (screen, spy)
+    }
+
+    /// 設定を開いて参加者の段を出し入れし、設定を閉じる。
+    fn toggle_members(screen: &mut DocketScreen) {
+        click(screen, SETTINGS_X, TOOLBAR_Y);
+        click(screen, MEMBERS_AT.0, MEMBERS_AT.1);
+        click(screen, CLOSE_AT.0, CLOSE_AT.1);
     }
 
     fn screen_in(
@@ -2718,8 +3056,8 @@ mod tests {
         assert!(painted.contains(&(String::from("Issue #1"), Paint::Muted)));
         assert!(painted.contains(&(String::from("2023-11-01"), Paint::Muted)));
         assert!(painted.contains(&(String::from("Cancelled"), Paint::Muted)));
-        // 「完了も表示」を外すと、完了の 2 と中止の 1 が表から外れる。
-        click(&mut screen, SHOW_DONE_X, TOOLBAR_Y);
+        // 札「未完了」にすると、完了の 2 と中止の 1 が表から外れる。
+        click(&mut screen, FILTER_XS[0], TOOLBAR_Y);
         let shown: Vec<ItemId> = screen
             .visible_items()
             .iter()
@@ -2821,54 +3159,163 @@ mod tests {
     }
 
     #[test]
-    fn the_filter_box_opens_and_a_click_on_an_option_chooses_it() {
-        let (mut screen, _) = screen(30);
-        click(&mut screen, FILTER_X, TOOLBAR_Y);
-        assert!(screen.filter().is_open());
-        // 選択肢は 36 から 28 ずつ: すべて・未着手・対応中・確認中・保留・完了（176..204）・中止。
-        click(&mut screen, FILTER_X, 190);
-        assert!(!screen.filter().is_open());
-        assert_eq!(screen.filter().chosen(), 5);
+    fn the_filter_chips_choose_one_condition_and_show_counts_with_a_mark_on_the_chosen_one() {
+        // 30 件: 3 で割って 1 余る番号は対応中、2 余るのは完了、割り切れるのは未着手。担当は空。
+        let journal = FakeJournal::default();
+        journal.pending.borrow_mut().extend(others_items(30));
+        let (mut screen, _) = screen_in(journal, Environment::new(None), false);
+        assert_eq!(screen.list_filter(), ListFilter::Open);
+        let shown = texts(&idle(&mut screen));
+        for label in [
+            "● Open 20",
+            "Overdue 0",
+            "Unassigned 20",
+            "In review 0",
+            "All 30",
+            "Showing 20 of 30",
+        ] {
+            assert!(shown.iter().any(|text| text == label), "{label}: {shown:?}");
+        }
         assert!(
             screen
                 .visible_items()
                 .iter()
-                .all(|item| item.state() == ItemState::Done)
+                .all(|item| !item.state().is_closed())
         );
-        click(&mut screen, 100, FIRST_ROW_Y);
-        assert_eq!(screen.selected(), Some(ItemId::new(OTHER, 2)));
+        click(&mut screen, FILTER_XS[4], TOOLBAR_Y);
+        assert_eq!(screen.list_filter(), ListFilter::All);
+        assert_eq!(screen.visible_items().len(), 30);
+        // 鍵でも選べる（札にフォーカスがある）: 左隣の「確認待ち」へは Shift+Tab と Enter。
+        keys(&mut screen, &[KeyIntent::BackTab, KeyIntent::Enter]);
+        assert_eq!(screen.list_filter(), ListFilter::Review);
+        assert!(screen.visible_items().is_empty());
+        // 検索は件数にも効く。
+        click(&mut screen, SEARCH_X, TOOLBAR_Y);
+        keys(&mut screen, &chars("#1"));
+        let searched = texts(&idle(&mut screen));
+        assert!(searched.iter().any(|text| text == "All 11"), "{searched:?}");
     }
 
     #[test]
-    fn show_done_toggles_by_click_and_by_key() {
-        let (mut screen, _) = screen(6);
-        click(&mut screen, SHOW_DONE_X, TOOLBAR_Y);
-        assert!(!screen.shows_done());
-        assert_eq!(screen.visible_items().len(), 4);
-        keys(&mut screen, &[KeyIntent::Char(' ')]);
-        assert!(screen.shows_done());
+    fn the_search_hint_shows_only_while_the_field_is_empty_and_unfocused() {
+        let (mut screen, _) = screen(1);
+        let hint = "Search titles and text  Ctrl+F";
+        assert!(texts(&idle(&mut screen)).iter().any(|text| text == hint));
+        keys(&mut screen, &[KeyIntent::Find]);
+        assert!(!texts(&idle(&mut screen)).iter().any(|text| text == hint));
+        keys(&mut screen, &chars("x"));
+        assert_eq!(screen.search_text(), "x");
     }
 
     #[test]
-    fn add_creates_an_item_writes_it_and_focuses_the_title() {
+    fn add_opens_a_draft_that_writes_only_on_enter_and_keeps_going() {
         let (mut screen, spy) = screen(2);
         click(&mut screen, ADD_X, TOOLBAR_Y);
-        let mine = ItemId::new(ME, 1);
-        assert_eq!(screen.selected(), Some(mine));
-        assert_eq!(spy.written.borrow().len(), 1);
-        assert_eq!(*spy.synced.borrow(), 1);
+        assert_eq!(screen.draft_text(), Some(""));
+        // 空のまま Enter しても何も書かない。
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert!(spy.written.borrow().is_empty());
         keys(&mut screen, &chars("Fix"));
         keys(&mut screen, &[KeyIntent::Enter]);
+        let mine = ItemId::new(ME, 1);
         assert_eq!(title_of(&screen, mine), "Fix");
         assert_eq!(spy.written.borrow().len(), 2);
-        keys(&mut screen, &[KeyIntent::Tab, KeyIntent::Enter]);
-        assert_eq!(screen.visible_items().len(), 3);
-        // 検索欄に字があれば、それが題名になる。
+        // 続けて次を打てる。
+        assert_eq!(screen.draft_text(), Some(""));
+        keys(&mut screen, &chars("Next"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert_eq!(title_of(&screen, ItemId::new(ME, 2)), "Next");
+        // Esc で下書きを捨てる。打ちかけの字は書かない。
+        keys(&mut screen, &chars("Dropped"));
+        keys(&mut screen, &[KeyIntent::Escape]);
+        assert_eq!(screen.draft_text(), None);
+        assert_eq!(spy.written.borrow().len(), 4);
+        assert_eq!(screen.visible_items().len(), 4);
+    }
+
+    #[test]
+    fn the_search_text_is_not_used_and_ctrl_n_opens_the_draft() {
+        let (mut screen, spy) = screen(2);
         click(&mut screen, SEARCH_X, TOOLBAR_Y);
         keys(&mut screen, &chars("Issue"));
-        keys(&mut screen, &[KeyIntent::Tab; 6]);
+        keys(&mut screen, &[KeyIntent::NewItem]);
+        assert_eq!(screen.draft_text(), Some(""));
+        assert!(spy.written.borrow().is_empty());
+        let shown = texts(&idle(&mut screen));
+        assert!(shown.iter().any(|text| text == "New issue"));
+        assert!(
+            shown
+                .iter()
+                .any(|text| text == "Enter to add · Esc to cancel")
+        );
+        click(&mut screen, DRAFT_AT.0, DRAFT_AT.1);
+        keys(&mut screen, &chars("Typed"));
         keys(&mut screen, &[KeyIntent::Enter]);
-        assert_eq!(title_of(&screen, ItemId::new(ME, 2)), "Issue");
+        assert_eq!(title_of(&screen, ItemId::new(ME, 1)), "Typed");
+    }
+
+    #[test]
+    fn an_item_added_outside_the_filter_stays_and_says_so_until_the_filter_changes() {
+        let journal = FakeJournal::default();
+        journal.pending.borrow_mut().extend(others_items(3));
+        let (mut screen, _) = screen_in(journal, Environment::new(None), false);
+        click(&mut screen, FILTER_XS[3], TOOLBAR_Y);
+        assert!(screen.visible_items().is_empty());
+        keys(&mut screen, &[KeyIntent::NewItem]);
+        keys(&mut screen, &chars("Outside"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        let mine = ItemId::new(ME, 1);
+        assert_eq!(
+            screen
+                .visible_items()
+                .iter()
+                .map(|item| item.id())
+                .collect::<Vec<_>>(),
+            [mine]
+        );
+        let shown = texts(&idle(&mut screen));
+        assert!(
+            shown
+                .iter()
+                .any(|text| text == "Added me-1. The current filter hides it"),
+            "{shown:?}"
+        );
+        assert!(shown.iter().any(|text| text == "Clear filter"));
+        // 「絞り込みを外す」は「すべて」にする。
+        keys(&mut screen, &[KeyIntent::Escape]);
+        let clear_y = 591 - 14;
+        click(&mut screen, 1281, clear_y);
+        assert_eq!(screen.list_filter(), ListFilter::All);
+        assert!(
+            !texts(&idle(&mut screen))
+                .iter()
+                .any(|text| text == "Clear filter")
+        );
+    }
+
+    #[test]
+    fn the_settings_pane_holds_the_language_the_colors_and_the_members_and_esc_closes_it() {
+        let (mut screen, _) = screen(1);
+        click(&mut screen, SETTINGS_X, TOOLBAR_Y);
+        assert!(screen.shows_settings());
+        let shown = texts(&idle(&mut screen));
+        for label in [
+            "Settings",
+            "Close",
+            "Language",
+            "Colors",
+            "Members and permissions",
+        ] {
+            assert!(shown.iter().any(|text| text == label), "{label}: {shown:?}");
+        }
+        click(&mut screen, MEMBERS_AT.0, MEMBERS_AT.1);
+        assert!(screen.shows_members());
+        keys(&mut screen, &[KeyIntent::Escape]);
+        assert!(!screen.shows_settings());
+        // 行を選ぶと設定は閉じて課題が出る。
+        click(&mut screen, SETTINGS_X, TOOLBAR_Y);
+        click(&mut screen, 100, FIRST_ROW_Y);
+        assert!(!screen.shows_settings());
     }
 
     #[test]
@@ -2997,13 +3444,13 @@ mod tests {
     #[test]
     fn delete_by_key_needs_the_focus_and_a_selection() {
         let (mut screen, spy) = screen(2);
-        // 道具の行の 7 つの後。選んでいなければ「削除」は無い。
-        keys(&mut screen, &[KeyIntent::Tab; 8]);
+        // 道具の行の 8 つ（検索・札 5・設定・追加）の後。選んでいなければ「削除」は無い。
+        keys(&mut screen, &[KeyIntent::Tab; 9]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 0);
         click(&mut screen, 100, FIRST_ROW_Y);
         keys(&mut screen, &[KeyIntent::Escape]);
-        keys(&mut screen, &[KeyIntent::Tab; 8]);
+        keys(&mut screen, &[KeyIntent::Tab; 9]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 1);
     }
@@ -3152,6 +3599,8 @@ mod tests {
             ..FakeJournal::default()
         });
         click(&mut screen, ADD_X, TOOLBAR_Y);
+        keys(&mut screen, &chars("x"));
+        keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(
             screen.notices(),
             alloc::vec![
@@ -3202,8 +3651,9 @@ mod tests {
         keys(&mut screen, &[KeyIntent::Tab]);
         keys(&mut screen, &[KeyIntent::Char('a')]);
         assert_eq!(screen.search_text(), "a");
-        keys(&mut screen, &[KeyIntent::Tab, KeyIntent::Down]);
-        assert_eq!(screen.filter().chosen(), 1);
+        // 検索の次は絞り込みの札。Enter で選ぶ。
+        keys(&mut screen, &[KeyIntent::Tab, KeyIntent::Enter]);
+        assert_eq!(screen.list_filter(), ListFilter::Open);
         keys(&mut screen, &[KeyIntent::BackTab, KeyIntent::Char('b')]);
         assert_eq!(screen.search_text(), "ab");
         keys(&mut screen, &[KeyIntent::Escape, KeyIntent::Down]);
@@ -3269,7 +3719,7 @@ mod tests {
     #[test]
     fn administration_is_recorded_in_the_journal_shown_in_the_history_and_not_undone() {
         let (mut screen, spy) = screen(2);
-        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        toggle_members(&mut screen);
         click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         click(&mut screen, 100, SECOND_MEMBER_Y);
         click(&mut screen, EDITOR_X, EDIT_ROW_Y);
@@ -3309,7 +3759,7 @@ mod tests {
             fail_write: true,
             ..FakeJournal::default()
         });
-        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        toggle_members(&mut screen);
         click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         assert!(spy.written.borrow().is_empty());
     }
@@ -3435,8 +3885,10 @@ mod tests {
     fn the_language_box_changes_every_word_and_saves_the_choice() {
         let (mut screen, spy) = screen(2);
         assert_eq!(screen.language(), Language::English);
-        click(&mut screen, LANGUAGE_X, TOOLBAR_Y);
-        click(&mut screen, LANGUAGE_X, 64);
+        click(&mut screen, SETTINGS_X, TOOLBAR_Y);
+        click(&mut screen, LANGUAGE_AT.0, LANGUAGE_AT.1);
+        // 候補は箱の下（108 から 28 ずつ）: OS に従う・日本語・…
+        click(&mut screen, LANGUAGE_AT.0, 150);
         assert_eq!(screen.language(), Language::Japanese);
         assert_eq!(
             spy.saved.borrow().last().map(Settings::language),
@@ -3444,7 +3896,7 @@ mod tests {
         );
         let frame = idle(&mut screen);
         let shown = texts(&frame);
-        assert!(shown.iter().any(|text| text == "追加"));
+        assert!(shown.iter().any(|text| text == "＋ 課題を追加"));
         assert!(shown.iter().any(|text| text == "題名"));
         assert!(shown.iter().any(|text| text == "対応中"));
         keys(&mut screen, &[KeyIntent::Down, KeyIntent::Down]);
@@ -3460,14 +3912,15 @@ mod tests {
         assert_eq!(screen.language(), Language::Korean);
         assert_eq!(screen.notices(), Vec::new());
         let frame = idle(&mut screen);
-        assert!(texts(&frame).iter().any(|text| text == "추가"));
+        assert!(texts(&frame).iter().any(|text| text == "＋ 이슈 추가"));
     }
 
     #[test]
     fn the_theme_field_takes_a_name_cycles_with_arrows_and_refuses_unknown_names() {
         let (mut screen, spy) = screen(1);
         assert_eq!(screen.theme().name(), "neutral-light");
-        click(&mut screen, THEME_X, TOOLBAR_Y);
+        click(&mut screen, SETTINGS_X, TOOLBAR_Y);
+        click(&mut screen, THEME_AT.0, THEME_AT.1);
         keys(&mut screen, &[KeyIntent::SelectAll]);
         keys(&mut screen, &chars("dracula"));
         keys(&mut screen, &[KeyIntent::Enter]);
@@ -3485,7 +3938,8 @@ mod tests {
     #[test]
     fn an_unknown_theme_name_is_shown_and_system_goes_back_to_the_default() {
         let (mut screen, _) = screen(1);
-        click(&mut screen, THEME_X, TOOLBAR_Y);
+        click(&mut screen, SETTINGS_X, TOOLBAR_Y);
+        click(&mut screen, THEME_AT.0, THEME_AT.1);
         keys(&mut screen, &[KeyIntent::SelectAll]);
         keys(&mut screen, &chars("no-such"));
         keys(&mut screen, &[KeyIntent::Enter]);
@@ -3507,7 +3961,8 @@ mod tests {
         let environment = Environment::new(None).with_appearance(Some(Appearance::Dark));
         let (mut screen, _) = screen_in(journal, environment, true);
         assert_eq!(screen.theme().name(), "ubuntu-aubergine");
-        click(&mut screen, THEME_X, TOOLBAR_Y);
+        click(&mut screen, SETTINGS_X, TOOLBAR_Y);
+        click(&mut screen, THEME_AT.0, THEME_AT.1);
         keys(&mut screen, &[KeyIntent::Down]);
         assert_eq!(
             screen.notices(),
@@ -3945,7 +4400,7 @@ mod tests {
     #[test]
     fn the_members_pane_lists_accounts_and_the_owner_changes_permissions() {
         let (mut screen, _) = screen(2);
-        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        toggle_members(&mut screen);
         assert!(screen.shows_members());
         let members = screen.members();
         assert_eq!(members.len(), 2);
@@ -3962,9 +4417,7 @@ mod tests {
             .unwrap();
         let grouped = texts(&idle(&mut screen));
         assert!(grouped.iter().any(|text| text == "Editor (qa)"));
-        keys(&mut screen, &[KeyIntent::Escape]);
-        keys(&mut screen, &[KeyIntent::Tab; 4]);
-        keys(&mut screen, &[KeyIntent::Char(' ')]);
+        toggle_members(&mut screen);
         assert!(!screen.shows_members());
     }
 
@@ -3976,7 +4429,7 @@ mod tests {
     #[test]
     fn the_owner_turns_permissions_on_and_toggles_editors_from_the_pane() {
         let (mut screen, _) = screen(2);
-        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        toggle_members(&mut screen);
         // 「権限」のチェック（段のヘッダの右端）を押す。
         click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         let roles: Vec<MemberRole> = screen.members().iter().map(Member::role).collect();
@@ -3998,7 +4451,7 @@ mod tests {
     #[test]
     fn selecting_the_owner_hides_the_edit_row_and_turning_permissions_off_clears_the_selection() {
         let (mut screen, _) = screen(2);
-        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        toggle_members(&mut screen);
         click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         click(&mut screen, 100, SECOND_MEMBER_Y);
         click(&mut screen, EDITOR_X, EDIT_ROW_Y);
@@ -4024,7 +4477,7 @@ mod tests {
     #[test]
     fn the_owner_edits_groups_from_the_pane_with_enter_or_by_leaving_the_field() {
         let (mut screen, _) = screen(2);
-        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        toggle_members(&mut screen);
         click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         click(&mut screen, 100, SECOND_MEMBER_Y);
         click(&mut screen, GROUPS_X, EDIT_ROW_Y);
@@ -4048,7 +4501,7 @@ mod tests {
     #[test]
     fn the_groups_field_commits_when_left_refuses_a_colon_and_commits_before_reselecting() {
         let (mut screen, _) = screen(2);
-        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        toggle_members(&mut screen);
         click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         click(&mut screen, 100, SECOND_MEMBER_Y);
         click(&mut screen, GROUPS_X, EDIT_ROW_Y);
@@ -4076,7 +4529,7 @@ mod tests {
     #[test]
     fn the_owner_picks_a_successor_from_the_edit_row_and_the_old_id_leaves_the_pane() {
         let (mut screen, _) = screen(2);
-        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        toggle_members(&mut screen);
         click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         click(&mut screen, 100, SECOND_MEMBER_Y);
         let frame = idle(&mut screen);
@@ -4117,7 +4570,7 @@ mod tests {
     #[test]
     fn the_successor_options_are_clickable_and_cover_the_rows() {
         let (mut screen, _) = screen(2);
-        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        toggle_members(&mut screen);
         click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         click(&mut screen, 100, SECOND_MEMBER_Y);
         click(&mut screen, SUCCESSOR_X, EDIT_ROW_Y);
@@ -4138,7 +4591,7 @@ mod tests {
             fail_write: true,
             ..FakeJournal::default()
         });
-        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        toggle_members(&mut screen);
         click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         assert_eq!(
             screen.notices(),
@@ -4191,7 +4644,7 @@ mod tests {
     #[test]
     fn dragging_the_pane_border_resizes_the_panes_and_saves_the_settings() {
         let (mut screen, spy) = screen(2);
-        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        toggle_members(&mut screen);
         assert_eq!(screen.settings().pane(), PaneHeight::Auto);
         // 段は 374..591、表の下端は 365、隙間 366..373 のつまみは 367..372。
         screen.step(&pointer(500, 369, ButtonPhase::Pressed));
@@ -4210,7 +4663,7 @@ mod tests {
     #[test]
     fn the_pane_height_is_clamped_and_there_is_no_grip_without_a_pane() {
         let (mut screen, spy) = screen(2);
-        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        toggle_members(&mut screen);
         screen.step(&pointer(500, 369, ButtonPhase::Pressed));
         screen.step(&pointer(500, 300, ButtonPhase::Held));
         screen.step(&pointer(500, 300, ButtonPhase::Released));
@@ -4226,7 +4679,7 @@ mod tests {
         assert_eq!(spy.saved.borrow().len(), 2);
         // 段が無ければつまみも無い。
         keys(&mut screen, &[KeyIntent::Escape]);
-        click(&mut screen, MEMBERS_X, TOOLBAR_Y);
+        toggle_members(&mut screen);
         screen.step(&pointer(500, 369, ButtonPhase::Pressed));
         screen.step(&pointer(500, 100, ButtonPhase::Held));
         screen.step(&pointer(500, 100, ButtonPhase::Released));
