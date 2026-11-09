@@ -2,9 +2,10 @@
 //!
 //! application が作った `DocketFrame` を描き、OS のイベントを `FrameInput` にして渡すだけ（ARC-011・ADR 0006）。
 //! 可変性の隔離区画（ARC-005）。業務状態は複製しない。
-//! 時刻・環境・ファイルには到達しない（ARC-007 / CNF-012）。
+//! 時刻・環境・ファイルには到達しない（ARC-007 / CNF-012）。計測（`--bench`）の時間もアダプタの時計をポートで受け取る。
 
 pub mod atoms;
+pub mod bench_loop;
 pub mod canvas;
 mod clipboard;
 pub mod display;

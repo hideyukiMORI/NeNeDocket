@@ -2,9 +2,15 @@
 //!
 //! 入力のメッセージが届くたびに 1 フレーム進め、描き直しを求める（`InvalidateRect`）。描くのは `WM_PAINT`。
 
+use core::time::Duration;
+
+use nene_docket_application::bench_phase::BenchPhase;
+use nene_docket_application::bench_plan::BenchPlan;
 use nene_docket_application::docket_frame::DocketFrame;
 use nene_docket_application::docket_screen::DocketScreen;
 use nene_docket_application::frame_input::FrameInput;
+use nene_docket_application::frame_lap::FrameLap;
+use nene_docket_application::stopwatch_port::StopwatchPort;
 use nene_docket_core::draw_command::DrawCommand;
 use nene_docket_core::key_intent::KeyIntent;
 use nene_docket_core::pasted_text;
@@ -156,6 +162,45 @@ impl WindowsApp {
         if painted.is_err() {
             self.pen = None;
         }
+    }
+
+    /// 計測の筋書き（`--bench`・Issue #111）を回す。メッセージを待たず、フレームごとに `step` → 積む → `EndDraw` を測る。
+    ///
+    /// # Errors
+    ///
+    /// 描く道具を作れない・描けない。
+    pub(crate) fn bench(
+        &mut self,
+        watch: &dyn StopwatchPort,
+    ) -> Result<Vec<(BenchPhase, FrameLap)>, Win32Failure> {
+        let plan = BenchPlan::for_screen(&self.screen);
+        let mut laps = Vec::with_capacity(plan.len());
+        for index in 0..plan.len() {
+            let (phase, input) = plan.frame(index, self.bounds);
+            let started = watch.elapsed();
+            let frame = self.screen.step(&input);
+            let stepped = watch.elapsed();
+            if self.pen.is_none() {
+                self.pen = Some(Pen::new(self.window, self.bounds)?);
+            }
+            let (encode, present) = self
+                .pen
+                .as_ref()
+                .map_or(Ok((Duration::ZERO, Duration::ZERO)), |pen| {
+                    pen.paint_measured(&frame, watch)
+                })?;
+            self.frame = Some(frame);
+            laps.push((
+                phase,
+                FrameLap::new(stepped.saturating_sub(started), encode, present),
+            ));
+        }
+        Ok(laps)
+    }
+
+    /// いまの窓の中の大きさ。
+    pub(crate) const fn bounds(&self) -> PixelRect {
+        self.bounds
     }
 
     /// 窓全体の描き直しを求める。

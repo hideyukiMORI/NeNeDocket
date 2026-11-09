@@ -6,6 +6,7 @@
 //! 引き継ぎ、`--owner <account>` で持ち主の交代（ADR 0013）。これらがあれば画面は開かず、書いて終わる。
 //! `--audit` は台帳全体の時系列（監査・ADR 0014）を標準出力に出して終わる。
 //! `--attach <課題> <パス>` はファイルを添付して終わる（課題は `<作ったアカウント 16 進>:<連番>`・FR-021）。
+//! `--bench <件数>` は、引数のフォルダ（空か無いもの）に計測用の台帳を作り、起動とフレームを測って出して終わる（Issue #111）。
 
 use std::path::{Path, PathBuf};
 
@@ -28,6 +29,7 @@ pub(crate) struct Arguments {
     audit: bool,
     attach: Vec<(ItemId, String)>,
     probe_share: bool,
+    bench: Option<u32>,
 }
 
 impl Arguments {
@@ -41,6 +43,7 @@ impl Arguments {
             audit: false,
             attach: Vec::new(),
             probe_share: false,
+            bench: None,
         };
         while let Some(word) = arguments.next() {
             if !word.starts_with('-') {
@@ -53,6 +56,15 @@ impl Arguments {
             }
             if word == "--probe-share" {
                 parsed.probe_share = true;
+                continue;
+            }
+            if word == "--bench" {
+                let items = arguments
+                    .next()
+                    .and_then(|text| text.parse::<u32>().ok())
+                    .filter(|items| *items > 0)
+                    .ok_or(LaunchFailure::Usage)?;
+                parsed.bench = Some(items);
                 continue;
             }
             if word == "--attach" {
@@ -79,6 +91,9 @@ impl Arguments {
                 _ => return Err(LaunchFailure::Usage),
             };
             parsed.admin.push(command);
+        }
+        if parsed.bench.is_some() && parsed.folder.is_none() {
+            return Err(LaunchFailure::Usage);
         }
         Ok(parsed)
     }
@@ -116,6 +131,11 @@ impl Arguments {
 
     pub(crate) fn attach(&self) -> &[(ItemId, String)] {
         &self.attach
+    }
+
+    /// 計測の件数とフォルダ（`--bench`・Issue #111）。フォルダは引数にあるものだけ（最近の台帳を計測で汚さない）。
+    pub(crate) fn bench(&self) -> Option<(u32, &Path)> {
+        self.bench.zip(self.folder.as_deref())
     }
 
     /// 台帳を新しく作るときの名前。フォルダ名。
@@ -229,6 +249,9 @@ mod tests {
         let audit = parse(&["/srv/team", "--audit"]).unwrap();
         assert!(audit.audit());
         assert!(audit.admin().is_empty());
+        let bench = parse(&["--bench", "100000", "/tmp/bench"]).unwrap();
+        assert_eq!(bench.bench(), Some((100_000, Path::new("/tmp/bench"))));
+        assert_eq!(parse(&["/srv/team"]).unwrap().bench(), None);
         let item_text = format!("{hex}:7");
         let attach = parse(&["--attach", &item_text, "/tmp/a.png"]).unwrap();
         assert_eq!(
@@ -258,6 +281,10 @@ mod tests {
             vec!["--attach", &hex, "/a"],
             vec!["--attach", "zz:1", "/a"],
             vec!["--attach", "0000:x", "/a"],
+            vec!["--bench", "100"],
+            vec!["--bench", "0", "/a"],
+            vec!["--bench", "many", "/a"],
+            vec!["--bench"],
         ] {
             assert!(
                 matches!(parse(&words), Err(LaunchFailure::Usage)),

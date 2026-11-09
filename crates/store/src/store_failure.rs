@@ -38,6 +38,8 @@ pub enum StoreFailure {
     CannotDecodeAttachment,
     /// 追記に失敗した操作がまだジャーナルに無い（スナップショットを書くと嘘になる・Issue #81）。
     Unwritten(usize),
+    /// 計測（`--bench`）のフォルダが空でない（本物の台帳を汚さない・Issue #111）。
+    NotEmptyFolder,
 }
 
 impl fmt::Display for StoreFailure {
@@ -69,6 +71,7 @@ impl fmt::Display for StoreFailure {
             Self::Unwritten(count) => {
                 write!(formatter, "{count} operations are not yet in the journal")
             }
+            Self::NotEmptyFolder => formatter.write_str("--bench needs an empty or missing folder"),
         }
     }
 }

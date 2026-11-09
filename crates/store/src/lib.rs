@@ -8,6 +8,7 @@
 pub mod administration;
 pub mod admission_failure;
 pub mod attachment_store;
+pub mod bench_folder;
 mod crc32;
 #[cfg(test)]
 mod damage;
