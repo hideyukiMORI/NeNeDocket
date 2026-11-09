@@ -1,4 +1,4 @@
-//! 表の列の順と、出している列（FR-012）。設定の版 7 に `order = number,title,state,assignee,due,labels,opened,closed`
+//! 表の列の順と、出している列（FR-012）。設定の版 7 に `order = number,title,state,assignee,due,opened,closed`
 //! （出している列だけを左から）で残る。出していない列は `TableColumn::ALL` の順で後ろに控える（ADR 0023）。
 //! 版 4〜6 の `order`（6 列ちょうど）も読め、移すときに起票日と完了日を右に足す（[`ColumnOrder::with_new_columns`]）。
 
@@ -9,8 +9,8 @@ use crate::table_column::TableColumn;
 
 /// 全部の列の数。
 const COUNT: usize = TableColumn::ALL.len();
-/// 既定で出す列の数（番号・題名・状態・担当・期限・ラベル・起票日・完了日）。
-const INITIAL_SHOWN: u8 = 8;
+/// 既定で出す列の数（番号・題名・状態・担当・期限・起票日・完了日）。ラベルは詳細のペインで読み書きする（Issue #122）。
+const INITIAL_SHOWN: u8 = 7;
 
 /// 全部の列の並び（前の `shown` 本が出している列・左から）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -20,7 +20,7 @@ pub struct ColumnOrder {
 }
 
 impl ColumnOrder {
-    /// 既定（番号・題名・状態・担当・期限・ラベル・起票日・完了日。起票者と更新日は控える）。
+    /// 既定（番号・題名・状態・担当・期限・起票日・完了日。ラベル・起票者・更新日は控える）。
     #[must_use]
     pub const fn initial() -> Self {
         Self {
@@ -111,20 +111,20 @@ mod tests {
         let order = ColumnOrder::initial();
         assert_eq!(
             order.text(),
-            "number,title,state,assignee,due,labels,opened,closed"
+            "number,title,state,assignee,due,opened,closed"
         );
         assert_eq!(ColumnOrder::parse(&order.text()), Some(order));
         let moved = order.moved_to(TableColumn::State, 0);
         assert_eq!(
             moved.text(),
-            "state,number,title,assignee,due,labels,opened,closed"
+            "state,number,title,assignee,due,opened,closed"
         );
         let to_end = moved.moved_to(TableColumn::Number, 99);
         assert_eq!(
             to_end.text(),
-            "state,title,assignee,due,labels,opened,closed,number"
+            "state,title,assignee,due,opened,closed,number"
         );
-        assert_eq!(to_end.moved_to(TableColumn::Number, 7), to_end);
+        assert_eq!(to_end.moved_to(TableColumn::Number, 6), to_end);
         // 出していない列は動かせない。
         assert_eq!(order.moved_to(TableColumn::Opener, 0), order);
     }

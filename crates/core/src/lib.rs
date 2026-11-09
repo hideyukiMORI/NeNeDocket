@@ -27,6 +27,7 @@ pub mod bitmap;
 pub mod button;
 pub mod button_phase;
 pub mod checkbox;
+pub mod chip;
 pub mod column_width;
 pub mod csv;
 pub mod cursor_move;

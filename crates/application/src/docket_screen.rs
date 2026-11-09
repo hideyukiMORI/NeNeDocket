@@ -17,6 +17,7 @@ use nene_docket_core::auto_field::AutoField;
 use nene_docket_core::button;
 use nene_docket_core::button_phase::ButtonPhase;
 use nene_docket_core::checkbox;
+use nene_docket_core::chip;
 use nene_docket_core::column_width::ColumnWidth;
 use nene_docket_core::date::Date;
 use nene_docket_core::draw_command::DrawCommand;
@@ -62,6 +63,8 @@ use crate::attachments_context::AttachmentsContext;
 use crate::attachments_pane::AttachmentsPane;
 use crate::body_pane::BodyPane;
 use crate::clock_display::ClockDisplay;
+use crate::detail_layout::DetailLayout;
+use crate::detail_section::DetailSection;
 use crate::docket_frame::DocketFrame;
 use crate::drag_target::DragTarget;
 use crate::edit_slot::EditSlot;
@@ -94,22 +97,23 @@ const SHOW_DONE: WidgetId = WidgetId::new(3);
 const ADD: WidgetId = WidgetId::new(4);
 const SCROLL: WidgetId = WidgetId::new(5);
 const TITLE: WidgetId = WidgetId::new(6);
-const STATE: WidgetId = WidgetId::new(7);
+/// 7 は状態の選択箱だった（Issue #122 で札に）。
 const DELETE: WidgetId = WidgetId::new(8);
 const ASSIGNEE: WidgetId = WidgetId::new(9);
 const DUE: WidgetId = WidgetId::new(10);
-/// 11 は履歴の段のスクロールバー（`history_pane`）。
-const HISTORY_TOGGLE: WidgetId = WidgetId::new(12);
+/// 11 は履歴の段のスクロールバー（`history_pane`）。12・17・28 は本文・履歴・添付の段のチェックだった（Issue #122 でペインの区画に）。
 const LABELS: WidgetId = WidgetId::new(13);
 const LANGUAGE: WidgetId = WidgetId::new(14);
 const THEME: WidgetId = WidgetId::new(15);
 /// 16 は本文の段の欄（`body_pane`）。
-const BODY_TOGGLE: WidgetId = WidgetId::new(17);
 const MEMBERS_TOGGLE: WidgetId = WidgetId::new(18);
 /// 19 は参加者の段の「権限」のチェック、21 はそのスクロールバー、22〜24 は編集行の「編集者」・グループの欄・「引き継ぎ先」の箱、7000〜 はその候補（`members_pane`）。20 は本文のスクロールバー（`body_pane`）。
 const FILTER_OPTION: WidgetId = WidgetId::new(100);
-const STATE_OPTION: WidgetId = WidgetId::new(200);
+/// 状態の札（詳細のペイン・`ItemState::ALL` の順の番号を足す・Issue #122）。
+const STATE_CHIP: WidgetId = WidgetId::new(200);
 const LANGUAGE_OPTION: WidgetId = WidgetId::new(300);
+/// 詳細のペインの区画の切り替え（`DetailSection::ALL` の順の番号を足す・Issue #122）。
+const SECTION_TAB: WidgetId = WidgetId::new(400);
 const ROW: WidgetId = WidgetId::new(1_000);
 /// 表のヘッダの列の境（ドラッグで幅を変える・FR-012）。左からの番号を足す。
 const COLUMN_GRIP: WidgetId = WidgetId::new(5_000);
@@ -117,18 +121,18 @@ const COLUMN_GRIP: WidgetId = WidgetId::new(5_000);
 const COLUMN_HEAD: WidgetId = WidgetId::new(6_000);
 /// 表と下の段の境のつまみの ID。ドラッグで段の高さを変える（FR-012）。
 const PANE_GRIP: WidgetId = WidgetId::new(25);
-/// 添付の段を出すチェック。26・27・29・30 と 8000〜 は添付の段の中（`attachments_pane`）。
-const ATTACHMENTS_TOGGLE: WidgetId = WidgetId::new(28);
+// 26・27・29・30 と 8000〜 は添付の区画の中（`attachments_pane`）。
 
 /// 1x の寸法（SPECIFICATION 第 2 節・決め打ちしない）。
 const MARGIN_PX: u16 = 8;
 const ROW_PX: u16 = 28;
 const FILTER_WIDTH_PX: u16 = 120;
 const SHOW_DONE_WIDTH_PX: u16 = 110;
-const HISTORY_WIDTH_PX: u16 = 90;
-const BODY_WIDTH_PX: u16 = 70;
 const MEMBERS_WIDTH_PX: u16 = 100;
-const ATTACHMENTS_WIDTH_PX: u16 = 110;
+/// 詳細のペインの幅（窓の半分まで・ADR 0022）。
+const DETAIL_WIDTH_PX: u16 = 380;
+/// 詳細のペインの項目名の幅。
+const FIELD_NAME_PX: u16 = 72;
 /// 本文の段の 1 行。
 const BODY_LINE_PX: u16 = 20;
 const LANGUAGE_WIDTH_PX: u16 = 100;
@@ -141,12 +145,6 @@ const RECENT_LIMIT: usize = 1_000;
 const CHECKPOINT_EVERY: u64 = 100;
 /// 表のヘッダの列の境の、つまめる幅。
 const GRIP_PX: u16 = 6;
-/// 編集行の状態の箱。
-const STATE_WIDTH_PX: u16 = 110;
-/// 編集行の担当と期限の欄。
-const EDIT_FIELD_WIDTH_PX: u16 = 100;
-/// 編集行のラベルの欄。
-const LABELS_FIELD_WIDTH_PX: u16 = 140;
 /// ホイール 1 刻みで送る行数。
 const WHEEL_ROWS: i32 = 3;
 /// 番号の列に出す作成者の ID の桁数。
@@ -194,7 +192,10 @@ pub struct DocketScreen {
     bad_due: bool,
     /// 他人が変えた後に上書きした欄（FR-008）。別の行を選ぶまで示す。
     overwrote: Option<EditSlot>,
+    /// 選んだ課題の状態の札の選び（開かない・`ItemState::ALL` の位置）。
     state: SelectState,
+    /// 詳細のペインで出している区画（課題を選んでいるとき・Issue #122）。
+    section: DetailSection,
     history: HistoryPane,
     ledger: Ledger,
     /// 表に出す課題の一覧のキャッシュと、その鍵（台帳の世代・検索・絞り込み・完了の表示）。
@@ -264,6 +265,7 @@ impl DocketScreen {
             bad_due: false,
             overwrote: None,
             state: SelectState::closed(ItemState::ALL.len(), 0),
+            section: DetailSection::Body,
             history: HistoryPane::hidden(environment.scale()),
             ledger,
             visible_cache: Vec::new(),
@@ -306,11 +308,14 @@ impl DocketScreen {
         let bounds = input.bounds();
         let mut layout = Layout::inside(bounds.inset(self.px(MARGIN_PX)), self.px(MARGIN_PX));
         let toolbar = layout.row(self.px(ROW_PX), &self.toolbar_widths());
-        let editor = layout.row(self.px(ROW_PX), &self.editor_widths());
-        let (table_area, notice_rect) = self.split_notice(layout.remaining());
-        let whole_area = table_area;
-        let (table_area, [body_area, members_area, attachments_area, history_area]) =
-            self.split_panes(table_area);
+        let (main_area, notice_rect) = self.split_notice(layout.remaining());
+        let (whole_area, detail) = self.split_detail(main_area);
+        self.sync_sections();
+        let section = Some(detail.section());
+        let body_area = section.filter(|_| self.body.is_shown());
+        let attachments_area = section.filter(|_| self.attachments.is_shown());
+        let history_area = section.filter(|_| self.history.is_shown());
+        let (table_area, [_, members_area, _, _]) = self.split_panes(whole_area);
         let history_lines = self.cached_history_lines();
         self.preview = self.history_preview(history_area, input, &history_lines);
         let visible = self.cached_visible_ids();
@@ -319,7 +324,7 @@ impl DocketScreen {
         self.scroll = self
             .scroll
             .resized(table.content_height(), u32::from(table.body().height()));
-        self.take_drop(input, (&table, &visible), attachments_area);
+        self.take_drop(input, (&table, &visible), detail.pane());
 
         self.interaction.begin(input.pointer());
         let mut commands = alloc::vec![DrawCommand::Fill {
@@ -328,23 +333,22 @@ impl DocketScreen {
         }];
         let ((filter_rect, filter_response), (language_rect, language_response)) =
             self.probe_toolbar(&toolbar, &mut commands);
-        let (state_rect, state_response) = self.probe_editor(&editor, &mut commands);
+        self.probe_detail(&detail, &mut commands);
         self.probe_table(&table, &visible, &mut commands);
         self.probe_panes(
             (whole_area, table_area, track),
             (
                 [body_area, members_area, attachments_area, history_area],
+                detail.pane(),
                 &history_lines,
             ),
             &mut commands,
         );
         self.probe_filter_options(filter_rect);
-        self.probe_state_options(state_rect);
         self.probe_language_options(language_rect);
         self.box_commands(
             [
                 (filter_rect, filter_response),
-                (state_rect, state_response),
                 (language_rect, language_response),
             ],
             &mut commands,
@@ -355,27 +359,26 @@ impl DocketScreen {
         DocketFrame::new((self.scale, self.language, self.theme), commands)
     }
 
-    /// 表の下の段（本文・参加者・添付・履歴）と、段の境のつまみ・表のスクロールバー。
+    /// ペインの区画（本文・添付・履歴）と表の下の参加者の段、段の境のつまみ・表のスクロールバー。
     fn probe_panes(
         &mut self,
         (whole_area, table_area, track): (PixelRect, PixelRect, PixelRect),
-        (panes, history_lines): ([Option<PixelRect>; 4], &[HistoryLine]),
+        (panes, detail, history_lines): ([Option<PixelRect>; 4], PixelRect, &[HistoryLine]),
         commands: &mut Vec<DrawCommand>,
     ) {
         let [body_area, members_area, attachments_area, history_area] = panes;
-        self.probe_pane_grip(whole_area, table_area, panes);
-        self.probe_scroll(track, panes, commands);
+        self.probe_pane_grip(whole_area, table_area, [None, members_area, None, None]);
+        self.probe_scroll(track, [Some(detail), members_area, None, None], commands);
         self.probe_body(body_area, commands);
         self.probe_members(members_area, commands);
         self.probe_attachments(attachments_area, commands);
         self.probe_history(history_area, history_lines, commands);
     }
 
-    /// 3 つの箱（絞り込み・状態・言語）を最後に描く（開いた候補が他の部品の上に来る）。
-    fn box_commands(&self, boxes: [(PixelRect, Response); 3], commands: &mut Vec<DrawCommand>) {
+    /// 2 つの箱（絞り込み・言語）を最後に描く（開いた候補が他の部品の上に来る）。
+    fn box_commands(&self, boxes: [(PixelRect, Response); 2], commands: &mut Vec<DrawCommand>) {
         let [
             (filter_rect, filter_response),
-            (state_rect, state_response),
             (language_rect, language_response),
         ] = boxes;
         commands.extend(select_box::select_box(
@@ -383,12 +386,6 @@ impl DocketScreen {
             &self.filter_options(),
             self.filter,
             filter_response,
-        ));
-        commands.extend(select_box::select_box(
-            state_rect,
-            &self.state_options(),
-            self.state,
-            state_response,
         ));
         commands.extend(select_box::select_box(
             language_rect,
@@ -687,15 +684,12 @@ impl DocketScreen {
         self.scale.px(base)
     }
 
-    fn toolbar_widths(&self) -> [ColumnWidth; 10] {
+    fn toolbar_widths(&self) -> [ColumnWidth; 7] {
         [
             ColumnWidth::Fill,
             ColumnWidth::Fixed(self.px(FILTER_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(SHOW_DONE_WIDTH_PX)),
-            ColumnWidth::Fixed(self.px(HISTORY_WIDTH_PX)),
-            ColumnWidth::Fixed(self.px(BODY_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(MEMBERS_WIDTH_PX)),
-            ColumnWidth::Fixed(self.px(ATTACHMENTS_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(LANGUAGE_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(THEME_WIDTH_PX)),
             ColumnWidth::Fixed(self.px(BUTTON_WIDTH_PX)),
@@ -837,14 +831,151 @@ impl DocketScreen {
         commands
     }
 
-    /// 出している段（本文・参加者・添付・履歴の順）。本文と添付は課題を選んでいるときだけ。
+    /// 表の下に出している段（本文・参加者・添付・履歴の順の枠のうち、表の下は参加者だけ・Issue #122）。
     fn shown_panes(&self) -> [bool; 4] {
-        [
-            self.body.is_shown() && self.selected.is_some(),
-            self.members.is_shown(),
-            self.attachments.is_shown() && self.selected.is_some(),
-            self.history.is_shown(),
-        ]
+        [false, self.members.is_shown(), false, false]
+    }
+
+    /// 表と詳細のペインに割る。ペインは右で、幅は既定 380（窓の半分まで）。
+    fn split_detail(&self, main: PixelRect) -> (PixelRect, DetailLayout) {
+        let gap = self.px(MARGIN_PX);
+        let width = self.px(DETAIL_WIDTH_PX).min(main.width() / 2);
+        let pane = PixelRect::new(
+            main.right().saturating_sub(width).saturating_add(1),
+            main.y(),
+            width,
+            main.height(),
+        );
+        let left = PixelRect::new(
+            main.x(),
+            main.y(),
+            main.width().saturating_sub(width).saturating_sub(gap),
+            main.height(),
+        );
+        let detail = if self.selected.is_some() {
+            DetailLayout::of_item(
+                pane,
+                self.px(ROW_PX),
+                gap,
+                (self.px(BUTTON_WIDTH_PX), self.px(FIELD_NAME_PX)),
+            )
+        } else {
+            DetailLayout::of_docket(pane)
+        };
+        (left, detail)
+    }
+
+    /// ペインの区画を合わせる: 課題を選んでいれば選んだ区画だけ、選んでいなければ台帳全体の履歴。
+    fn sync_sections(&mut self) {
+        let wanted = match (self.selected, self.section) {
+            (Some(_), DetailSection::Body) => (true, false, false),
+            (Some(_), DetailSection::Attachments) => (false, true, false),
+            (None, _) | (Some(_), DetailSection::History) => (false, false, true),
+        };
+        if self.body.is_shown() != wanted.0 {
+            self.body.toggle();
+        }
+        if self.attachments.is_shown() != wanted.1 {
+            self.attachments.toggle();
+        }
+        if self.history.is_shown() != wanted.2 {
+            self.history.toggle();
+        }
+    }
+
+    /// 詳細のペイン: 番号と「削除」・題名・状態の札・項目名付きの欄・区画の切り替え（Issue #122・ADR 0022）。
+    /// 課題を選んでいなければ何も置かない（区画が台帳全体の履歴）。
+    fn probe_detail(&mut self, detail: &DetailLayout, commands: &mut Vec<DrawCommand>) {
+        commands.push(DrawCommand::Fill {
+            rect: detail.pane(),
+            paint: Paint::Surface,
+        });
+        let Some(id) = self.selected else {
+            return;
+        };
+        commands.push(Self::cell_text(
+            detail.number(),
+            &self.number_text(id),
+            Paint::Muted,
+            0,
+        ));
+        let delete = self.interaction.probe(DELETE, detail.delete(), true);
+        if delete.clicked() {
+            self.delete_item();
+            return;
+        }
+        commands.extend(button::button(
+            detail.delete(),
+            self.word(Word::Delete),
+            delete,
+        ));
+        let title = self.interaction.probe(TITLE, detail.title(), true);
+        commands.extend(text_field::text_field(detail.title(), &self.title, title));
+        self.probe_state_chips(detail.chips(), commands);
+        let slots = [EditSlot::Assignee, EditSlot::Due, EditSlot::Labels];
+        for ((slot, name), rect) in slots.into_iter().zip(detail.names()).zip(detail.fields()) {
+            let field = match slot {
+                EditSlot::Assignee => Field::Assignee,
+                EditSlot::Due => Field::Due,
+                EditSlot::Labels | EditSlot::Title | EditSlot::Body => Field::Labels,
+            };
+            commands.push(Self::cell_text(
+                name,
+                self.word(Word::FieldName(field)),
+                Paint::Muted,
+                0,
+            ));
+            let response = self.interaction.probe(Self::slot_id(slot), rect, true);
+            commands.extend(text_field::text_field(rect, self.slot(slot), response));
+        }
+        self.probe_section_tabs(detail.tabs(), commands);
+    }
+
+    /// 状態の札 6 つ。押せばその状態の `Set` を作る（同じ状態なら何もしない）。
+    fn probe_state_chips(&mut self, rects: [PixelRect; 6], commands: &mut Vec<DrawCommand>) {
+        for (index, (rect, state)) in rects.into_iter().zip(ItemState::ALL).enumerate() {
+            let id = STATE_CHIP.indexed(u32::try_from(index).unwrap_or(u32::MAX));
+            let response = self.interaction.probe(id, rect, true);
+            if response.clicked() {
+                self.choose_state(index);
+            }
+            commands.extend(chip::chip(
+                rect,
+                self.word(Word::StateName(state)),
+                self.state.chosen() == index,
+                response,
+            ));
+        }
+    }
+
+    /// 状態を `ALL` の `index` 番目にする。
+    fn choose_state(&mut self, index: usize) {
+        let before = self.state.chosen();
+        self.state = self.state.chosen_at(index);
+        self.state_changed(before);
+    }
+
+    /// 区画の切り替えの札（本文・添付・履歴）。
+    fn probe_section_tabs(&mut self, rects: [PixelRect; 3], commands: &mut Vec<DrawCommand>) {
+        for (index, (rect, section)) in rects.into_iter().zip(DetailSection::ALL).enumerate() {
+            let id = SECTION_TAB.indexed(u32::try_from(index).unwrap_or(u32::MAX));
+            let response = self.interaction.probe(id, rect, true);
+            if response.clicked() {
+                self.section = section;
+                self.sync_sections();
+            }
+            let word = match section {
+                DetailSection::Body => Word::FieldName(Field::Body),
+                DetailSection::Attachments => Word::Attachment(AttachmentWord::Attachments),
+                DetailSection::History => Word::History,
+            };
+            commands.extend(chip::chip(
+                rect,
+                self.word(word),
+                self.section == section,
+                response,
+            ));
+        }
     }
 
     /// 1 段の高さ（物理画素）を、行 2 つ分以上・表に行 2 つ分が残る範囲に収める。
@@ -1011,7 +1142,7 @@ impl DocketScreen {
         &mut self,
         input: &FrameInput,
         (table, visible): (&TableLayout, &[ItemId]),
-        attachments_area: Option<PixelRect>,
+        pane: PixelRect,
     ) {
         let Some((point, paths)) = input.drop() else {
             return;
@@ -1020,16 +1151,13 @@ impl DocketScreen {
             .row_at(self.scroll.offset(), point)
             .and_then(|index| usize::try_from(index).ok())
             .and_then(|index| visible.get(index).copied());
-        let on_pane = attachments_area
-            .filter(|area| area.contains(point))
-            .and(self.selected);
+        let on_pane = self.selected.filter(|_| pane.contains(point));
         let Some(item) = on_row.or(on_pane) else {
             return;
         };
         self.select(item);
-        if !self.attachments.is_shown() {
-            self.attachments.toggle();
-        }
+        self.section = DetailSection::Attachments;
+        self.sync_sections();
         for path in paths {
             self.attach_file(item, path);
         }
@@ -1076,17 +1204,6 @@ impl DocketScreen {
         if let Some(line) = clicked.and_then(|index| lines.get(index)) {
             self.repick(line.change().clone());
         }
-    }
-
-    fn editor_widths(&self) -> [ColumnWidth; 6] {
-        [
-            ColumnWidth::Fill,
-            ColumnWidth::Fixed(self.px(EDIT_FIELD_WIDTH_PX)),
-            ColumnWidth::Fixed(self.px(EDIT_FIELD_WIDTH_PX)),
-            ColumnWidth::Fixed(self.px(LABELS_FIELD_WIDTH_PX)),
-            ColumnWidth::Fixed(self.px(STATE_WIDTH_PX)),
-            ColumnWidth::Fixed(self.px(BUTTON_WIDTH_PX)),
-        ]
     }
 
     /// 欄の部品の ID。
@@ -1384,11 +1501,6 @@ impl DocketScreen {
                 let action = self.attachments.path_key(key);
                 self.act_on_attachments(action);
             }
-            Some(STATE) => {
-                let before = self.state.chosen();
-                self.state = self.state.applied(key);
-                self.state_changed(before);
-            }
             Some(id) => {
                 if !self.key_to_control(id, key) {
                     self.key_to_table(key);
@@ -1416,9 +1528,8 @@ impl DocketScreen {
         let pressed = matches!(key, KeyIntent::Enter | KeyIntent::Char(' '));
         match id {
             SHOW_DONE if pressed => self.show_done = !self.show_done,
-            HISTORY_TOGGLE | BODY_TOGGLE | MEMBERS_TOGGLE | ATTACHMENTS_TOGGLE if pressed => {
-                self.toggle_pane(id);
-            }
+            MEMBERS_TOGGLE if pressed => self.members.toggle(),
+            id if pressed && self.press_chip(id) => {}
             id if pressed && id == MembersPane::editor_id() => self.press_member_editor(),
             id if pressed && id == AttachmentsPane::open_id() => {
                 let action = self.attachments.open_key();
@@ -1431,15 +1542,28 @@ impl DocketScreen {
         true
     }
 
-    /// 段の出し入れ（道具の段の 4 つのチェック）。
-    fn toggle_pane(&mut self, id: WidgetId) {
-        match id {
-            HISTORY_TOGGLE => self.history.toggle(),
-            BODY_TOGGLE => self.body.toggle(),
-            MEMBERS_TOGGLE => self.members.toggle(),
-            ATTACHMENTS_TOGGLE => self.attachments.toggle(),
-            _ => {}
+    /// 状態の札か区画の札を鍵で押した。札でなければ偽。
+    fn press_chip(&mut self, id: WidgetId) -> bool {
+        if let Some(index) = Self::index_in(id, STATE_CHIP, ItemState::ALL.len()) {
+            self.choose_state(index);
+            return true;
         }
+        if let Some(section) = Self::index_in(id, SECTION_TAB, DetailSection::ALL.len())
+            .and_then(|index| DetailSection::ALL.get(index).copied())
+        {
+            self.section = section;
+            self.sync_sections();
+            return true;
+        }
+        false
+    }
+
+    /// `base` に番号を足した ID なら、その番号（`count` 未満）。
+    fn index_in(id: WidgetId, base: WidgetId, count: usize) -> Option<usize> {
+        id.number()
+            .checked_sub(base.number())
+            .and_then(|index| usize::try_from(index).ok())
+            .filter(|index| *index < count)
     }
 
     /// 参加者の編集行の「編集者」を鍵で押した。
@@ -1618,12 +1742,10 @@ impl DocketScreen {
                 self.rebase(slot, item.as_ref());
             }
         }
-        if !self.state.is_open() {
-            self.state = SelectState::closed(
-                ItemState::ALL.len(),
-                item.map_or(0, |found| Self::state_index(found.state())),
-            );
-        }
+        self.state = SelectState::closed(
+            ItemState::ALL.len(),
+            item.map_or(0, |found| Self::state_index(found.state())),
+        );
     }
 
     /// フォーカスの無い欄を確定する（フレームの終わり・行の選択・追加の前）。
@@ -1762,10 +1884,7 @@ impl DocketScreen {
             search_rect,
             filter_rect,
             done_rect,
-            history_rect,
-            body_rect,
             members_rect,
-            attachments_rect,
             language_rect,
             theme_rect,
             add_rect,
@@ -1786,10 +1905,7 @@ impl DocketScreen {
             self.show_done,
             done,
         ));
-        self.probe_pane_toggles(
-            [history_rect, body_rect, members_rect, attachments_rect],
-            commands,
-        );
+        self.probe_members_toggle(members_rect, commands);
         let language = self.interaction.probe(LANGUAGE, language_rect, true);
         if language.clicked() {
             self.language_select = self.language_select.toggled();
@@ -1804,85 +1920,18 @@ impl DocketScreen {
         ((filter_rect, filter), (language_rect, language))
     }
 
-    /// 表の下の段を出すチェック（履歴・本文・参加者・添付）。
-    fn probe_pane_toggles(&mut self, rects: [PixelRect; 4], commands: &mut Vec<DrawCommand>) {
-        let [history_rect, body_rect, members_rect, attachments_rect] = rects;
-        let history = self.interaction.probe(HISTORY_TOGGLE, history_rect, true);
-        if history.clicked() {
-            self.history.toggle();
-        }
-        commands.extend(checkbox::checkbox(
-            history_rect,
-            self.word(Word::History),
-            self.history.is_shown(),
-            history,
-        ));
-        let body = self.interaction.probe(BODY_TOGGLE, body_rect, true);
-        if body.clicked() {
-            self.body.toggle();
-        }
-        commands.extend(checkbox::checkbox(
-            body_rect,
-            self.word(Word::FieldName(Field::Body)),
-            self.body.is_shown(),
-            body,
-        ));
-        let members = self.interaction.probe(MEMBERS_TOGGLE, members_rect, true);
+    /// 表の下の参加者の段を出すチェック（設定へ移すまで・B の後半）。
+    fn probe_members_toggle(&mut self, rect: PixelRect, commands: &mut Vec<DrawCommand>) {
+        let members = self.interaction.probe(MEMBERS_TOGGLE, rect, true);
         if members.clicked() {
             self.members.toggle();
         }
         commands.extend(checkbox::checkbox(
-            members_rect,
+            rect,
             self.word(Word::Members),
             self.members.is_shown(),
             members,
         ));
-        let attachments = self
-            .interaction
-            .probe(ATTACHMENTS_TOGGLE, attachments_rect, true);
-        if attachments.clicked() {
-            self.attachments.toggle();
-        }
-        commands.extend(checkbox::checkbox(
-            attachments_rect,
-            self.word(Word::Attachment(AttachmentWord::Attachments)),
-            self.attachments.is_shown(),
-            attachments,
-        ));
-    }
-
-    /// 選んだ課題の題名・担当・期限・ラベル・状態・削除。状態の箱は最後に描く。
-    fn probe_editor(
-        &mut self,
-        editor: &[PixelRect],
-        commands: &mut Vec<DrawCommand>,
-    ) -> (PixelRect, Response) {
-        let [
-            title_rect,
-            assignee_rect,
-            due_rect,
-            labels_rect,
-            state_rect,
-            delete_rect,
-        ] = Self::rects(editor);
-        for (slot, rect) in
-            EditSlot::ROW
-                .into_iter()
-                .zip([title_rect, assignee_rect, due_rect, labels_rect])
-        {
-            let response = self.interaction.probe(Self::slot_id(slot), rect, true);
-            commands.extend(text_field::text_field(rect, self.slot(slot), response));
-        }
-        let state = self.interaction.probe(STATE, state_rect, true);
-        if state.clicked() {
-            self.state = self.state.toggled();
-        }
-        let delete = self.interaction.probe(DELETE, delete_rect, true);
-        if delete.clicked() {
-            self.delete_item();
-        }
-        commands.extend(button::button(delete_rect, self.word(Word::Delete), delete));
-        (state_rect, state)
     }
 
     /// 段の列。足りなければ空の矩形で埋める（起こらないが型の上では `Vec`）。
@@ -1906,23 +1955,6 @@ impl DocketScreen {
         }
     }
 
-    /// 開いた状態の候補。選べば `Set` を作る。選んだ後も箱にフォーカスが残る（続けて上下で変えられる）。
-    fn probe_state_options(&mut self, state_rect: PixelRect) {
-        if !self.state.is_open() {
-            return;
-        }
-        let before = self.state.chosen();
-        let rects = select_box::option_rects(state_rect, ItemState::ALL.len());
-        for (index, rect) in rects.into_iter().enumerate() {
-            let id = STATE_OPTION.indexed(u32::try_from(index).unwrap_or(u32::MAX));
-            if self.interaction.probe(id, rect, false).clicked() {
-                self.state = self.state.chosen_at(index);
-                self.interaction.focus_on(STATE);
-                self.state_changed(before);
-            }
-        }
-    }
-
     /// 開いた言語の候補。選べば言語を変えて設定に残す。
     fn probe_language_options(&mut self, language_rect: PixelRect) {
         if !self.language_select.is_open() {
@@ -1942,10 +1974,7 @@ impl DocketScreen {
 
     /// 候補の列が開いているあいだ、表は押せない。
     fn any_options_open(&self) -> bool {
-        self.filter.is_open()
-            || self.state.is_open()
-            || self.language_select.is_open()
-            || self.members.options_open()
+        self.filter.is_open() || self.language_select.is_open() || self.members.options_open()
     }
 
     /// ヘッダと、見えている行だけ。行はクリックで選ぶ。
@@ -2169,36 +2198,44 @@ mod tests {
     use crate::opener_port::OpenerPort;
     use crate::settings_port::SettingsPort;
 
-    const BOUNDS: PixelRect = PixelRect::new(0, 0, 1060, 400);
+    /// 窓の既定（1360×600・Issue #122）。
+    const BOUNDS: PixelRect = PixelRect::new(0, 0, 1360, 600);
     const ME: AccountId = AccountId::new(1);
     const OTHER: AccountId = AccountId::new(2);
-    /// 1 行目の中央。段は 8..36（道具）・44..72（編集）・80..108（ヘッダ）・108 から行。
-    const FIRST_ROW_Y: u16 = 120;
-    const SECOND_ROW_Y: u16 = 150;
+    /// 1 行目の中央。段は 8..36（道具）・44..72（ヘッダ）・72 から行。表は 8..963、詳細のペインは 972..1351。
+    const FIRST_ROW_Y: u16 = 86;
+    const SECOND_ROW_Y: u16 = 114;
     const TOOLBAR_Y: u16 = 20;
-    const EDITOR_Y: u16 = 58;
-    /// 道具の段（1060 幅）: 検索 8..90・絞り込み 98..218・完了 226..336・履歴 344..434・本文 442..512・参加者 520..620・添付 628..738・言語 746..846・配色 854..974・追加 982..1052。
+    /// 道具の段（1360 幅）: 検索 8..684・絞り込み 692..812・完了 820..930・参加者 938..1038・言語 1046..1146・配色 1154..1274・追加 1282..1352。
     const SEARCH_X: u16 = 50;
-    const FILTER_X: u16 = 158;
-    const SHOW_DONE_X: u16 = 281;
-    const HISTORY_X: u16 = 389;
-    const BODY_X: u16 = 477;
-    const MEMBERS_X: u16 = 570;
-    const ATTACHMENTS_X: u16 = 683;
-    const LANGUAGE_X: u16 = 796;
-    const THEME_X: u16 = 914;
-    const ADD_X: u16 = 1017;
-    /// 編集行: 題名 8..482・担当 490..590・期限 598..698・ラベル 706..846・状態 854..964・削除 972..1052。
-    const TITLE_X: u16 = 100;
-    const STATE_X: u16 = 910;
-    const DELETE_X: u16 = 1010;
-    const LABELS_X: u16 = 780;
-    /// スクロールバーの溝（1041..1052）。
-    const TRACK_X: u16 = 1046;
-    const ASSIGNEE_X: u16 = 540;
-    /// 状態の選択箱の「完了」（選択肢は 72 から 28 ずつ: 未着手・対応中・確認中・保留・完了 184..212・中止）。
-    const DONE_OPTION_Y: u16 = 198;
-    const DUE_X: u16 = 650;
+    const FILTER_X: u16 = 750;
+    const SHOW_DONE_X: u16 = 875;
+    const MEMBERS_X: u16 = 988;
+    const LANGUAGE_X: u16 = 1096;
+    const THEME_X: u16 = 1214;
+    const ADD_X: u16 = 1317;
+    /// 詳細のペイン（972..1351）: 番号と「削除」44..72・題名 80..108・札 116..144 / 152..180・担当 188..216・期限 224..252・
+    /// ラベル 260..288・区画の札 296..324・区画 332..591。札は 972..1092・1101..1221・1230..1351、欄は 1052..1351。
+    const HEAD_Y: u16 = 58;
+    const DELETE_X: u16 = 1317;
+    const TITLE_X: u16 = 1100;
+    const TITLE_Y: u16 = 94;
+    const FIELD_X: u16 = 1200;
+    const ASSIGNEE_Y: u16 = 202;
+    const DUE_Y: u16 = 238;
+    const LABELS_Y: u16 = 274;
+    const CHIP_XS: [u16; 3] = [1032, 1161, 1290];
+    const CHIP_YS: [u16; 2] = [130, 166];
+    /// 状態の札の「完了」（2 段目の真ん中）。
+    const DONE_CHIP: (u16, u16) = (1161, 166);
+    const TAB_Y: u16 = 310;
+    const BODY_TAB_X: u16 = 1032;
+    const ATTACHMENTS_TAB_X: u16 = 1161;
+    const HISTORY_TAB_X: u16 = 1290;
+    /// 表のスクロールバーの溝（952..963）。
+    const TRACK_X: u16 = 957;
+    /// ペインの区画（332..591）の中の 1 点。
+    const SECTION_Y: u16 = 400;
 
     /// 書き込みを覚え、読み直しで渡す分を積める偽のジャーナル。
     #[derive(Debug)]
@@ -2610,7 +2647,8 @@ mod tests {
                 |command| matches!(command, DrawCommand::Stroke { rect, .. } if rect.height() == 1),
             )
             .count();
-        assert!(rows < 20, "{rows}");
+        // 見えている行（600 の窓で 18 行ほど）とペインの台帳全体の履歴の行だけ。
+        assert!(rows < 100, "{rows}");
         assert_eq!(screen.ledger().docket().len(), 10_000);
         assert_eq!(frame.font_px(), 13);
         assert!(screen.notices().is_empty());
@@ -2828,7 +2866,7 @@ mod tests {
         // 検索欄に字があれば、それが題名になる。
         click(&mut screen, SEARCH_X, TOOLBAR_Y);
         keys(&mut screen, &chars("Issue"));
-        keys(&mut screen, &[KeyIntent::Tab; 9]);
+        keys(&mut screen, &[KeyIntent::Tab; 6]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(title_of(&screen, ItemId::new(ME, 2)), "Issue");
     }
@@ -2837,7 +2875,7 @@ mod tests {
     fn editing_the_title_commits_when_focus_leaves() {
         let (mut screen, spy) = screen(3);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, TITLE_X, EDITOR_Y);
+        click(&mut screen, TITLE_X, TITLE_Y);
         keys(&mut screen, &[KeyIntent::SelectAll]);
         keys(&mut screen, &chars("Renamed"));
         assert_eq!(spy.written.borrow().len(), 0);
@@ -2849,23 +2887,81 @@ mod tests {
     }
 
     #[test]
-    fn the_state_box_sets_the_state_by_option_click_and_by_key() {
+    fn the_detail_pane_names_every_field_for_the_selected_item_and_shows_the_docket_history_otherwise()
+     {
+        let (mut screen, _) = screen(2);
+        let unselected = texts(&idle(&mut screen));
+        assert!(!unselected.iter().any(|text| text == "Labels"));
+        assert!(
+            unselected.iter().any(|text| text == "When"),
+            "{unselected:?}"
+        );
+        click(&mut screen, 100, FIRST_ROW_Y);
+        let shown = texts(&idle(&mut screen));
+        for name in [
+            "other-1",
+            "Delete",
+            "Assignee",
+            "Due",
+            "Labels",
+            "Body",
+            "Attachments",
+            "History",
+        ] {
+            assert!(shown.iter().any(|text| text == name), "{name}: {shown:?}");
+        }
+        for state in ItemState::ALL {
+            let word = wording::text(Language::English, Word::StateName(state));
+            assert!(shown.iter().any(|text| text == word), "{word}");
+        }
+    }
+
+    #[test]
+    fn the_state_chips_set_the_state_by_click_and_by_key_and_show_the_current_one() {
         let (mut screen, spy) = screen(3);
         let first = ItemId::new(OTHER, 1);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, STATE_X, EDITOR_Y);
-        assert!(!screen.filter().is_open());
-        click(&mut screen, STATE_X, DONE_OPTION_Y);
+        // 1 は対応中: 札の 2 つ目が選ばれている。
+        let frame = idle(&mut screen);
+        let chosen: Vec<String> = frame
+            .commands()
+            .windows(3)
+            .filter_map(|window| match window {
+                [
+                    DrawCommand::Fill {
+                        paint: Paint::Selection,
+                        ..
+                    },
+                    DrawCommand::Stroke {
+                        paint: Paint::Accent,
+                        ..
+                    },
+                    DrawCommand::Text { text, .. },
+                ] => Some(text.clone()),
+                _ => None,
+            })
+            .collect();
+        assert!(chosen.contains(&String::from("In progress")), "{chosen:?}");
+        click(&mut screen, DONE_CHIP.0, DONE_CHIP.1);
         assert_eq!(
             screen.ledger().docket().item(first).map(Item::state),
             Some(ItemState::Done)
         );
-        keys(&mut screen, &[KeyIntent::Up]);
+        // 同じ札をもう 1 度押しても何も足さない。
+        click(&mut screen, DONE_CHIP.0, DONE_CHIP.1);
+        assert_eq!(spy.written.borrow().len(), 1);
+        // 「保留」（2 段目の左）にフォーカスを移して Enter。
+        click(&mut screen, CHIP_XS[0], CHIP_YS[1]);
         assert_eq!(
             screen.ledger().docket().item(first).map(Item::state),
             Some(ItemState::OnHold)
         );
-        assert_eq!(spy.written.borrow().len(), 2);
+        keys(&mut screen, &[KeyIntent::Tab, KeyIntent::Enter]);
+        assert_eq!(
+            screen.ledger().docket().item(first).map(Item::state),
+            Some(ItemState::Done)
+        );
+        assert_eq!(spy.written.borrow().len(), 3);
     }
 
     #[test]
@@ -2873,7 +2969,7 @@ mod tests {
         let (mut screen, spy) = screen(3);
         let first = ItemId::new(OTHER, 1);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, DELETE_X, EDITOR_Y);
+        click(&mut screen, DELETE_X, HEAD_Y);
         assert_eq!(screen.selected(), None);
         assert_eq!(screen.visible_items().len(), 2);
         keys(&mut screen, &[KeyIntent::Undo]);
@@ -2901,11 +2997,13 @@ mod tests {
     #[test]
     fn delete_by_key_needs_the_focus_and_a_selection() {
         let (mut screen, spy) = screen(2);
-        keys(&mut screen, &[KeyIntent::Tab; 16]);
+        // 道具の行の 7 つの後。選んでいなければ「削除」は無い。
+        keys(&mut screen, &[KeyIntent::Tab; 8]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 0);
         click(&mut screen, 100, FIRST_ROW_Y);
-        keys(&mut screen, &[KeyIntent::Tab; 16]);
+        keys(&mut screen, &[KeyIntent::Escape]);
+        keys(&mut screen, &[KeyIntent::Tab; 8]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 1);
     }
@@ -2915,7 +3013,7 @@ mod tests {
         let (mut screen, spy) = screen(2);
         let first = ItemId::new(OTHER, 1);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, ASSIGNEE_X, EDITOR_Y);
+        click(&mut screen, FIELD_X, ASSIGNEE_Y);
         keys(&mut screen, &chars("rina"));
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(
@@ -2933,7 +3031,7 @@ mod tests {
         let (mut screen, spy) = screen(2);
         let first = ItemId::new(OTHER, 1);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, DUE_X, EDITOR_Y);
+        click(&mut screen, FIELD_X, DUE_Y);
         keys(&mut screen, &chars("soon"));
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(screen.notices(), alloc::vec![Notice::NotADate]);
@@ -2962,7 +3060,7 @@ mod tests {
         let (mut screen, spy) = screen(2);
         let first = ItemId::new(OTHER, 1);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, LABELS_X, EDITOR_Y);
+        click(&mut screen, FIELD_X, LABELS_Y);
         keys(&mut screen, &chars("bug, ui ,"));
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(
@@ -2971,13 +3069,8 @@ mod tests {
         );
         assert_eq!(spy.written.borrow().len(), 1);
         let frame = idle(&mut screen);
-        assert!(
-            texts(&frame)
-                .iter()
-                .filter(|text| *text == "bug, ui")
-                .count()
-                >= 2
-        );
+        // ラベルの列は既定で控えているので、ペインの欄に出る。
+        assert!(texts(&frame).iter().any(|text| text == "bug, ui"));
         click(&mut screen, SEARCH_X, TOOLBAR_Y);
         keys(&mut screen, &chars("ui"));
         assert_eq!(screen.visible_items().len(), 1);
@@ -2989,7 +3082,7 @@ mod tests {
     fn selecting_another_row_reloads_every_field_and_drops_the_date_notice() {
         let (mut screen, _) = screen(2);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, DUE_X, EDITOR_Y);
+        click(&mut screen, FIELD_X, DUE_Y);
         keys(&mut screen, &chars("x"));
         click(&mut screen, 100, SECOND_ROW_Y);
         assert!(screen.notices().is_empty());
@@ -3035,7 +3128,7 @@ mod tests {
             },
         ));
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, TITLE_X, EDITOR_Y);
+        click(&mut screen, TITLE_X, TITLE_Y);
         keys(&mut screen, &[KeyIntent::SelectAll]);
         keys(&mut screen, &chars("Mine"));
         keys(&mut screen, &[KeyIntent::Enter]);
@@ -3117,14 +3210,13 @@ mod tests {
         assert_eq!(screen.scroll().offset(), 0);
     }
 
-    /// 履歴を出し、1 行目を選んで状態を Done にし、Undo する。
+    /// 1 行目を選んで状態を Done にし、Undo して、ペインの区画を履歴にする。
     fn screen_with_history() -> (DocketScreen, Spy) {
         let (mut screen, spy) = screen(3);
-        click(&mut screen, HISTORY_X, TOOLBAR_Y);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, STATE_X, EDITOR_Y);
-        click(&mut screen, STATE_X, DONE_OPTION_Y);
+        click(&mut screen, DONE_CHIP.0, DONE_CHIP.1);
         keys(&mut screen, &[KeyIntent::Undo]);
+        click(&mut screen, HISTORY_TAB_X, TAB_Y);
         (screen, spy)
     }
 
@@ -3133,13 +3225,13 @@ mod tests {
         let (mut screen, spy) = screen(2);
         let first = ItemId::new(OTHER, 1);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, TITLE_X, EDITOR_Y);
+        click(&mut screen, TITLE_X, TITLE_Y);
         keys(&mut screen, &[KeyIntent::SelectAll]);
         keys(&mut screen, &chars("Renamed"));
         keys(&mut screen, &[KeyIntent::Enter]);
         keys(&mut screen, &[KeyIntent::Undo]);
         assert_eq!(title_of(&screen, first), "Issue #1");
-        click(&mut screen, HISTORY_X, TOOLBAR_Y);
+        click(&mut screen, HISTORY_TAB_X, TAB_Y);
         idle(&mut screen);
         assert_eq!(title_of(&screen, first), "Issue #1");
         assert_eq!(spy.written.borrow().len(), 2);
@@ -3158,7 +3250,8 @@ mod tests {
     #[test]
     fn the_history_pane_without_a_selection_lists_the_whole_docket_with_item_numbers() {
         let (mut screen, _) = screen(3);
-        click(&mut screen, HISTORY_X, TOOLBAR_Y);
+        // 課題を選んでいなければ、ペインは台帳全体の履歴。
+        idle(&mut screen);
         assert!(screen.shows_history());
         // 他人が 3 件作った: 作成・題名・状態で 9 行。
         let lines = screen.history_lines();
@@ -3169,7 +3262,7 @@ mod tests {
         assert!(texts(&frame).iter().any(|text| text == "When"));
         // 台帳全体の行は再現を持たず、押しても選び直さない。
         assert!(lines[0].snapshot().is_none());
-        click(&mut screen, 100, FIRST_HISTORY_Y);
+        click(&mut screen, TITLE_X, FIRST_HISTORY_Y);
         assert_eq!(screen.history_lines().len(), 9);
     }
 
@@ -3177,7 +3270,7 @@ mod tests {
     fn administration_is_recorded_in_the_journal_shown_in_the_history_and_not_undone() {
         let (mut screen, spy) = screen(2);
         click(&mut screen, MEMBERS_X, TOOLBAR_Y);
-        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         click(&mut screen, 100, SECOND_MEMBER_Y);
         click(&mut screen, EDITOR_X, EDIT_ROW_Y);
         let kinds: Vec<OpKind> = spy
@@ -3194,8 +3287,7 @@ mod tests {
             ]
         );
         assert_eq!(*spy.synced.borrow(), 2);
-        // 履歴（台帳全体）に名前で出る。
-        click(&mut screen, HISTORY_X, TOOLBAR_Y);
+        // 履歴（台帳全体・課題を選んでいないときのペイン）に名前で出る。
         let lines = screen.history_lines();
         assert_eq!(
             lines[0].columns(Language::English, screen.clock_display()),
@@ -3218,7 +3310,7 @@ mod tests {
             ..FakeJournal::default()
         });
         click(&mut screen, MEMBERS_X, TOOLBAR_Y);
-        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         assert!(spy.written.borrow().is_empty());
     }
 
@@ -3241,8 +3333,8 @@ mod tests {
     }
 
     /// 履歴の段（1060×400・残り 80..391 の 2/5 = 124）: 段は 268..391、ヘッダ 268..292、行は 292 から 24 ずつ。
-    const FIRST_HISTORY_Y: u16 = 304;
-    const SECOND_HISTORY_Y: u16 = 328;
+    const FIRST_HISTORY_Y: u16 = 368;
+    const SECOND_HISTORY_Y: u16 = 392;
 
     #[test]
     fn clicking_a_history_line_re_picks_its_value_as_a_new_op() {
@@ -3250,14 +3342,14 @@ mod tests {
         let item = ItemId::new(OTHER, 1);
         // 履歴（新しい順）: undo の行（Done -> In progress）・In progress -> Done・…
         let before = spy.written.borrow().len();
-        click(&mut screen, 100, SECOND_HISTORY_Y);
+        click(&mut screen, TITLE_X, SECOND_HISTORY_Y);
         assert_eq!(spy.written.borrow().len(), before + 1);
         assert_eq!(
             screen.ledger().docket().item(item).map(Item::state),
             Some(ItemState::Done)
         );
         // いまと同じ値の行を押しても何も追記しない。
-        click(&mut screen, 100, FIRST_HISTORY_Y);
+        click(&mut screen, TITLE_X, FIRST_HISTORY_Y);
         assert_eq!(spy.written.borrow().len(), before + 1);
         // 「作成」の行は何もしない（一番下。スクロールして押す代わりに直接）。
         let created = screen.history_lines().last().cloned().unwrap();
@@ -3270,7 +3362,7 @@ mod tests {
         let (mut screen, spy) = screen(2);
         let item = ItemId::new(OTHER, 1);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, TITLE_X, EDITOR_Y);
+        click(&mut screen, TITLE_X, TITLE_Y);
         keys(&mut screen, &[KeyIntent::SelectAll]);
         keys(&mut screen, &chars("mine"));
         // 他人が同じ題名を変えた分が届く。
@@ -3289,7 +3381,7 @@ mod tests {
         // 別の行を選ぶと消える。自分だけが変えた欄では出ない。
         click(&mut screen, 100, SECOND_ROW_Y);
         assert!(screen.notices().is_empty());
-        click(&mut screen, TITLE_X, EDITOR_Y);
+        click(&mut screen, TITLE_X, TITLE_Y);
         keys(&mut screen, &chars("!"));
         keys(&mut screen, &[KeyIntent::Enter]);
         assert!(screen.notices().is_empty());
@@ -3304,7 +3396,7 @@ mod tests {
         let hover = screen.step(&FrameInput::new(
             BOUNDS,
             PointerInput::new(
-                Some(PixelPoint::new(100, SECOND_HISTORY_Y)),
+                Some(PixelPoint::new(TITLE_X, SECOND_HISTORY_Y)),
                 ButtonPhase::Idle,
                 0,
             ),
@@ -3325,13 +3417,18 @@ mod tests {
         let (mut screen, _) = screen_with_history();
         screen.step(&FrameInput::new(
             BOUNDS,
-            PointerInput::new(Some(PixelPoint::new(100, 380)), ButtonPhase::Idle, 1),
+            PointerInput::new(
+                Some(PixelPoint::new(TITLE_X, SECTION_Y)),
+                ButtonPhase::Idle,
+                1,
+            ),
         ));
         assert_eq!(screen.scroll().offset(), 0);
-        keys(&mut screen, &[KeyIntent::Escape]);
-        keys(&mut screen, &[KeyIntent::Tab; 4]);
+        // 履歴の札にフォーカスがある: 左へ 2 つ戻って本文の札を空白で押す。
+        keys(&mut screen, &[KeyIntent::BackTab, KeyIntent::BackTab]);
         keys(&mut screen, &[KeyIntent::Char(' ')]);
         assert!(!screen.shows_history());
+        assert!(screen.shows_body());
     }
 
     #[test]
@@ -3427,13 +3524,13 @@ mod tests {
         assert!(screen.scroll().offset() <= screen.scroll().max_offset());
     }
 
-    /// 本文の段を出し、1 行目を選んで段を押す。
+    /// 1 行目を選び（ペインの区画は本文）、本文の欄を押す。
     fn screen_with_body() -> (DocketScreen, Spy) {
         let (mut screen, spy) = screen(3);
-        click(&mut screen, BODY_X, TOOLBAR_Y);
-        assert!(screen.shows_body());
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, 100, 380);
+        idle(&mut screen);
+        assert!(screen.shows_body());
+        click(&mut screen, TITLE_X, SECTION_Y);
         (screen, spy)
     }
 
@@ -3469,7 +3566,7 @@ mod tests {
         keys(&mut screen, &chars("second"));
         assert_eq!(screen.visible_items().len(), 1);
         // 履歴は改行を印にして 1 行に。
-        click(&mut screen, HISTORY_X, TOOLBAR_Y);
+        click(&mut screen, HISTORY_TAB_X, TAB_Y);
         let lines = screen.history_lines();
         assert_eq!(
             lines
@@ -3480,7 +3577,7 @@ mod tests {
     }
 
     #[test]
-    fn the_body_pane_follows_the_selection_and_hides_by_key() {
+    fn the_body_section_follows_the_selection_and_the_tabs_switch_it() {
         let (mut screen, _) = screen_with_body();
         keys(&mut screen, &chars("note"));
         click(&mut screen, 100, SECOND_ROW_Y);
@@ -3493,37 +3590,50 @@ mod tests {
                 .map(Item::body),
             Some("note")
         );
-        // ホイールは段の上では表を動かさない。
+        // ホイールはペインの上では表を動かさない。
         screen.step(&FrameInput::new(
             BOUNDS,
-            PointerInput::new(Some(PixelPoint::new(100, 380)), ButtonPhase::Idle, 1),
+            PointerInput::new(
+                Some(PixelPoint::new(TITLE_X, SECTION_Y)),
+                ButtonPhase::Idle,
+                1,
+            ),
         ));
         assert_eq!(screen.scroll().offset(), 0);
-        keys(&mut screen, &[KeyIntent::Escape]);
-        keys(&mut screen, &[KeyIntent::Tab; 5]);
-        keys(&mut screen, &[KeyIntent::Char(' ')]);
+        // 区画の札を鍵で押すと履歴に替わり、表は残る。
+        click(&mut screen, BODY_TAB_X, TAB_Y);
+        keys(
+            &mut screen,
+            &[KeyIntent::Tab, KeyIntent::Tab, KeyIntent::Char(' ')],
+        );
         assert!(!screen.shows_body());
-        // 本文と履歴を両方出しても表は残る。
-        click(&mut screen, BODY_X, TOOLBAR_Y);
-        click(&mut screen, HISTORY_X, TOOLBAR_Y);
+        assert!(screen.shows_history());
         let frame = idle(&mut screen);
         assert!(texts(&frame).iter().any(|text| text == "When"));
         assert!(texts(&frame).iter().any(|text| text == "Issue #1"));
     }
 
-    /// 参加者の段（1060×400・残り 80..391 の 2/5 = 124）: 段は 268..391、ヘッダ 268..292、行は 292 から 24 ずつ。
-    /// 持ち主でない人を選ぶと編集行（268..292）が上に入り、ヘッダと行は 28 下がる。
-    const MEMBERS_HEADER_Y: u16 = 280;
-    const SECOND_MEMBER_Y: u16 = 328;
-    const EDIT_ROW_Y: u16 = 280;
+    /// 参加者の段（表の下・8..963・残り 44..591 の 2/5 = 218）: 段は 374..591、ヘッダ 374..398、行は 398 から 24 ずつ。
+    /// 持ち主でない人を選ぶと編集行（374..398）が上に入り、ヘッダと行は 28 下がる。「権限」のチェックはヘッダの右（832..951）。
+    const MEMBERS_HEADER_Y: u16 = 386;
+    const PERMISSIONS_X: u16 = 912;
+    const SECOND_MEMBER_Y: u16 = 434;
+    const EDIT_ROW_Y: u16 = 386;
     const EDITOR_X: u16 = 60;
     const GROUPS_X: u16 = 500;
-    const SUCCESSOR_X: u16 = 950;
-    const SHIFTED_FIRST_MEMBER_Y: u16 = 332;
+    const SUCCESSOR_X: u16 = 862;
+    const SHIFTED_FIRST_MEMBER_Y: u16 = 438;
 
-    /// 添付の段の編集行: 「添付する」の中央と「外す」の中央。
-    const ATTACH_BUTTON_X: u16 = 909;
-    const DETACH_BUTTON_X: u16 = 1003;
+    /// 添付の区画（972..1351・332 から）: 編集行 332..356（名 972..1031・パス 1036..1163・「添付する」1168..1257・
+    /// 「外す」1262..1351）、一覧の見出し 360..384、1 行目 384..408。
+    const ATTACH_ROW_Y: u16 = 344;
+    const ATTACH_PATH_X: u16 = 1100;
+    const ATTACH_BUTTON_X: u16 = 1212;
+    const DETACH_BUTTON_X: u16 = 1306;
+    const FIRST_ATTACHMENT_Y: u16 = 396;
+    /// 中身の区画の中の 1 点（一覧が見出し ＋ 1 行のとき、中身は 412..591）。
+    const VIEW_X: u16 = 1160;
+    const VIEW_Y: u16 = 500;
 
     fn attachment_names(screen: &DocketScreen, id: ItemId) -> Vec<String> {
         screen
@@ -3544,9 +3654,9 @@ mod tests {
         let (mut screen, spy) = screen(2);
         let first = ItemId::new(OTHER, 1);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, ATTACHMENTS_X, TOOLBAR_Y);
+        click(&mut screen, ATTACHMENTS_TAB_X, TAB_Y);
         assert!(screen.shows_attachments());
-        click(&mut screen, 400, EDIT_ROW_Y);
+        click(&mut screen, ATTACH_PATH_X, ATTACH_ROW_Y);
         keys(&mut screen, &chars("/tmp/a.png"));
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(attachment_names(&screen, first), ["a.png"]);
@@ -3564,14 +3674,14 @@ mod tests {
         let (mut screen, spy) = screen(2);
         let first = ItemId::new(OTHER, 1);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, ATTACHMENTS_X, TOOLBAR_Y);
-        click(&mut screen, 400, EDIT_ROW_Y);
+        click(&mut screen, ATTACHMENTS_TAB_X, TAB_Y);
+        click(&mut screen, ATTACH_PATH_X, ATTACH_ROW_Y);
         keys(&mut screen, &chars("/tmp/a.png"));
         keys(&mut screen, &[KeyIntent::Enter]);
         // 行を押すと選ばれ、「外す」で Detach が追記される（写しは残る）。
-        click(&mut screen, 100, SHIFTED_FIRST_MEMBER_Y);
+        click(&mut screen, TITLE_X, FIRST_ATTACHMENT_Y);
         assert_eq!(screen.attachments.selected(), Some(1));
-        click(&mut screen, DETACH_BUTTON_X, EDIT_ROW_Y);
+        click(&mut screen, DETACH_BUTTON_X, ATTACH_ROW_Y);
         assert!(attachment_names(&screen, first).is_empty());
         assert!(matches!(
             spy.written.borrow().last().map(Op::kind),
@@ -3580,9 +3690,9 @@ mod tests {
         // Undo で戻る（Attach が足される）。次の連番は 2。
         keys(&mut screen, &[KeyIntent::Undo]);
         assert_eq!(attachment_names(&screen, first), ["a.png"]);
-        click(&mut screen, 400, EDIT_ROW_Y);
+        click(&mut screen, ATTACH_PATH_X, ATTACH_ROW_Y);
         keys(&mut screen, &chars("/tmp/b.txt"));
-        click(&mut screen, ATTACH_BUTTON_X, EDIT_ROW_Y);
+        click(&mut screen, ATTACH_BUTTON_X, ATTACH_ROW_Y);
         assert_eq!(attachment_names(&screen, first), ["a.png", "b.txt"]);
         assert!(matches!(
             spy.written.borrow().last().map(Op::kind),
@@ -3594,8 +3704,8 @@ mod tests {
     fn an_unreadable_source_is_reported_and_an_altered_copy_is_marked() {
         let (mut screen, spy) = screen(2);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, ATTACHMENTS_X, TOOLBAR_Y);
-        click(&mut screen, 400, EDIT_ROW_Y);
+        click(&mut screen, ATTACHMENTS_TAB_X, TAB_Y);
+        click(&mut screen, ATTACH_PATH_X, ATTACH_ROW_Y);
         keys(&mut screen, &chars("/tmp/missing"));
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 0);
@@ -3614,26 +3724,26 @@ mod tests {
                 .iter()
                 .any(|text| text == "⚠ bad.txt: contents differ from the record")
         );
-        // 段を閉じると行は消える。
-        click(&mut screen, ATTACHMENTS_X, TOOLBAR_Y);
+        // 区画を本文に替えると行は消える。
+        click(&mut screen, BODY_TAB_X, TAB_Y);
         assert!(!screen.shows_attachments());
         let closed = idle(&mut screen);
         assert!(!texts(&closed).iter().any(|text| text == "⚠ bad.txt"));
     }
 
-    /// 中身の段の「開く」の中央（一覧が見出し ＋ 1 行のとき、中身は 348 から）。
-    const OPEN_BUTTON_X: u16 = 1007;
-    const VIEW_ROW_Y: u16 = 360;
+    /// 中身の区画の「開く」の中央（一覧が見出し ＋ 1 行のとき、中身は 412 から・ボタンは右端の 90）。
+    const OPEN_BUTTON_X: u16 = 1306;
+    const VIEW_ROW_Y: u16 = 424;
 
     /// 課題 1 を選び、段を出し、`path` を添付して、その行を選ぶ。
     fn attach_and_select(path: &str) -> (DocketScreen, Spy) {
         let (mut screen, spy) = screen(2);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, ATTACHMENTS_X, TOOLBAR_Y);
-        click(&mut screen, 400, EDIT_ROW_Y);
+        click(&mut screen, ATTACHMENTS_TAB_X, TAB_Y);
+        click(&mut screen, ATTACH_PATH_X, ATTACH_ROW_Y);
         keys(&mut screen, &chars(path));
         keys(&mut screen, &[KeyIntent::Enter]);
-        click(&mut screen, 100, SHIFTED_FIRST_MEMBER_Y);
+        click(&mut screen, TITLE_X, FIRST_ATTACHMENT_Y);
         assert_eq!(screen.attachments.selected(), Some(1));
         (screen, spy)
     }
@@ -3648,9 +3758,9 @@ mod tests {
                 .iter()
                 .any(|text| text == "Showing the beginning only")
         );
-        // 行の選択を外すと中身も消える（段を閉じて開き直す）。
-        click(&mut screen, ATTACHMENTS_X, TOOLBAR_Y);
-        click(&mut screen, ATTACHMENTS_X, TOOLBAR_Y);
+        // 区画を替えて戻っても、行の選びと中身は残る。
+        click(&mut screen, BODY_TAB_X, TAB_Y);
+        click(&mut screen, ATTACHMENTS_TAB_X, TAB_Y);
         assert_eq!(screen.attachments.selected(), Some(1));
         assert!(texts(&idle(&mut screen)).iter().any(|text| text == "hello"));
     }
@@ -3718,9 +3828,9 @@ mod tests {
         assert_eq!(dest.width(), dest.height());
         assert_eq!(screen.attachments.zoom(), 100);
         // ホイールを上に 1 刻み → 110%。下に 3 刻み → 80%。
-        wheel(&mut screen, 500, 370, -1);
+        wheel(&mut screen, VIEW_X, VIEW_Y, -1);
         assert_eq!(screen.attachments.zoom(), 110);
-        wheel(&mut screen, 500, 370, 3);
+        wheel(&mut screen, VIEW_X, VIEW_Y, 3);
         assert_eq!(screen.attachments.zoom(), 80);
         // 画像の外のホイールは効かない。
         wheel(&mut screen, 500, FIRST_ROW_Y, -1);
@@ -3732,12 +3842,12 @@ mod tests {
         let (mut screen, _) = attach_and_select("/tmp/photo.png");
         idle(&mut screen);
         // 押したまま 10 右へ → ずれ (10, 0)。離すとドラッグは終わる。
-        screen.step(&pointer(500, 370, ButtonPhase::Pressed));
-        screen.step(&pointer(510, 370, ButtonPhase::Held));
+        screen.step(&pointer(VIEW_X, VIEW_Y, ButtonPhase::Pressed));
+        screen.step(&pointer(VIEW_X + 10, VIEW_Y, ButtonPhase::Held));
         assert_eq!(screen.attachments.pan(), (10_i32, 0_i32));
-        screen.step(&pointer(510, 370, ButtonPhase::Released));
-        screen.step(&pointer(600, 370, ButtonPhase::Pressed));
-        screen.step(&pointer(600, 375, ButtonPhase::Held));
+        screen.step(&pointer(VIEW_X + 10, VIEW_Y, ButtonPhase::Released));
+        screen.step(&pointer(VIEW_X + 40, VIEW_Y, ButtonPhase::Pressed));
+        screen.step(&pointer(VIEW_X + 40, VIEW_Y + 5, ButtonPhase::Held));
         assert_eq!(screen.attachments.pan(), (10_i32, 5_i32));
         // 別の添付を選ぶと倍率とずれは戻る。
         let (mut broken, _) = attach_and_select("/tmp/broken.png");
@@ -3780,8 +3890,8 @@ mod tests {
         assert!(spy.written.borrow().is_empty());
         assert!(!screen.shows_attachments());
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, ATTACHMENTS_X, TOOLBAR_Y);
-        drop_at(&mut screen, 500, 360, &["/tmp/x.txt"]);
+        click(&mut screen, ATTACHMENTS_TAB_X, TAB_Y);
+        drop_at(&mut screen, VIEW_X, VIEW_Y, &["/tmp/x.txt"]);
         assert_eq!(attachment_names(&screen, ItemId::new(OTHER, 1)), ["x.txt"]);
         // 読めないファイルは示す（他は添付される。最後に失敗した知らせが残る）。
         drop_at(
@@ -3844,7 +3954,7 @@ mod tests {
         assert!(texts(&frame).iter().any(|text| text == "Anyone may edit"));
         assert!(texts(&frame).iter().any(|text| text == "Permissions"));
         // グループに入っていれば役に添える。
-        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         screen
             .ports
             .journal_mut()
@@ -3853,7 +3963,7 @@ mod tests {
         let grouped = texts(&idle(&mut screen));
         assert!(grouped.iter().any(|text| text == "Editor (qa)"));
         keys(&mut screen, &[KeyIntent::Escape]);
-        keys(&mut screen, &[KeyIntent::Tab; 6]);
+        keys(&mut screen, &[KeyIntent::Tab; 4]);
         keys(&mut screen, &[KeyIntent::Char(' ')]);
         assert!(!screen.shows_members());
     }
@@ -3868,7 +3978,7 @@ mod tests {
         let (mut screen, _) = screen(2);
         click(&mut screen, MEMBERS_X, TOOLBAR_Y);
         // 「権限」のチェック（段のヘッダの右端）を押す。
-        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         let roles: Vec<MemberRole> = screen.members().iter().map(Member::role).collect();
         assert_eq!(roles, [MemberRole::Owner, MemberRole::Viewer]);
         // 他人の行を押すと選ばれ、編集行が出る。「編集者」を押す → 編集者。もう一度 → 閲覧のみ。
@@ -3889,7 +3999,7 @@ mod tests {
     fn selecting_the_owner_hides_the_edit_row_and_turning_permissions_off_clears_the_selection() {
         let (mut screen, _) = screen(2);
         click(&mut screen, MEMBERS_X, TOOLBAR_Y);
-        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         click(&mut screen, 100, SECOND_MEMBER_Y);
         click(&mut screen, EDITOR_X, EDIT_ROW_Y);
         assert_eq!(screen.members()[1].role(), MemberRole::Editor);
@@ -3900,7 +4010,7 @@ mod tests {
         // 役の「編集者」の 1 つだけで、チェックの文字は無い。
         assert_eq!(editor_texts(&idle(&mut screen)), 1);
         assert!(screen.notices().is_empty());
-        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         idle(&mut screen);
         assert_eq!(screen.members.selected(), None);
         assert!(
@@ -3915,7 +4025,7 @@ mod tests {
     fn the_owner_edits_groups_from_the_pane_with_enter_or_by_leaving_the_field() {
         let (mut screen, _) = screen(2);
         click(&mut screen, MEMBERS_X, TOOLBAR_Y);
-        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         click(&mut screen, 100, SECOND_MEMBER_Y);
         click(&mut screen, GROUPS_X, EDIT_ROW_Y);
         assert_eq!(screen.interaction.focus(), Some(MembersPane::groups_id()));
@@ -3939,7 +4049,7 @@ mod tests {
     fn the_groups_field_commits_when_left_refuses_a_colon_and_commits_before_reselecting() {
         let (mut screen, _) = screen(2);
         click(&mut screen, MEMBERS_X, TOOLBAR_Y);
-        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         click(&mut screen, 100, SECOND_MEMBER_Y);
         click(&mut screen, GROUPS_X, EDIT_ROW_Y);
         keys(&mut screen, &chars("qa, dev"));
@@ -3967,7 +4077,7 @@ mod tests {
     fn the_owner_picks_a_successor_from_the_edit_row_and_the_old_id_leaves_the_pane() {
         let (mut screen, _) = screen(2);
         click(&mut screen, MEMBERS_X, TOOLBAR_Y);
-        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         click(&mut screen, 100, SECOND_MEMBER_Y);
         let frame = idle(&mut screen);
         assert!(texts(&frame).iter().any(|text| text == "No successor"));
@@ -4008,7 +4118,7 @@ mod tests {
     fn the_successor_options_are_clickable_and_cover_the_rows() {
         let (mut screen, _) = screen(2);
         click(&mut screen, MEMBERS_X, TOOLBAR_Y);
-        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         click(&mut screen, 100, SECOND_MEMBER_Y);
         click(&mut screen, SUCCESSOR_X, EDIT_ROW_Y);
         // 候補の列は箱の真下に 24 ずつ。1 つ目は「引き継ぎ先なし」、2 つ目が u1。その間は行の上だが、行は押せない。
@@ -4029,7 +4139,7 @@ mod tests {
             ..FakeJournal::default()
         });
         click(&mut screen, MEMBERS_X, TOOLBAR_Y);
-        click(&mut screen, 1000, MEMBERS_HEADER_Y);
+        click(&mut screen, PERMISSIONS_X, MEMBERS_HEADER_Y);
         assert_eq!(
             screen.notices(),
             alloc::vec![Notice::Journal(JournalFailure::PermissionsUnwritable)]
@@ -4040,8 +4150,8 @@ mod tests {
     fn dragging_a_header_grip_resizes_the_column_and_saves_the_settings() {
         let (mut screen, spy) = screen(3);
         six_columns(&mut screen);
-        // 番号の列は 8..79 で、境は x=79 の辺り（ヘッダ y = 80..108）。
-        let header_y = 94;
+        // 番号の列は 8..79 で、境は x=79 の辺り（ヘッダ y = 44..72）。
+        let header_y = 58;
         screen.step(&pointer(79, header_y, ButtonPhase::Pressed));
         screen.step(&pointer(120, header_y, ButtonPhase::Held));
         assert_eq!(
@@ -4056,24 +4166,24 @@ mod tests {
             spy.saved.borrow()[0].columns().get(TableColumn::Number),
             Some(113)
         );
-        // 題名の右の境は右の列（状態）の幅を変える。列の間に隙間は無く、右の固定の列は 1039 から 120+90+90+110 なので題名の右端は 629。
-        screen.step(&pointer(629, header_y, ButtonPhase::Pressed));
+        // 題名の右の境は右の列（状態）の幅を変える。列の間に隙間は無く、右の固定の列は 951 から 120+90+90+110 なので題名の右端は 541。
+        screen.step(&pointer(541, header_y, ButtonPhase::Pressed));
         assert_eq!(
             screen.settings().columns().get(TableColumn::State),
             Some(110)
         );
-        screen.step(&pointer(599, header_y, ButtonPhase::Held));
+        screen.step(&pointer(511, header_y, ButtonPhase::Held));
         assert_eq!(
             screen.settings().columns().get(TableColumn::State),
             Some(140)
         );
         // 幅は 40 未満にならない。
-        screen.step(&pointer(1040, header_y, ButtonPhase::Held));
+        screen.step(&pointer(952, header_y, ButtonPhase::Held));
         assert_eq!(
             screen.settings().columns().get(TableColumn::State),
             Some(40)
         );
-        screen.step(&pointer(1040, header_y, ButtonPhase::Released));
+        screen.step(&pointer(952, header_y, ButtonPhase::Released));
         idle(&mut screen);
         assert_eq!(spy.saved.borrow().len(), 2);
     }
@@ -4083,17 +4193,17 @@ mod tests {
         let (mut screen, spy) = screen(2);
         click(&mut screen, MEMBERS_X, TOOLBAR_Y);
         assert_eq!(screen.settings().pane(), PaneHeight::Auto);
-        // 段は 268..391、表の下端は 259、隙間 260..267 のつまみは 261..266。
-        screen.step(&pointer(500, 263, ButtonPhase::Pressed));
-        screen.step(&pointer(500, 200, ButtonPhase::Held));
-        assert_eq!(screen.settings().pane(), PaneHeight::Fixed(192));
+        // 段は 374..591、表の下端は 365、隙間 366..373 のつまみは 367..372。
+        screen.step(&pointer(500, 369, ButtonPhase::Pressed));
+        screen.step(&pointer(500, 300, ButtonPhase::Held));
+        assert_eq!(screen.settings().pane(), PaneHeight::Fixed(292));
         assert!(spy.saved.borrow().is_empty());
-        screen.step(&pointer(500, 200, ButtonPhase::Released));
+        screen.step(&pointer(500, 300, ButtonPhase::Released));
         idle(&mut screen);
         assert_eq!(spy.saved.borrow().len(), 1);
-        assert_eq!(spy.saved.borrow()[0].pane(), PaneHeight::Fixed(192));
-        // 段のヘッダは 200..224 に上がった: そこの「権限」のチェックが押せる。
-        click(&mut screen, 1000, 212);
+        assert_eq!(spy.saved.borrow()[0].pane(), PaneHeight::Fixed(292));
+        // 段のヘッダは 300..324 に上がった: そこの「権限」のチェックが押せる。
+        click(&mut screen, PERMISSIONS_X, 312);
         assert_eq!(screen.members()[0].role(), MemberRole::Owner);
     }
 
@@ -4101,26 +4211,26 @@ mod tests {
     fn the_pane_height_is_clamped_and_there_is_no_grip_without_a_pane() {
         let (mut screen, spy) = screen(2);
         click(&mut screen, MEMBERS_X, TOOLBAR_Y);
-        screen.step(&pointer(500, 263, ButtonPhase::Pressed));
-        screen.step(&pointer(500, 200, ButtonPhase::Held));
-        screen.step(&pointer(500, 200, ButtonPhase::Released));
+        screen.step(&pointer(500, 369, ButtonPhase::Pressed));
+        screen.step(&pointer(500, 300, ButtonPhase::Held));
+        screen.step(&pointer(500, 300, ButtonPhase::Released));
         idle(&mut screen);
-        // 行 2 つ分より低くならず、表に行 2 つ分が残る高さより高くならない。
-        screen.step(&pointer(500, 195, ButtonPhase::Pressed));
-        screen.step(&pointer(500, 385, ButtonPhase::Held));
+        // 行 2 つ分より低くならず、表に行 2 つ分が残る高さ（548 − 56 = 492）より高くならない。
+        screen.step(&pointer(500, 295, ButtonPhase::Pressed));
+        screen.step(&pointer(500, 585, ButtonPhase::Held));
         assert_eq!(screen.settings().pane(), PaneHeight::Fixed(56));
-        screen.step(&pointer(500, 90, ButtonPhase::Held));
-        assert_eq!(screen.settings().pane(), PaneHeight::Fixed(256));
-        screen.step(&pointer(500, 90, ButtonPhase::Released));
+        screen.step(&pointer(500, 50, ButtonPhase::Held));
+        assert_eq!(screen.settings().pane(), PaneHeight::Fixed(492));
+        screen.step(&pointer(500, 50, ButtonPhase::Released));
         idle(&mut screen);
         assert_eq!(spy.saved.borrow().len(), 2);
         // 段が無ければつまみも無い。
         keys(&mut screen, &[KeyIntent::Escape]);
         click(&mut screen, MEMBERS_X, TOOLBAR_Y);
-        screen.step(&pointer(500, 263, ButtonPhase::Pressed));
+        screen.step(&pointer(500, 369, ButtonPhase::Pressed));
         screen.step(&pointer(500, 100, ButtonPhase::Held));
         screen.step(&pointer(500, 100, ButtonPhase::Released));
-        assert_eq!(screen.settings().pane(), PaneHeight::Fixed(256));
+        assert_eq!(screen.settings().pane(), PaneHeight::Fixed(492));
         assert_eq!(spy.saved.borrow().len(), 2);
         assert_eq!(screen.resizing, None);
     }
@@ -4129,9 +4239,9 @@ mod tests {
     fn dragging_a_heading_onto_another_column_reorders_and_saves() {
         let (mut screen, spy) = screen(2);
         six_columns(&mut screen);
-        let header_y = 94;
-        // 状態の見出し（630..739）をつまんで番号の列（8..79）の上で離す。
-        screen.step(&pointer(700, header_y, ButtonPhase::Pressed));
+        let header_y = 58;
+        // 状態の見出し（542..651）をつまんで番号の列（8..79）の上で離す。
+        screen.step(&pointer(600, header_y, ButtonPhase::Pressed));
         screen.step(&pointer(400, header_y, ButtonPhase::Held));
         screen.step(&pointer(40, header_y, ButtonPhase::Held));
         assert_eq!(screen.settings().order(), legacy_order());
@@ -4166,7 +4276,7 @@ mod tests {
             |command| matches!(command, DrawCommand::Text { text, caret: Some(_), .. } if text == "か")
         ));
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, TITLE_X, EDITOR_Y);
+        click(&mut screen, TITLE_X, TITLE_Y);
         let in_title = screen.step(
             &FrameInput::new(BOUNDS, PointerInput::absent())
                 .with_preedit(Some(nene_docket_core::preedit::Preedit::new("き", 1))),

@@ -27,7 +27,7 @@ use crate::ui_failure::UiFailure;
 /// 窓の題。
 const TITLE: &str = "NeNe Docket";
 /// 最初の大きさ。
-const INITIAL_WIDTH: u16 = 1120;
+const INITIAL_WIDTH: u16 = 1360;
 const INITIAL_HEIGHT: u16 = 600;
 
 /// 窓とその OS 資源。`Drop` で閉じる（規約 第 4 節）。

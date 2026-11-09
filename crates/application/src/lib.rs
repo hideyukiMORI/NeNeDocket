@@ -33,6 +33,8 @@ pub mod clock_display;
 pub mod clock_port;
 pub mod column_order;
 pub mod column_widths;
+pub mod detail_layout;
+pub mod detail_section;
 pub mod docket_frame;
 pub mod docket_screen;
 pub mod drag_target;
