@@ -33,9 +33,9 @@ impl TableColumn {
         Self::State,
         Self::Assignee,
         Self::Due,
-        Self::Labels,
         Self::Opened,
         Self::Closed,
+        Self::Labels,
         Self::Opener,
         Self::Updated,
     ];

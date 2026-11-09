@@ -158,6 +158,13 @@ mod tests {
 
     use super::*;
 
+    /// 版 6 までの 6 列の順に、起票日と完了日を右に足したもの（ラベルは出したまま）。
+    fn migrated() -> Settings {
+        Settings::initial().with_order(
+            ColumnOrder::parse("number,title,state,assignee,due,labels,opened,closed").unwrap(),
+        )
+    }
+
     #[test]
     fn encode_then_parse_round_trips_in_order() {
         let settings = Settings::new(
@@ -174,7 +181,7 @@ mod tests {
         let text = encode(&settings);
         assert_eq!(
             text,
-            "version = 7\nrefresh_seconds = 5\nlanguage = ja\ntheme = dracula\ncolumns = 72,110,90,90,120,96,96,80,96\norder = number,title,state,assignee,due,labels,opened,closed\npane_px = 200\nclock = utc\nrecent = /srv/team\nrecent = ./docket\n"
+            "version = 7\nrefresh_seconds = 5\nlanguage = ja\ntheme = dracula\ncolumns = 72,110,90,90,120,96,96,80,96\norder = number,title,state,assignee,due,opened,closed\npane_px = 200\nclock = utc\nrecent = /srv/team\nrecent = ./docket\n"
         );
         assert_eq!(parse(&text), Some(settings));
         // 版 6 は 5 つの幅と 6 列の順。足した列の幅は既定で、起票日と完了日を右に足して読む（ADR 0023）。
@@ -191,7 +198,7 @@ mod tests {
             parse(
                 "version = 5\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = auto\n"
             ),
-            Some(Settings::initial())
+            Some(migrated())
         );
         assert_eq!(
             parse(
@@ -203,7 +210,7 @@ mod tests {
             parse(
                 "version = 4\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\n"
             ),
-            Some(Settings::initial())
+            Some(migrated())
         );
         assert_eq!(
             parse(
