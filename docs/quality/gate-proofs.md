@@ -1097,9 +1097,31 @@ frame (median / max)          step | encode | present
 
 10 万件で検索 1 字の step は中央 13 ms（目標 100 ms の中・1 フレーム 16 ms は最大 20 ms で超える）。present の最大 46〜49 ms は筋書きの最初のフレーム（窓が出た直後）。中身のあるフォルダは `--bench needs an empty or missing folder` で止まった。`/usr/bin/time` の RSS（10 万件で 377 MB）は計測用の台帳を作った記憶も含むので、製品の RSS（第 38 節）とは比べない。
 
+**施主の Windows（2026-11-09・PowerShell 7.6・`C:\Users\Public` に写した exe・`$env:TEMP` の下）**。この exe が Windows で動いた最初の記録（窓を作り・描き・壊して終わった）:
+
+```text
+bench (windows, window 1102x553): 10000 items x 5 ops = 50000 ops, 1 account
+seed (append + 1 sync)        2.031 s
+first open (read all + merge) 0.115 s
+snapshot write                0.008 s
+second open (from snapshot)   0.054 s
+frame (median / max)          step | encode | present
+  idle   x50                   0.07 ms / 0.21 ms | 2.11 ms / 2.83 ms | 14.39 ms / 16.57 ms
+  search x50                   1.10 ms / 1.41 ms | 2.75 ms / 2.88 ms | 13.17 ms / 15.15 ms
+```
+
+| 1 万件・中央値 | X11（Xvfb） | Windows | 読み |
+| --- | --- | --- | --- |
+| step（何もしない / 検索） | 0.06 / 1.24 ms | 0.07 / 1.10 ms | 同じ中核なので同じ |
+| encode（何もしない / 検索） | 0.43 / 0.48 ms | **2.11 / 2.75 ms** | Windows の描画が約 5 倍。Issue #112（筆と文字の配置を命令ごとに作る）の的 |
+| present | 1.2 ms | 14.4 ms | `EndDraw` の垂直同期の待ち。encode ＋ present ≒ 16.5 ms で 60 Hz の 1 周期 |
+| 作成 / 初回 / 2 回目 | 1.7 / 0.11 / 0.05 s | 2.0 / 0.12 / 0.05 s | NTFS（＋ Defender）でもほぼ同じ |
+
+窓の中の大きさが 1102×553 なのは、`CreateWindowExW` の 1120×600 が枠を含む外の大きさだから（X11 は中の大きさ）。
+
 施主の Windows での手順（#90 に足す）: `nene-docket.exe --bench 10000 %TEMP%\docket-bench-10k` と `--bench 100000 %TEMP%\docket-bench-100k`、NAS なら共有の上の空のフォルダでも 1 回。出た数行をそのまま貼る。終わったらフォルダは消してよい。
 
-🔴 **正直に:** Windows では一度も動かしていない（窓の作成・溜まったメッセージの処理・`DestroyWindow` の後の終わり方も含めて）。計測は 1 アカウントだけで、他人のジャーナルの併合と SMB の上の生成は測らない（共有は `--probe-share`）。Windows の present は垂直同期を待つので、60 Hz なら約 16.7 ms が下限で、描画の重さは encode の列で見る。
+🔴 **正直に:** Windows で動いたのは `--bench` の 1 万件の 1 回だけ（通常の起動・入力・IME・2 プロセスは Issue #22 / #80 のまま未確認）。計測は 1 アカウントだけで、他人のジャーナルの併合と SMB の上の生成は測らない（共有は `--probe-share`）。Windows の present は垂直同期を待つので、60 Hz なら約 16.7 ms が下限で、描画の重さは encode の列で見る。
 
 ## 52. 再現
 
