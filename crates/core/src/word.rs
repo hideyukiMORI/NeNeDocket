@@ -3,6 +3,7 @@
 use crate::attachment_word::AttachmentWord;
 use crate::auto_field::AutoField;
 use crate::field::Field;
+use crate::help_word::HelpWord;
 use crate::item_state::ItemState;
 use crate::toolbar_word::ToolbarWord;
 
@@ -29,6 +30,8 @@ pub enum Word {
     AutoField(AutoField),
     /// 道具の行・下書き・設定の語（Issue #124）。
     Toolbar(ToolbarWord),
+    /// F1 の案内の語（Issue #125）。
+    Help(HelpWord),
     /// 履歴の「いつ」。
     When,
     /// 履歴の「誰が」。

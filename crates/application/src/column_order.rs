@@ -50,6 +50,27 @@ impl ColumnOrder {
         Self::from_shown(&shown).unwrap_or(self)
     }
 
+    /// 列を出すか控えるか（設定のペイン・Issue #125）。出すなら右端に足し、控えるなら外す。題名は控えられない。
+    #[must_use]
+    pub fn with_shown(self, column: TableColumn, shown: bool) -> Self {
+        let mut columns = self.columns();
+        let present = columns.contains(&column);
+        if shown && !present {
+            columns.push(column);
+        } else if !shown && present && column != TableColumn::Title {
+            columns.retain(|known| *known != column);
+        } else {
+            return self;
+        }
+        Self::from_shown(&columns).unwrap_or(self)
+    }
+
+    /// 出しているか。
+    #[must_use]
+    pub fn shows(self, column: TableColumn) -> bool {
+        self.columns().contains(&column)
+    }
+
     /// 版 6 までの順から移すとき、出していなければ起票日と完了日を右に足す（ADR 0023）。
     #[must_use]
     pub fn with_new_columns(self) -> Self {
@@ -141,6 +162,24 @@ mod tests {
             ]
         );
         assert_eq!(order.text(), "title,updated,opener");
+    }
+
+    #[test]
+    fn a_column_is_shown_at_the_right_end_and_hidden_but_the_title_stays() {
+        let order = ColumnOrder::initial();
+        let labelled = order.with_shown(TableColumn::Labels, true);
+        assert_eq!(
+            labelled.text(),
+            "number,title,state,assignee,due,opened,closed,labels"
+        );
+        assert!(labelled.shows(TableColumn::Labels));
+        assert_eq!(labelled.with_shown(TableColumn::Labels, true), labelled);
+        let fewer = labelled.with_shown(TableColumn::State, false);
+        assert_eq!(
+            fewer.text(),
+            "number,title,assignee,due,opened,closed,labels"
+        );
+        assert_eq!(fewer.with_shown(TableColumn::Title, false), fewer);
     }
 
     #[test]

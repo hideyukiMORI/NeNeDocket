@@ -71,6 +71,7 @@ use crate::drag_target::DragTarget;
 use crate::edit_slot::EditSlot;
 use crate::environment::Environment;
 use crate::frame_input::FrameInput;
+use crate::help_overlay::HelpOverlay;
 use crate::history_change::HistoryChange;
 use crate::history_line::HistoryLine;
 use crate::history_pane::HistoryPane;
@@ -86,6 +87,7 @@ use crate::members_pane::MembersPane;
 use crate::notice::Notice;
 use crate::open_failure::OpenFailure;
 use crate::pane_height::PaneHeight;
+use crate::pane_mode::PaneMode;
 use crate::ports::Ports;
 use crate::settings::Settings;
 use crate::settings_failure::SettingsFailure;
@@ -124,6 +126,11 @@ const DRAFT_TITLE: WidgetId = WidgetId::new(35);
 const CLEAR_FILTER: WidgetId = WidgetId::new(36);
 /// 設定のペインの「閉じる」。
 const SETTINGS_CLOSE: WidgetId = WidgetId::new(37);
+/// 設定のペインの表示言語の「適用」（Issue #125・WCAG 3.2.2）。
+const LANGUAGE_APPLY: WidgetId = WidgetId::new(38);
+// 39・40・700〜 は F1 の案内（`help_overlay`）。
+/// 設定のペインの列の出し入れ（[`SETTABLE_COLUMNS`] の順の番号を足す）。
+const COLUMN_TOGGLE: WidgetId = WidgetId::new(600);
 /// 状態の札（詳細のペイン・`ItemState::ALL` の順の番号を足す・Issue #122）。
 const STATE_CHIP: WidgetId = WidgetId::new(200);
 const LANGUAGE_OPTION: WidgetId = WidgetId::new(300);
@@ -149,6 +156,17 @@ const SHOWING_WIDTH_PX: u16 = 180;
 const SETTINGS_WIDTH_PX: u16 = 80;
 /// 「＋ 課題を追加」。
 const ADD_WIDTH_PX: u16 = 140;
+/// 設定で出し入れできる列（番号と題名は常に出す）。
+const SETTABLE_COLUMNS: [TableColumn; 8] = [
+    TableColumn::State,
+    TableColumn::Assignee,
+    TableColumn::Due,
+    TableColumn::Opened,
+    TableColumn::Closed,
+    TableColumn::Labels,
+    TableColumn::Opener,
+    TableColumn::Updated,
+];
 /// 選んでいる絞り込みの札の頭の印（色だけに頼らない・WCAG 1.4.1）。`✓` は X11 で選ぶ日本語の家族に字形が無く □ になる
 /// （ADR 0007・Xvfb で確認）ので、JIS X 0208・GB2312・KS X 1001 のどれにもある `●` を使う。
 const CHOSEN_MARK: &str = "●";
@@ -183,12 +201,12 @@ pub struct DocketScreen {
     search: TextEdit,
     /// 絞り込みの札（Issue #124）。
     list_filter: ListFilter,
-    /// 下書きの題名（「＋ 課題を追加」の後・Enter で初めて追記する）。
-    draft: Option<TextEdit>,
+    /// 右のペインに出すもの（課題・下書き・設定）。
+    mode: PaneMode,
     /// 足したばかりで、絞り込みの外でも表に残す課題と、絞り込みの外にあるか（「絞り込みを外す」を知らせる）。
     kept: Option<(ItemId, bool)>,
-    /// 右のペインに設定を出しているか。
-    settings_open: bool,
+    /// F1 の案内（Issue #125）。
+    help: HelpOverlay,
     /// 絞り込みの札ごとの件数（検索だけを当てた数）と台帳の全件、その鍵。
     counts: Option<(CountsKey, [usize; 6])>,
     scroll: ScrollState,
@@ -270,9 +288,9 @@ impl DocketScreen {
             interaction: Interaction::idle(),
             search: TextEdit::empty(),
             list_filter: ListFilter::Open,
-            draft: None,
+            mode: PaneMode::Item,
             kept: None,
-            settings_open: false,
+            help: HelpOverlay::closed(environment.scale()),
             counts: None,
             scroll: ScrollState::top(0, 0),
             selected: None,
@@ -377,6 +395,7 @@ impl DocketScreen {
             self.language_box_commands(language_rect, language_response, &mut commands);
         }
         self.probe_notice(notice_rect, &mut commands);
+        self.probe_help(bounds, &mut commands);
         self.interaction.end();
         self.commit_unfocused_slots();
         DocketFrame::new((self.scale, self.language, self.theme), commands)
@@ -471,16 +490,37 @@ impl DocketScreen {
         self.list_filter
     }
 
+    /// 下書きの欄。無ければ `None`。
+    const fn draft(&self) -> Option<&TextEdit> {
+        match &self.mode {
+            PaneMode::Draft(draft) => Some(draft),
+            PaneMode::Item | PaneMode::Settings => None,
+        }
+    }
+
+    /// 設定を出していれば閉じる（課題に戻す）。
+    fn close_settings(&mut self) {
+        if self.mode == PaneMode::Settings {
+            self.mode = PaneMode::Item;
+        }
+    }
+
     /// 下書きの題名（「＋ 課題を追加」の後）。無ければ `None`。
     #[must_use]
     pub fn draft_text(&self) -> Option<&str> {
-        self.draft.as_ref().map(TextEdit::text)
+        self.draft().map(TextEdit::text)
     }
 
     /// 右のペインに設定を出しているか。
     #[must_use]
-    pub const fn shows_settings(&self) -> bool {
-        self.settings_open
+    pub fn shows_settings(&self) -> bool {
+        self.mode == PaneMode::Settings
+    }
+
+    /// F1 の案内を出しているか。
+    #[must_use]
+    pub const fn shows_help(&self) -> bool {
+        self.help.is_open()
     }
 
     /// スクロールの位置。
@@ -893,7 +933,7 @@ impl DocketScreen {
             main.width().saturating_sub(width).saturating_sub(gap),
             main.height(),
         );
-        let detail = if self.selected.is_some() && self.draft.is_none() && !self.settings_open {
+        let detail = if self.selected.is_some() && self.mode == PaneMode::Item {
             DetailLayout::of_item(
                 pane,
                 self.px(ROW_PX),
@@ -909,7 +949,7 @@ impl DocketScreen {
     /// ペインの区画を合わせる: 課題を選んでいれば選んだ区画だけ、選んでいなければ台帳全体の履歴。
     fn sync_sections(&mut self) {
         let wanted = match (self.selected, self.section) {
-            _ if self.draft.is_some() || self.settings_open => (false, false, false),
+            _ if self.mode != PaneMode::Item => (false, false, false),
             (Some(_), DetailSection::Body) => (true, false, false),
             (Some(_), DetailSection::Attachments) => (false, true, false),
             (None, _) | (Some(_), DetailSection::History) => (false, false, true),
@@ -937,11 +977,11 @@ impl DocketScreen {
             rect: detail.pane(),
             paint: Paint::Surface,
         });
-        if self.draft.is_some() {
+        if self.draft().is_some() {
             self.probe_draft(detail.pane(), commands);
             return None;
         }
-        if self.settings_open {
+        if self.mode == PaneMode::Settings {
             return Some(self.probe_settings(detail.pane(), commands));
         }
         let id = self.selected?;
@@ -998,7 +1038,7 @@ impl DocketScreen {
             0,
         ));
         let response = self.interaction.probe(DRAFT_TITLE, title, true);
-        if let Some(draft) = &self.draft {
+        if let Some(draft) = self.draft() {
             commands.extend(text_field::text_field(title, draft, response));
         }
         commands.push(Self::cell_text(
@@ -1009,28 +1049,58 @@ impl DocketScreen {
         ));
     }
 
-    /// 設定（この PC だけ）: 見出しと「閉じる」・表示言語・配色・参加者と権限（表の下の段）。言語の箱を返す。
+    /// 設定: 見出しと「閉じる」・自分だけ（表示言語と「適用」・配色と見本・表の列）・この台帳（参加者と権限）。
+    /// 言語の箱を返し、最後に描く（Issue #124 / #125）。
     fn probe_settings(
         &mut self,
         pane: PixelRect,
         commands: &mut Vec<DrawCommand>,
     ) -> (PixelRect, Response) {
+        let row = self.px(ROW_PX);
         let mut layout = Layout::inside(pane, self.px(MARGIN_PX));
         let head = layout.row(
-            self.px(ROW_PX),
+            row,
             &[
                 ColumnWidth::Fill,
                 ColumnWidth::Fixed(self.px(BUTTON_WIDTH_PX)),
             ],
         );
+        let mine = layout.row(row, &[ColumnWidth::Fill]);
         let named = [
             ColumnWidth::Fixed(self.px(FIELD_NAME_PX)),
             ColumnWidth::Fill,
+            ColumnWidth::Fixed(self.px(BUTTON_WIDTH_PX)),
         ];
-        let language_row = layout.row(self.px(ROW_PX), &named);
-        let theme_row = layout.row(self.px(ROW_PX), &named);
-        let members_row = layout.row(self.px(ROW_PX), &[ColumnWidth::Fill]);
-        let [title, close] = Self::rects(&head);
+        let language_row = layout.row(row, &named);
+        let theme_row = layout.row(row, &named);
+        let columns_name = layout.row(row, &[ColumnWidth::Fill]);
+        let pairs: [Vec<PixelRect>; 4] =
+            core::array::from_fn(|_| layout.row(row, &[ColumnWidth::Fill, ColumnWidth::Fill]));
+        let docket = layout.row(row, &[ColumnWidth::Fill]);
+        let members_row = layout.row(row, &[ColumnWidth::Fill]);
+        self.settings_head(Self::rects(&head), commands);
+        for (rects, word) in [
+            (&mine, ToolbarWord::MineSection),
+            (&columns_name, ToolbarWord::Columns),
+            (&docket, ToolbarWord::DocketSection),
+        ] {
+            commands.push(Self::cell_text(
+                Self::rects::<1>(rects)[0],
+                self.word(Word::Toolbar(word)),
+                Paint::Muted,
+                0,
+            ));
+        }
+        let language = self.settings_language(Self::rects(&language_row), commands);
+        self.settings_theme(Self::rects(&theme_row), commands);
+        let cells: Vec<PixelRect> = pairs.iter().flatten().copied().collect();
+        self.probe_column_toggles(&cells, commands);
+        self.probe_members_toggle(Self::rects::<1>(&members_row)[0], commands);
+        language
+    }
+
+    /// 設定の見出しと「閉じる」。
+    fn settings_head(&mut self, [title, close]: [PixelRect; 2], commands: &mut Vec<DrawCommand>) {
         commands.push(Self::cell_text(
             title,
             self.word(Word::Toolbar(ToolbarWord::Settings)),
@@ -1039,34 +1109,133 @@ impl DocketScreen {
         ));
         let closed = self.interaction.probe(SETTINGS_CLOSE, close, true);
         if closed.clicked() {
-            self.settings_open = false;
+            self.close_settings();
         }
         commands.extend(button::button(
             close,
             self.word(Word::Toolbar(ToolbarWord::Close)),
             closed,
         ));
-        let [language_name, language_rect] = Self::rects(&language_row);
-        let [theme_name, theme_rect] = Self::rects(&theme_row);
-        for (rect, word) in [
-            (language_name, ToolbarWord::Language),
-            (theme_name, ToolbarWord::Theme),
-        ] {
-            commands.push(Self::cell_text(
-                rect,
-                self.word(Word::Toolbar(word)),
-                Paint::Muted,
-                0,
-            ));
-        }
-        let language = self.interaction.probe(LANGUAGE, language_rect, true);
+    }
+
+    /// 表示言語の箱と「適用」。箱を返す（候補は最後に描く）。
+    fn settings_language(
+        &mut self,
+        [name, rect, apply]: [PixelRect; 3],
+        commands: &mut Vec<DrawCommand>,
+    ) -> (PixelRect, Response) {
+        commands.push(Self::cell_text(
+            name,
+            self.word(Word::Toolbar(ToolbarWord::Language)),
+            Paint::Muted,
+            0,
+        ));
+        let language = self.interaction.probe(LANGUAGE, rect, true);
         if language.clicked() {
             self.language_select = self.language_select.toggled();
         }
-        let theme = self.interaction.probe(THEME, theme_rect, true);
-        commands.extend(text_field::text_field(theme_rect, &self.theme_edit, theme));
-        self.probe_members_toggle(Self::rects::<1>(&members_row)[0], commands);
-        (language_rect, language)
+        let applied = self.interaction.probe(LANGUAGE_APPLY, apply, true);
+        if applied.clicked() {
+            self.apply_language();
+        }
+        commands.extend(button::button(
+            apply,
+            self.word(Word::Toolbar(ToolbarWord::Apply)),
+            applied,
+        ));
+        (rect, language)
+    }
+
+    /// 配色の名前の欄（Enter・上下ですぐ効く）と、いまの地・文字・強調の見本。
+    fn settings_theme(
+        &mut self,
+        [name, rect, sample]: [PixelRect; 3],
+        commands: &mut Vec<DrawCommand>,
+    ) {
+        commands.push(Self::cell_text(
+            name,
+            self.word(Word::Toolbar(ToolbarWord::Theme)),
+            Paint::Muted,
+            0,
+        ));
+        let theme = self.interaction.probe(THEME, rect, true);
+        commands.extend(text_field::text_field(rect, &self.theme_edit, theme));
+        let side = sample.height() / 2;
+        let gap = self.px(4);
+        for (index, paint) in [Paint::Background, Paint::Ink, Paint::Accent]
+            .into_iter()
+            .enumerate()
+        {
+            let step = u16::try_from(index).unwrap_or(0);
+            let square = PixelRect::new(
+                sample.x().saturating_add(
+                    gap.saturating_add(side.saturating_add(gap))
+                        .saturating_mul(step),
+                ),
+                sample.y().saturating_add(side / 2),
+                side,
+                side,
+            );
+            commands.push(DrawCommand::Fill {
+                rect: square,
+                paint,
+            });
+            commands.push(DrawCommand::Stroke {
+                rect: square,
+                paint: Paint::Border,
+            });
+        }
+    }
+
+    /// 表の列の出し入れ（番号と題名は常に出す）。変えれば設定に残す。
+    fn probe_column_toggles(&mut self, cells: &[PixelRect], commands: &mut Vec<DrawCommand>) {
+        for (index, (rect, column)) in cells.iter().zip(SETTABLE_COLUMNS).enumerate() {
+            let id = COLUMN_TOGGLE.indexed(u32::try_from(index).unwrap_or(u32::MAX));
+            let response = self.interaction.probe(id, *rect, true);
+            if response.clicked() {
+                self.toggle_column(column);
+            }
+            commands.extend(checkbox::checkbox(
+                *rect,
+                self.word(Self::heading_of(column)),
+                self.settings.order().shows(column),
+                response,
+            ));
+        }
+    }
+
+    /// 列を出す・控える。設定に残す。
+    fn toggle_column(&mut self, column: TableColumn) {
+        let order = self.settings.order();
+        let changed = order.with_shown(column, !order.shows(column));
+        if changed != order {
+            self.settings = self.settings.clone().with_order(changed);
+            self.save_settings();
+        }
+    }
+
+    /// F1 の案内。飛ぶ先を押されたらその段へ。
+    fn probe_help(&mut self, bounds: PixelRect, commands: &mut Vec<DrawCommand>) {
+        if let Some(step) =
+            self.help
+                .probe(&mut self.interaction, (bounds, self.language), commands)
+        {
+            self.help_go(step);
+        }
+    }
+
+    /// 案内の段から飛ぶ: 始める＝設定、足す＝下書き、割り振る＝未割り当て、毎日＝未完了、定例＝期限超過、閉じる＝確認待ち。
+    fn help_go(&mut self, step: usize) {
+        match step {
+            0 => {
+                self.mode = PaneMode::Settings;
+            }
+            1 => self.start_draft(),
+            2 => self.choose_filter(ListFilter::Unassigned),
+            3 => self.choose_filter(ListFilter::Open),
+            4 => self.choose_filter(ListFilter::Overdue),
+            _ => self.choose_filter(ListFilter::Review),
+        }
     }
 
     /// 状態の札 6 つ。押せばその状態の `Set` を作る（同じ状態なら何もしない）。
@@ -1580,8 +1749,8 @@ impl DocketScreen {
         if self.interaction.focus() == Some(SEARCH) {
             self.search = self.search.with_preedit(input.preedit().cloned());
         } else if self.interaction.focus() == Some(DRAFT_TITLE) {
-            if let Some(draft) = &self.draft {
-                self.draft = Some(draft.with_preedit(input.preedit().cloned()));
+            if let PaneMode::Draft(draft) = &mut self.mode {
+                *draft = draft.with_preedit(input.preedit().cloned());
             }
         } else if self.interaction.focus() == Some(THEME) {
             self.theme_edit = self.theme_edit.with_preedit(input.preedit().cloned());
@@ -1600,11 +1769,12 @@ impl DocketScreen {
         match key {
             KeyIntent::Tab => self.interaction.focus_next(),
             KeyIntent::BackTab => self.interaction.focus_previous(),
-            KeyIntent::Escape if !self.any_options_open() && self.draft.is_some() => {
+            KeyIntent::Escape if self.help.is_open() => self.help.close(),
+            KeyIntent::Escape if !self.any_options_open() && self.draft().is_some() => {
                 self.cancel_draft();
             }
-            KeyIntent::Escape if !self.any_options_open() && self.settings_open => {
-                self.settings_open = false;
+            KeyIntent::Escape if !self.any_options_open() && self.mode == PaneMode::Settings => {
+                self.close_settings();
                 self.interaction.blur();
             }
             KeyIntent::Escape if !self.any_options_open() => {
@@ -1617,8 +1787,7 @@ impl DocketScreen {
                 self.interaction.focus_on(SEARCH);
                 self.search = self.search.applied(KeyIntent::SelectAll);
             }
-            // F1 の案内は B2-2（Issue #125）。
-            KeyIntent::Help => {}
+            KeyIntent::Help => self.help.toggle(),
             KeyIntent::Char(_)
             | KeyIntent::Move { .. }
             | KeyIntent::Backspace
@@ -1639,11 +1808,7 @@ impl DocketScreen {
         match self.interaction.focus() {
             Some(SEARCH) => self.search = self.search.applied(key),
             Some(DRAFT_TITLE) => self.draft_key(key),
-            Some(LANGUAGE) => {
-                let before = self.language_select.chosen();
-                self.language_select = self.language_select.applied(key);
-                self.language_changed(before);
-            }
+            Some(LANGUAGE) => self.language_select = self.language_select.applied(key),
             Some(THEME) => self.theme_key(key),
             Some(id) if id == MembersPane::groups_id() => {
                 let action = self.members.groups_key(key);
@@ -1705,14 +1870,33 @@ impl DocketScreen {
                 return true;
             }
             SETTINGS_CLOSE => {
-                self.settings_open = false;
+                self.close_settings();
                 return true;
             }
             CLEAR_FILTER => {
                 self.clear_filter();
                 return true;
             }
+            LANGUAGE_APPLY => {
+                self.apply_language();
+                return true;
+            }
+            id if id == HelpOverlay::close_id() => {
+                self.help.close();
+                return true;
+            }
             _ => {}
+        }
+        if let Some(column) = Self::index_in(id, COLUMN_TOGGLE, SETTABLE_COLUMNS.len())
+            .and_then(|index| SETTABLE_COLUMNS.get(index).copied())
+        {
+            self.toggle_column(column);
+            return true;
+        }
+        if let Some(step) = HelpOverlay::step_of(id) {
+            self.help.close();
+            self.help_go(step);
+            return true;
         }
         if let Some(filter) = Self::index_in(id, FILTER_CHIP, ListFilter::ALL.len())
             .and_then(|index| ListFilter::ALL.get(index).copied())
@@ -1875,8 +2059,7 @@ impl DocketScreen {
     /// 行を選ぶ。編集中の欄はその前に確定する。
     fn select(&mut self, id: ItemId) {
         self.commit_unfocused_slots();
-        self.draft = None;
-        self.settings_open = false;
+        self.mode = PaneMode::Item;
         if self.kept.is_some_and(|(kept, _)| kept != id) {
             self.kept = None;
         }
@@ -1989,12 +2172,13 @@ impl DocketScreen {
     }
 
     /// 言語の箱の選びが変わっていれば、言語を変えて設定に残す。
-    fn language_changed(&mut self, before: usize) {
-        let chosen = self.language_select.chosen();
-        if chosen == before {
-            return;
-        }
-        let Some(choice) = LanguageChoice::ALL.get(chosen).copied() else {
+    /// 選んだ表示言語を「適用」する（選んだだけでは変えない・WCAG 3.2.2）。同じなら何もしない。
+    fn apply_language(&mut self) {
+        let Some(choice) = LanguageChoice::ALL
+            .get(self.language_select.chosen())
+            .copied()
+            .filter(|choice| *choice != self.settings.language())
+        else {
             return;
         };
         self.settings = self.settings.clone().with_language(choice);
@@ -2169,17 +2353,17 @@ impl DocketScreen {
 
     /// 設定のペインを出し入れする。出すときは下書きを捨てる。
     fn toggle_settings(&mut self) {
-        self.settings_open = !self.settings_open;
-        if self.settings_open {
-            self.draft = None;
-        }
+        self.mode = if self.mode == PaneMode::Settings {
+            PaneMode::Item
+        } else {
+            PaneMode::Settings
+        };
     }
 
     /// 下書きを始める（「＋ 課題を追加」・Ctrl+N）。ジャーナルにはまだ何も書かない。
     fn start_draft(&mut self) {
         self.commit_unfocused_slots();
-        self.settings_open = false;
-        self.draft = Some(TextEdit::empty());
+        self.mode = PaneMode::Draft(TextEdit::empty());
         self.interaction.focus_on(DRAFT_TITLE);
     }
 
@@ -2189,16 +2373,15 @@ impl DocketScreen {
             self.add_draft();
             return;
         }
-        if let Some(draft) = &self.draft {
-            self.draft = Some(draft.applied(key));
+        if let PaneMode::Draft(draft) = &mut self.mode {
+            *draft = draft.applied(key);
         }
     }
 
     /// 下書きの題名で課題を足す（作る ＋ 題名）。空なら何もしない。絞り込みの外なら知らせる。
     fn add_draft(&mut self) {
         let Some(title) = self
-            .draft
-            .as_ref()
+            .draft()
             .map(|draft| draft.text().trim().to_owned())
             .filter(|title| !title.is_empty())
         else {
@@ -2210,7 +2393,7 @@ impl DocketScreen {
             item: id,
             value: FieldValue::Title(title),
         });
-        self.draft = Some(TextEdit::empty());
+        self.mode = PaneMode::Draft(TextEdit::empty());
         let shown = self
             .ledger
             .docket()
@@ -2221,7 +2404,7 @@ impl DocketScreen {
 
     /// 下書きを捨てる（何も残らない）。
     fn cancel_draft(&mut self) {
-        self.draft = None;
+        self.mode = PaneMode::Item;
         self.interaction.blur();
     }
 
@@ -2250,14 +2433,12 @@ impl DocketScreen {
         if !self.language_select.is_open() {
             return;
         }
-        let before = self.language_select.chosen();
         let rects = select_box::option_rects(language_rect, LanguageChoice::ALL.len());
         for (index, rect) in rects.into_iter().enumerate() {
             let id = LANGUAGE_OPTION.indexed(u32::try_from(index).unwrap_or(u32::MAX));
             if self.interaction.probe(id, rect, false).clicked() {
                 self.language_select = self.language_select.chosen_at(index);
                 self.interaction.focus_on(LANGUAGE);
-                self.language_changed(before);
             }
         }
     }
@@ -2534,10 +2715,16 @@ mod tests {
     const FILTER_XS: [u16; 5] = [427, 539, 651, 763, 875];
     const SETTINGS_X: u16 = 1163;
     const ADD_X: u16 = 1281;
-    /// 設定のペイン: 見出しと「閉じる」44..72（1282..1351）・言語 80..108・配色 116..144・参加者 152..180（欄は 1052..1351）。
-    const LANGUAGE_AT: (u16, u16) = (1200, 94);
-    const THEME_AT: (u16, u16) = (1200, 130);
-    const MEMBERS_AT: (u16, u16) = (1100, 166);
+    /// 設定のペイン: 見出しと「閉じる」44..72（1282..1351）・「自分だけ」80..108・言語 116..144（箱 1052..1273・
+    /// 「適用」1282..1351）・配色 152..180・「表の列」188..216・列のチェック 224 / 260 / 296 / 332（972..1157・
+    /// 1166..1351）・「この台帳」368..396・参加者 404..432。
+    const LANGUAGE_AT: (u16, u16) = (1160, 130);
+    const APPLY_AT: (u16, u16) = (1317, 130);
+    const THEME_AT: (u16, u16) = (1160, 166);
+    const MEMBERS_AT: (u16, u16) = (1100, 418);
+    /// 列のチェックの左上（状態）と右上（担当）。
+    const STATE_COLUMN_AT: (u16, u16) = (1060, 238);
+    const LABELS_COLUMN_AT: (u16, u16) = (1258, 310);
     const CLOSE_AT: (u16, u16) = (1317, 58);
     /// 下書きの題名の欄（80..108）。
     const DRAFT_AT: (u16, u16) = (1100, 94);
@@ -3882,26 +4069,94 @@ mod tests {
     }
 
     #[test]
-    fn the_language_box_changes_every_word_and_saves_the_choice() {
+    fn the_language_changes_every_word_only_when_applied_and_saves_the_choice() {
         let (mut screen, spy) = screen(2);
         assert_eq!(screen.language(), Language::English);
         click(&mut screen, SETTINGS_X, TOOLBAR_Y);
         click(&mut screen, LANGUAGE_AT.0, LANGUAGE_AT.1);
-        // 候補は箱の下（108 から 28 ずつ）: OS に従う・日本語・…
-        click(&mut screen, LANGUAGE_AT.0, 150);
+        // 候補は箱の下（144 から 28 ずつ）: OS に従う・日本語・…。選んだだけでは変わらず、「適用」で変わる。
+        click(&mut screen, LANGUAGE_AT.0, 186);
+        assert_eq!(screen.language(), Language::English);
+        assert!(spy.saved.borrow().is_empty());
+        click(&mut screen, APPLY_AT.0, APPLY_AT.1);
         assert_eq!(screen.language(), Language::Japanese);
         assert_eq!(
             spy.saved.borrow().last().map(Settings::language),
             Some(LanguageChoice::Fixed(Language::Japanese))
         );
-        let frame = idle(&mut screen);
-        let shown = texts(&frame);
-        assert!(shown.iter().any(|text| text == "＋ 課題を追加"));
-        assert!(shown.iter().any(|text| text == "題名"));
-        assert!(shown.iter().any(|text| text == "対応中"));
-        keys(&mut screen, &[KeyIntent::Down, KeyIntent::Down]);
-        assert_eq!(screen.language(), Language::SimplifiedChinese);
-        assert_eq!(spy.saved.borrow().len(), 3);
+        let shown = texts(&idle(&mut screen));
+        for label in ["＋ 課題を追加", "題名", "対応中"] {
+            assert!(shown.iter().any(|text| text == label), "{label}");
+        }
+    }
+
+    #[test]
+    fn a_language_chosen_by_key_waits_for_apply() {
+        let (mut screen, spy) = screen(2);
+        click(&mut screen, SETTINGS_X, TOOLBAR_Y);
+        click(&mut screen, LANGUAGE_AT.0, LANGUAGE_AT.1);
+        keys(
+            &mut screen,
+            &[KeyIntent::Escape, KeyIntent::Down, KeyIntent::Down],
+        );
+        assert_eq!(screen.language(), Language::English);
+        assert!(spy.saved.borrow().is_empty());
+        click(&mut screen, APPLY_AT.0, APPLY_AT.1);
+        assert_eq!(screen.language(), Language::English);
+        assert_eq!(
+            spy.saved.borrow().last().map(Settings::language),
+            Some(LanguageChoice::Fixed(Language::English))
+        );
+    }
+
+    #[test]
+    fn the_settings_show_and_hide_columns_and_save_them() {
+        let (mut screen, spy) = screen(1);
+        click(&mut screen, SETTINGS_X, TOOLBAR_Y);
+        let shown = texts(&idle(&mut screen));
+        for label in [
+            "Just me (this PC)",
+            "Table columns",
+            "This docket (everyone)",
+            "Apply",
+        ] {
+            assert!(shown.iter().any(|text| text == label), "{label}: {shown:?}");
+        }
+        click(&mut screen, LABELS_COLUMN_AT.0, LABELS_COLUMN_AT.1);
+        assert!(screen.settings().order().shows(TableColumn::Labels));
+        click(&mut screen, STATE_COLUMN_AT.0, STATE_COLUMN_AT.1);
+        assert!(!screen.settings().order().shows(TableColumn::State));
+        assert_eq!(spy.saved.borrow().len(), 2);
+        assert_eq!(
+            screen.settings().order().text(),
+            "number,title,assignee,due,opened,closed,labels"
+        );
+    }
+
+    #[test]
+    fn f1_shows_the_six_steps_and_a_step_goes_to_its_filter() {
+        let (mut screen, _) = screen(2);
+        keys(&mut screen, &[KeyIntent::Help]);
+        assert!(screen.shows_help());
+        let shown = texts(&idle(&mut screen));
+        for label in [
+            "How a team runs a week with weekly meetings",
+            "Assign",
+            "Unassigned",
+            "In review",
+        ] {
+            assert!(shown.iter().any(|text| text == label), "{label}: {shown:?}");
+        }
+        // 案内の外（表の行）を押しても届かない。
+        click(&mut screen, 100, FIRST_ROW_Y);
+        assert_eq!(screen.selected(), None);
+        // 「割り振る」の飛ぶ先: 枠は 240..1119・144..455、中は 160 から（見出し 160..188・段は 196 から 36 ずつ）、
+        // 飛ぶ先は右端の 200（904..1103）。
+        click(&mut screen, 1000, 282);
+        assert!(!screen.shows_help());
+        assert_eq!(screen.list_filter(), ListFilter::Unassigned);
+        keys(&mut screen, &[KeyIntent::Help, KeyIntent::Escape]);
+        assert!(!screen.shows_help());
     }
 
     #[test]

@@ -36,6 +36,7 @@ pub mod docket;
 pub mod draw_command;
 pub mod field;
 pub mod field_value;
+pub mod help_word;
 pub mod hex;
 pub mod image_fit;
 pub mod interaction;
