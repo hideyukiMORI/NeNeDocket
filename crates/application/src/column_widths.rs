@@ -1,4 +1,6 @@
-//! 表の列の幅（FR-012）。論理画素。題名は残りを埋めるので持たない。設定の版 3 に `columns = 72,110,90,90,120` で残る。
+//! 表の列の幅（FR-012）。論理画素。題名は残りを埋めるので持たない。設定の版 7 に
+//! `columns = 72,110,90,90,120,96,96,80,96`（番号・状態・担当・期限・ラベル・起票日・完了日・起票者・更新日）で残る。
+//! 版 3〜6 の 5 つの幅も読み、足した 4 列は既定で補う（ADR 0023）。
 
 use alloc::string::{String, ToString as _};
 use alloc::vec::Vec;
@@ -7,13 +9,17 @@ use crate::table_column::TableColumn;
 
 /// 列の幅の下限（論理画素）。
 const MIN_PX: u16 = 40;
-/// 既定（1x）。番号・状態・担当・期限・ラベル。
-const DEFAULT: [u16; 5] = [72, 110, 90, 90, 120];
+/// 幅を持つ列の数。
+const COUNT: usize = 9;
+/// 版 6 までの幅の数（番号・状態・担当・期限・ラベル）。
+const LEGACY_COUNT: usize = 5;
+/// 既定（1x）。番号・状態・担当・期限・ラベル・起票日・完了日・起票者・更新日。
+const DEFAULT: [u16; COUNT] = [72, 110, 90, 90, 120, 96, 96, 80, 96];
 
-/// 番号・状態・担当・期限・ラベルの幅。
+/// 題名以外の列の幅。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub struct ColumnWidths {
-    widths: [u16; 5],
+    widths: [u16; COUNT],
 }
 
 impl ColumnWidths {
@@ -38,7 +44,7 @@ impl ColumnWidths {
         self
     }
 
-    /// `72,110,90,90,120` から。数が違う・数でない・40 未満なら `None`。
+    /// `72,110,90,90,120,96,96,80,96` から。版 6 までの 5 つなら足した列を既定で補う。数が違う・数でない・40 未満なら `None`。
     #[must_use]
     pub fn parse(text: &str) -> Option<Self> {
         let parsed = text
@@ -50,7 +56,13 @@ impl ColumnWidths {
                     .filter(|width| *width >= MIN_PX)
             })
             .collect::<Option<Vec<u16>>>()?;
-        let widths: [u16; 5] = parsed.try_into().ok()?;
+        let mut widths = DEFAULT;
+        if parsed.len() != COUNT && parsed.len() != LEGACY_COUNT {
+            return None;
+        }
+        for (slot, width) in widths.iter_mut().zip(parsed) {
+            *slot = width;
+        }
         Some(Self { widths })
     }
 
@@ -72,6 +84,10 @@ impl ColumnWidths {
             TableColumn::Assignee => Some(2),
             TableColumn::Due => Some(3),
             TableColumn::Labels => Some(4),
+            TableColumn::Opened => Some(5),
+            TableColumn::Closed => Some(6),
+            TableColumn::Opener => Some(7),
+            TableColumn::Updated => Some(8),
         }
     }
 }
@@ -83,7 +99,12 @@ mod tests {
     #[test]
     fn defaults_round_trip_and_changes_are_floored() {
         let widths = ColumnWidths::initial();
-        assert_eq!(widths.text(), "72,110,90,90,120");
+        assert_eq!(widths.text(), "72,110,90,90,120,96,96,80,96");
+        // 版 6 までの 5 つは、足した 4 列を既定で補う。
+        assert_eq!(
+            ColumnWidths::parse("80,110,90,90,120"),
+            Some(widths.with(TableColumn::Number, 80))
+        );
         assert_eq!(ColumnWidths::parse(&widths.text()), Some(widths));
         assert_eq!(widths.get(TableColumn::Title), None);
         assert_eq!(widths.get(TableColumn::State), Some(110));
@@ -96,7 +117,12 @@ mod tests {
 
     #[test]
     fn the_wrong_count_a_non_number_and_a_narrow_width_are_refused() {
-        for text in ["72,110,90,90", "72,110,90,90,x", "72,110,90,90,10"] {
+        for text in [
+            "72,110,90,90",
+            "72,110,90,90,x",
+            "72,110,90,90,10",
+            "72,110,90,90,120,96",
+        ] {
             assert_eq!(ColumnWidths::parse(text), None, "{text}");
         }
         assert!(TableColumn::Number.is_resizable());

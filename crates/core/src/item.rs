@@ -8,10 +8,13 @@ use crate::date::Date;
 use crate::field_value::FieldValue;
 use crate::item_id::ItemId;
 use crate::item_state::ItemState;
+use crate::op::Op;
 use crate::op_kind::OpKind;
+use crate::wall_clock::WallClock;
 
 /// 題名・本文・状態・担当・期限・ラベル・並び順と、消されているか、添付（生きているもの・連番の順）と、
-/// 添付に使った最大の連番（外しても戻らない）。すべて併合の派生値で、正本はジャーナル。
+/// 添付に使った最大の連番（外しても戻らない）と、自動の項目（起票日・更新日・完了日・Issue #117）。
+/// すべて併合の派生値で、正本はジャーナル。起票者は作ったアカウント（[`ItemId::creator`]）。
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub struct Item {
     id: ItemId,
@@ -25,6 +28,12 @@ pub struct Item {
     deleted: bool,
     attachments: Vec<Attachment>,
     last_attachment: u32,
+    /// 起票日: 作る操作の壁時計。
+    opened: WallClock,
+    /// 更新日: 全順序で最後にこの課題に当たった操作の壁時計。
+    updated: WallClock,
+    /// 完了日: 全順序で最後に「完了」へ移した操作の壁時計。いま完了でなければ `None`。
+    closed: Option<WallClock>,
 }
 
 impl Item {
@@ -43,7 +52,44 @@ impl Item {
             deleted: false,
             attachments: Vec::new(),
             last_attachment: 0,
+            opened: WallClock::new(0),
+            updated: WallClock::new(0),
+            closed: None,
         }
+    }
+
+    /// 自動の項目を置いた状態（スナップショットから戻すとき・ADR 0023）。
+    #[must_use]
+    pub fn with_stamps(
+        self,
+        opened: WallClock,
+        updated: WallClock,
+        closed: Option<WallClock>,
+    ) -> Self {
+        Self {
+            opened,
+            updated,
+            closed,
+            ..self
+        }
+    }
+
+    /// 起票日（作る操作の壁時計）。
+    #[must_use]
+    pub const fn opened(&self) -> WallClock {
+        self.opened
+    }
+
+    /// 更新日（全順序で最後に当たった操作の壁時計）。
+    #[must_use]
+    pub const fn updated(&self) -> WallClock {
+        self.updated
+    }
+
+    /// 完了日（全順序で最後に完了へ移した操作の壁時計）。いま完了でなければ `None`。
+    #[must_use]
+    pub const fn closed(&self) -> Option<WallClock> {
+        self.closed
     }
 
     /// 添付を足した状態（同じ連番があれば置き換える）。連番の順に並ぶ。
@@ -121,16 +167,34 @@ impl Item {
         self
     }
 
-    /// 操作の種類を当てた課題（`Docket::applied` の 1 件版）。権限の記録は何もしない。
+    /// 操作を当てた課題（`Docket::applied` の 1 件版）。全順序に並べた後で呼ぶ。権限の記録は何もしない。
+    /// 自動の項目もここで刻む: 作る操作は起票日、課題に当たる操作は更新日、完了でない状態から完了へ移す操作は完了日
+    /// （完了から外せば消える）。壁時計は機械ごとにずれるので、値は表示にだけ使う（ADR 0004 / 0023）。
     #[must_use]
-    pub fn applied(self, kind: &OpKind) -> Self {
-        match kind {
-            OpKind::Create(_) | OpKind::Admin(_) => self,
+    pub fn applied(self, op: &Op) -> Self {
+        let wall = op.wall();
+        let was_done = self.state == ItemState::Done;
+        let changed = match op.kind() {
+            OpKind::Admin(_) => return self,
+            OpKind::Create(_) => Self {
+                opened: wall,
+                ..self
+            },
             OpKind::Set { value, .. } => self.with(value.clone()),
             OpKind::Delete(_) => self.with_deleted(true),
             OpKind::Restore(_) => self.with_deleted(false),
             OpKind::Attach { attachment, .. } => self.attached(attachment.clone()),
             OpKind::Detach { sequence, .. } => self.detached(*sequence),
+        };
+        let closed = match (was_done, changed.state == ItemState::Done) {
+            (false, true) => Some(wall),
+            (true, true) => changed.closed,
+            (_, false) => None,
+        };
+        Self {
+            updated: wall,
+            closed,
+            ..changed
         }
     }
 
@@ -239,6 +303,65 @@ mod tests {
         assert_eq!(item.rank(), -5);
         assert!(item.is_deleted());
         assert_eq!(item.id(), ItemId::new(AccountId::new(1), 1));
+    }
+
+    fn stamped(clock: u64, wall: i64, kind: OpKind) -> Op {
+        use crate::logical_clock::LogicalClock;
+        use crate::op_id::OpId;
+        Op::new(
+            OpId::new(LogicalClock::new(clock), AccountId::new(1)),
+            WallClock::new(wall),
+            kind,
+        )
+    }
+
+    fn set_state(value: ItemState) -> OpKind {
+        OpKind::Set {
+            item: ItemId::new(AccountId::new(1), 1),
+            value: FieldValue::State(value),
+        }
+    }
+
+    #[test]
+    fn create_stamps_the_opened_date_and_every_op_the_updated_date() {
+        let id = ItemId::new(AccountId::new(1), 1);
+        let opened = Item::created(id).applied(&stamped(1, 100, OpKind::Create(id)));
+        assert_eq!(opened.opened(), WallClock::new(100));
+        assert_eq!(opened.updated(), WallClock::new(100));
+        assert_eq!(opened.closed(), None);
+        let titled = opened.applied(&stamped(
+            2,
+            150,
+            OpKind::Set {
+                item: id,
+                value: FieldValue::Title(String::from("t")),
+            },
+        ));
+        assert_eq!(titled.updated(), WallClock::new(150));
+        assert_eq!(titled.opened(), WallClock::new(100));
+        let admin = titled.clone().applied(&stamped(
+            3,
+            600,
+            OpKind::Admin(crate::admin_command::AdminCommand::Permissions(true)),
+        ));
+        assert_eq!(admin, titled);
+    }
+
+    #[test]
+    fn the_closed_date_is_the_last_move_into_done_and_leaving_done_clears_it() {
+        let id = ItemId::new(AccountId::new(1), 1);
+        let done = Item::created(id)
+            .applied(&stamped(1, 100, OpKind::Create(id)))
+            .applied(&stamped(2, 200, set_state(ItemState::Done)));
+        assert_eq!(done.closed(), Some(WallClock::new(200)));
+        // 完了のまま完了を置いても、完了日は最初に移したときのまま。更新日は進む。
+        let again = done.applied(&stamped(3, 300, set_state(ItemState::Done)));
+        assert_eq!(again.closed(), Some(WallClock::new(200)));
+        assert_eq!(again.updated(), WallClock::new(300));
+        let reopened = again.applied(&stamped(4, 400, set_state(ItemState::Open)));
+        assert_eq!(reopened.closed(), None);
+        let redone = reopened.applied(&stamped(5, 500, set_state(ItemState::Done)));
+        assert_eq!(redone.closed(), Some(WallClock::new(500)));
     }
 
     #[test]

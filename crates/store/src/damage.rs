@@ -278,8 +278,8 @@ mod tests {
         let root = temp("half-rename");
         docket_with_two_writers(&root);
         let me = account(ME, 1);
-        let state = root.join("snapshot").join(format!("{}.v1.txt", ME.hex()));
-        let index = root.join("snapshot").join(format!("{}.v1.idx", ME.hex()));
+        let state = root.join("snapshot").join(format!("{}.v2.txt", ME.hex()));
+        let index = root.join("snapshot").join(format!("{}.v2.idx", ME.hex()));
         // 1 世代目を書き、索引を取っておく。
         let mut mine = FileJournal::open(&root, "Team", &me).unwrap();
         let (first, _) = ledger_opening::open(&mut mine, me.clone());
@@ -317,8 +317,8 @@ mod tests {
         let (baseline, _) = ledger_opening::open(&mut mine, account(ME, 1));
         mine.checkpoint(&baseline.snapshot()).unwrap();
         drop(mine);
-        let state = root.join("snapshot").join(format!("{}.v1.txt", ME.hex()));
-        let index = root.join("snapshot").join(format!("{}.v1.idx", ME.hex()));
+        let state = root.join("snapshot").join(format!("{}.v2.txt", ME.hex()));
+        let index = root.join("snapshot").join(format!("{}.v2.idx", ME.hex()));
         let mut lcg = Lcg::seeded(5);
         for path in [&state, &index] {
             let untouched = fs::read(path).unwrap();

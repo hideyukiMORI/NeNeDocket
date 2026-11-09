@@ -1,13 +1,14 @@
-//! 自分のアカウントのスナップショット（ADR 0015 の 3）。`snapshot/<account>.v1.txt`（状態）と `snapshot/<account>.v1.idx`（課題ごとの索引・固定長の二進）。
+//! 自分のアカウントのスナップショット（ADR 0015 の 3・版 2 は ADR 0023）。`snapshot/<account>.v2.txt`（状態）と `snapshot/<account>.v2.idx`（課題ごとの索引・固定長の二進）。
 //!
-//! 状態は `key = value` の行: `version = 1`・`clock = <時計>`・`sequence = <次の連番>`・`last = <時計>:<アカウント>|-`・
+//! 状態は `key = value` の行: `version = 2`・`clock = <時計>`・`sequence = <次の連番>`・`last = <時計>:<アカウント>|-`・
 //! `permissions = <署名の 16 進>|-`（権限が変わったら捨てる）・`rejected = <n>`・`unverified = <n>`・`orphans = <n>`・
 //! `journal = <アカウント> <版の印> <読み終えた位置>`（索引の番号はこの順）・
-//! `item = <課題> <消した 0|1> <順位> <状態> <期限|-> <題名> <担当> <ラベル> <本文> <添付の最大の連番> <添付…>`（タブ区切り・逃がし・
+//! `item = <課題> <消した 0|1> <順位> <状態> <期限|-> <題名> <担当> <ラベル> <本文> <添付の最大の連番> <添付…> <起票日> <更新日> <完了日|->`（タブ区切り・逃がし・日付は Unix 秒・
 //! 添付は `<連番>:<大きさ>:<SHA-256>:<名前>` を `,` で結ぶ）・
 //! `undo = done|undone|map …`・`own = <操作> <課題>`・`index = <索引の件数>`。
 //! 索引は 1 件 32 バイト: 作ったアカウント（16・ビッグエンディアン）・連番（4）・ジャーナルの番号（1）・詰め物（3）・位置（8）。
 //! 派生値なので、消しても正しさは変わらない（全部読み直す）。書くときは一時名に書いて rename する。
+//! 版 1（自動の項目が無い）は読まない。ファイル名も版で分けるので、新しい実行ファイルの最初の起動で 1 度だけ全部読み直す（ADR 0023）。
 
 use std::collections::BTreeMap;
 use std::fs;
@@ -24,6 +25,7 @@ use nene_docket_core::item_id::ItemId;
 use nene_docket_core::item_state::ItemState;
 use nene_docket_core::logical_clock::LogicalClock;
 use nene_docket_core::op_id::OpId;
+use nene_docket_core::wall_clock::WallClock;
 
 use core::fmt::Write as _;
 
@@ -38,7 +40,7 @@ use crate::store_failure::StoreFailure;
 /// スナップショットを置くフォルダ。
 const DIRECTORY: &str = "snapshot";
 /// この形の版。
-pub(crate) const VERSION: &str = "1";
+pub(crate) const VERSION: &str = "2";
 /// 無い値。
 pub(crate) const NONE: &str = "-";
 /// 索引 1 件のバイト数。
@@ -128,6 +130,30 @@ impl StoredSnapshot {
     pub fn into_ledger(self) -> LedgerSnapshot {
         self.ledger
     }
+}
+
+/// 前の版の、この形が読まないスナップショットの版（ADR 0023）。
+const SUPERSEDED: [&str; 1] = ["1"];
+
+/// 前の版の自分のスナップショット（とその一時名）を捨てる。派生値なので消しても正しさは変わらず、
+/// 残すと 300 万操作で 100 MB を超える置き去りになる。無ければ何もしない。
+///
+/// # Errors
+///
+/// 消せない（無い以外の失敗）。
+pub(crate) fn discard_superseded(root: &Path, account: AccountId) -> Result<(), StoreFailure> {
+    let directory = root.join(DIRECTORY);
+    for version in SUPERSEDED {
+        for suffix in ["txt", "idx", "txt.tmp", "idx.tmp"] {
+            let path = directory.join(format!("{}.v{version}.{suffix}", account.hex()));
+            match fs::remove_file(&path) {
+                Ok(()) => {}
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
+                Err(error) => return Err(StoreFailure::Io(error)),
+            }
+        }
+    }
+    Ok(())
 }
 
 pub(crate) fn paths(root: &Path, account: AccountId) -> (PathBuf, PathBuf) {
@@ -299,6 +325,10 @@ fn item_text(item: &Item) -> String {
             })
             .collect::<Vec<String>>()
             .join(","),
+        item.opened().seconds().to_string(),
+        item.updated().seconds().to_string(),
+        item.closed()
+            .map_or_else(|| NONE.to_owned(), |closed| closed.seconds().to_string()),
     ]
     .join("\t")
 }
@@ -322,9 +352,26 @@ fn parse_attachments(text: &str) -> Option<Vec<Attachment>> {
         .collect()
 }
 
+/// 起票日・更新日・完了日（`-` は無し）の Unix 秒から（ADR 0023）。読めなければ `None`。
+fn stamps(
+    opened: &str,
+    updated: &str,
+    closed: &str,
+) -> Option<(WallClock, WallClock, Option<WallClock>)> {
+    let closed = match closed {
+        NONE => None,
+        seconds => Some(WallClock::new(seconds.parse().ok()?)),
+    };
+    Some((
+        WallClock::new(opened.parse().ok()?),
+        WallClock::new(updated.parse().ok()?),
+        closed,
+    ))
+}
+
 pub(crate) fn parse_item(text: &str) -> Option<Item> {
     let fields: Vec<&str> = text.split('\t').collect();
-    if fields.len() != 11 {
+    if fields.len() != 14 {
         return None;
     }
     let field = |index: usize| fields.get(index).copied().unwrap_or("");
@@ -337,6 +384,7 @@ pub(crate) fn parse_item(text: &str) -> Option<Item> {
         NONE => None,
         date => Some(Date::parse(date)?),
     };
+    let (opened, updated, closed) = stamps(field(11), field(12), field(13))?;
     Some(
         Item::created(parse_item_id(field(0))?)
             .with(FieldValue::Rank(field(2).parse().ok()?))
@@ -347,7 +395,8 @@ pub(crate) fn parse_item(text: &str) -> Option<Item> {
             .with(FieldValue::Labels(labels))
             .with(FieldValue::Body(unescape(field(8))?))
             .with_deleted(field(1) == "1")
-            .with_attachments(parse_attachments(field(10))?, field(9).parse().ok()?),
+            .with_attachments(parse_attachments(field(10))?, field(9).parse().ok()?)
+            .with_stamps(opened, updated, closed),
     )
 }
 
@@ -424,14 +473,13 @@ mod tests {
     const ME: AccountId = AccountId::new(0x11);
     const OTHER: AccountId = AccountId::new(0x22);
 
-    fn sample() -> StoredSnapshot {
-        let item = ItemId::new(OTHER, 1);
+    fn sample_docket(item: ItemId) -> Docket {
         let create = Op::new(
             OpId::new(LogicalClock::new(1), OTHER),
-            WallClock::new(0),
+            WallClock::new(1_700_000_100),
             OpKind::Create(item),
         );
-        let docket = Docket::empty()
+        Docket::empty()
             .applied(&create)
             .applied(&Op::new(
                 OpId::new(LogicalClock::new(2), ME),
@@ -450,13 +498,26 @@ mod tests {
                 },
             ))
             .applied(&Op::new(
+                OpId::new(LogicalClock::new(5), ME),
+                WallClock::new(1_700_000_300),
+                OpKind::Set {
+                    item,
+                    value: FieldValue::State(ItemState::Done),
+                },
+            ))
+            .applied(&Op::new(
                 OpId::new(LogicalClock::new(4), ME),
-                WallClock::new(0),
+                WallClock::new(1_700_000_400),
                 OpKind::Attach {
                     item,
                     attachment: Attachment::new(2, String::from("a,b:c.png"), 5, [1_u8; 32]),
                 },
-            ));
+            ))
+    }
+
+    fn sample() -> StoredSnapshot {
+        let item = ItemId::new(OTHER, 1);
+        let docket = sample_docket(item);
         let mut index = BTreeMap::new();
         index.insert(item, vec![pack(0, 0), pack(1, 120)]);
         let own = OpId::new(LogicalClock::new(2), ME);
@@ -484,7 +545,7 @@ mod tests {
     fn encode_then_parse_round_trips_through_text_and_bytes() {
         let snapshot = sample();
         let text = encode(&snapshot);
-        assert!(text.starts_with("version = 1\nclock = 3\nsequence = 4\nlast = 3:"));
+        assert!(text.starts_with("version = 2\nclock = 3\nsequence = 4\nlast = 3:"));
         assert!(text.contains("\npermissions = abcd\nrejected = 1\nunverified = 2\norphans = 0\n"));
         assert!(text.contains("\nindex = 2\n"));
         let bytes = encode_index(&snapshot.index);
@@ -507,12 +568,13 @@ mod tests {
         fs::write(&index_path, encode_index(&snapshot.index)).unwrap();
         for text in [
             "clock = 1\n",
-            "version = 2\n",
-            "version = 1\nclock = x\n",
-            "version = 1\ncolor = red\n",
-            "version = 1\nitem = a\n",
-            "version = 1\nundo = what 1:11\n",
-            "version = 1\njournal = 11 v1\n",
+            "version = 1\n",
+            "version = 3\n",
+            "version = 2\nclock = x\n",
+            "version = 2\ncolor = red\n",
+            "version = 2\nitem = a\n",
+            "version = 2\nundo = what 1:11\n",
+            "version = 2\njournal = 11 v1\n",
         ] {
             fs::write(&state_path, text).unwrap();
             assert!(

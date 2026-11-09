@@ -22,6 +22,7 @@ pub mod appearance;
 pub mod attachment;
 pub mod attachment_kind;
 pub mod attachment_word;
+pub mod auto_field;
 pub mod bitmap;
 pub mod button;
 pub mod button_phase;

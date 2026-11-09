@@ -1,6 +1,7 @@
 //! 画面に出す文言の名前（FR-019）。UI に文字列を書かず、`wording` の表から言語ごとの文字列を引く（ARC-001）。
 
 use crate::attachment_word::AttachmentWord;
+use crate::auto_field::AutoField;
 use crate::field::Field;
 use crate::item_state::ItemState;
 
@@ -23,6 +24,8 @@ pub enum Word {
     Delete,
     /// 表の番号の列。
     Number,
+    /// 自動の項目の名（表の見出し・Issue #117）。
+    AutoField(AutoField),
     /// 履歴の「いつ」。
     When,
     /// 履歴の「誰が」。

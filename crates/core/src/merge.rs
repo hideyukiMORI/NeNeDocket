@@ -313,10 +313,21 @@ mod tests {
                 }
             })
             .collect();
-        assert_eq!(merge(&skewed), expected);
+        // 自動の日付（起票日・更新日・完了日）は壁時計そのものなので、ずれた分だけ変わる。それ以外の値と順は変わらない。
+        let without_stamps = |docket: Docket| {
+            docket
+                .items_in_creation_order()
+                .into_iter()
+                .map(|item| {
+                    item.clone()
+                        .with_stamps(WallClock::new(0), WallClock::new(0), None)
+                })
+                .collect::<Vec<Item>>()
+        };
+        assert_eq!(without_stamps(merge(&skewed)), without_stamps(expected));
         let mut reversed = skewed.clone();
         reversed.reverse();
-        assert_eq!(merge(&reversed), expected);
+        assert_eq!(merge(&reversed), merge(&skewed));
     }
 
     #[test]

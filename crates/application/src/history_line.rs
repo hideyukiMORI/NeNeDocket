@@ -49,10 +49,7 @@ impl HistoryLine {
             .into_iter()
             .map(|op| {
                 let change = change_of(&current, op.kind());
-                current = applied(
-                    core::mem::replace(&mut current, Item::created(item)),
-                    op.kind(),
-                );
+                current = core::mem::replace(&mut current, Item::created(item)).applied(op);
                 Self {
                     when: op.wall(),
                     who: who_of(op.id().account(), names),
@@ -89,7 +86,7 @@ impl HistoryLine {
                     (kind, Some(item)) => {
                         let current = items.remove(&item).unwrap_or_else(|| Item::created(item));
                         let change = change_of(&current, kind);
-                        items.insert(item, applied(current, kind));
+                        items.insert(item, current.applied(op));
                         (change, format!("{}: ", item_number::text(item, names)))
                     }
                     (
@@ -202,11 +199,6 @@ fn change_of(before: &Item, kind: &OpKind) -> HistoryChange {
             ))
         }
     }
-}
-
-/// 操作の種類を課題に当てる（`Docket::applied` の 1 件版）。
-fn applied(item: Item, kind: &OpKind) -> Item {
-    item.applied(kind)
 }
 
 #[cfg(test)]

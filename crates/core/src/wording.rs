@@ -3,6 +3,7 @@
 //! 翻訳は短く、窓の中に収める（FR-014）。言語を足すときは `Language` と、ここの関数を 1 つ足す。
 
 use crate::attachment_word::AttachmentWord;
+use crate::auto_field::AutoField;
 use crate::field::Field;
 use crate::item_state::ItemState;
 use crate::language::Language;
@@ -78,6 +79,7 @@ const fn japanese(word: Word) -> &'static str {
         Word::Succeeded => "引き継ぎ",
         Word::OwnerChanged => "持ち主を替えた",
         Word::Attachment(word) => japanese_attachment(word),
+        Word::AutoField(field) => japanese_auto_field(field),
     }
 }
 
@@ -158,6 +160,7 @@ const fn english(word: Word) -> &'static str {
         Word::Succeeded => "succession",
         Word::OwnerChanged => "changed the owner",
         Word::Attachment(word) => english_attachment(word),
+        Word::AutoField(field) => english_auto_field(field),
     }
 }
 
@@ -237,6 +240,7 @@ const fn simplified_chinese(word: Word) -> &'static str {
         Word::Succeeded => "继承",
         Word::OwnerChanged => "更换了所有者",
         Word::Attachment(word) => simplified_chinese_attachment(word),
+        Word::AutoField(field) => simplified_chinese_auto_field(field),
     }
 }
 
@@ -316,6 +320,7 @@ const fn traditional_chinese(word: Word) -> &'static str {
         Word::Succeeded => "繼承",
         Word::OwnerChanged => "更換了擁有者",
         Word::Attachment(word) => traditional_chinese_attachment(word),
+        Word::AutoField(field) => traditional_chinese_auto_field(field),
     }
 }
 
@@ -395,6 +400,7 @@ const fn korean(word: Word) -> &'static str {
         Word::Succeeded => "인계",
         Word::OwnerChanged => "소유자를 변경함",
         Word::Attachment(word) => korean_attachment(word),
+        Word::AutoField(field) => korean_auto_field(field),
     }
 }
 
@@ -474,6 +480,7 @@ const fn spanish(word: Word) -> &'static str {
         Word::Succeeded => "sucesión",
         Word::OwnerChanged => "cambió el propietario",
         Word::Attachment(word) => spanish_attachment(word),
+        Word::AutoField(field) => spanish_auto_field(field),
     }
 }
 
@@ -496,12 +503,66 @@ const fn spanish_attachment(word: AttachmentWord) -> &'static str {
     }
 }
 
+const fn japanese_auto_field(field: AutoField) -> &'static str {
+    match field {
+        AutoField::Opened => "起票日",
+        AutoField::Opener => "起票者",
+        AutoField::Closed => "完了日",
+        AutoField::Updated => "更新日",
+    }
+}
+
+const fn english_auto_field(field: AutoField) -> &'static str {
+    match field {
+        AutoField::Opened => "Opened",
+        AutoField::Opener => "Opened by",
+        AutoField::Closed => "Closed",
+        AutoField::Updated => "Updated",
+    }
+}
+
+const fn simplified_chinese_auto_field(field: AutoField) -> &'static str {
+    match field {
+        AutoField::Opened => "创建日期",
+        AutoField::Opener => "创建人",
+        AutoField::Closed => "完成日期",
+        AutoField::Updated => "更新日期",
+    }
+}
+
+const fn traditional_chinese_auto_field(field: AutoField) -> &'static str {
+    match field {
+        AutoField::Opened => "建立日期",
+        AutoField::Opener => "建立者",
+        AutoField::Closed => "完成日期",
+        AutoField::Updated => "更新日期",
+    }
+}
+
+const fn korean_auto_field(field: AutoField) -> &'static str {
+    match field {
+        AutoField::Opened => "등록일",
+        AutoField::Opener => "등록자",
+        AutoField::Closed => "완료일",
+        AutoField::Updated => "수정일",
+    }
+}
+
+const fn spanish_auto_field(field: AutoField) -> &'static str {
+    match field {
+        AutoField::Opened => "Abierto",
+        AutoField::Opener => "Abierto por",
+        AutoField::Closed => "Cerrado",
+        AutoField::Updated => "Actualizado",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// 全部の語（`Word` の閉じた集合を 1 か所で列挙する。増えたらここも増える）。
-    const WORDS: [Word; 69] = [
+    const WORDS: [Word; 73] = [
         Word::All,
         Word::StateName(ItemState::Open),
         Word::StateName(ItemState::InProgress),
@@ -518,6 +579,10 @@ mod tests {
         Word::Add,
         Word::Delete,
         Word::Number,
+        Word::AutoField(AutoField::Opened),
+        Word::AutoField(AutoField::Opener),
+        Word::AutoField(AutoField::Closed),
+        Word::AutoField(AutoField::Updated),
         Word::When,
         Word::Who,
         Word::Change,

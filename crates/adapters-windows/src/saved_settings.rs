@@ -136,7 +136,7 @@ mod tests {
     }
 
     #[test]
-    fn older_versions_are_read_in_order_and_the_store_writes_version_six() {
+    fn older_versions_are_read_in_order_and_the_store_writes_version_seven() {
         let root = temp("migrate");
         let path = root.join(FILE_NAME);
         let version_two = root.join("settings.v2.txt");
@@ -157,7 +157,7 @@ mod tests {
         assert!(
             fs::read_to_string(&path)
                 .unwrap()
-                .starts_with("version = 6\n")
+                .starts_with("version = 7\n")
         );
         assert!(previous.exists());
         assert_eq!(load_chain(&chain).unwrap(), changed);
