@@ -20,6 +20,11 @@ const DELETE: u16 = 0x2E;
 const KEY_A: u16 = 0x41;
 const KEY_Y: u16 = 0x59;
 const KEY_Z: u16 = 0x5A;
+/// `N` / `F`。Ctrl と一緒なら課題を足す・検索の欄へ（Issue #124）。
+const KEY_N: u16 = 0x4E;
+const KEY_F: u16 = 0x46;
+/// `VK_F1`。使い方。
+const F1: u16 = 0x70;
 
 /// 押されている修飾鍵。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
@@ -50,6 +55,9 @@ pub fn intent_of_key(virtual_key: u16, modifiers: Modifiers) -> Option<KeyIntent
         KEY_A if modifiers.control => Some(KeyIntent::SelectAll),
         KEY_Z if modifiers.control => Some(KeyIntent::Undo),
         KEY_Y if modifiers.control => Some(KeyIntent::Redo),
+        KEY_N if modifiers.control => Some(KeyIntent::NewItem),
+        KEY_F if modifiers.control => Some(KeyIntent::Find),
+        F1 => Some(KeyIntent::Help),
         _ => None,
     }
 }
@@ -84,6 +92,17 @@ mod tests {
         shift: false,
         control: true,
     };
+
+    #[test]
+    fn control_n_adds_control_f_finds_and_f1_asks_for_help() {
+        let plain = Modifiers {
+            shift: false,
+            control: false,
+        };
+        assert_eq!(intent_of_key(KEY_N, CONTROL), Some(KeyIntent::NewItem));
+        assert_eq!(intent_of_key(KEY_F, CONTROL), Some(KeyIntent::Find));
+        assert_eq!(intent_of_key(F1, plain), Some(KeyIntent::Help));
+    }
 
     #[test]
     fn maps_editing_and_navigation_keys() {
@@ -135,7 +154,7 @@ mod tests {
         assert_eq!(intent_of_key(KEY_Z, CONTROL), Some(KeyIntent::Undo));
         assert_eq!(intent_of_key(KEY_Y, CONTROL), Some(KeyIntent::Redo));
         assert_eq!(intent_of_key(KEY_A, PLAIN), None);
-        assert_eq!(intent_of_key(0x70, PLAIN), None);
+        assert_eq!(intent_of_key(0x71, PLAIN), None);
     }
 
     #[test]

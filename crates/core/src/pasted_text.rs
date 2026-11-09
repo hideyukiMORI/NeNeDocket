@@ -45,7 +45,10 @@ mod tests {
                 | KeyIntent::Up
                 | KeyIntent::Down
                 | KeyIntent::Undo
-                | KeyIntent::Redo => '?',
+                | KeyIntent::Redo
+                | KeyIntent::NewItem
+                | KeyIntent::Find
+                | KeyIntent::Help => '?',
             })
             .collect()
     }

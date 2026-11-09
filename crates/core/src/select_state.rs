@@ -82,7 +82,10 @@ impl SelectState {
             | KeyIntent::Tab
             | KeyIntent::BackTab
             | KeyIntent::Undo
-            | KeyIntent::Redo => self,
+            | KeyIntent::Redo
+            | KeyIntent::NewItem
+            | KeyIntent::Find
+            | KeyIntent::Help => self,
         }
     }
 

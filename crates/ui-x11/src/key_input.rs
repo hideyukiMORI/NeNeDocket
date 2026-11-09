@@ -30,6 +30,14 @@ const UPPER_Z: u32 = 0x5a;
 /// `XK_y` / `XK_Y`。Ctrl と一緒なら Redo（FR-005）。
 const LOWER_Y: u32 = 0x79;
 const UPPER_Y: u32 = 0x59;
+/// `XK_n` / `XK_N`。Ctrl と一緒なら課題を足す（Issue #124）。
+const LOWER_N: u32 = 0x6e;
+const UPPER_N: u32 = 0x4e;
+/// `XK_f` / `XK_F`。Ctrl と一緒なら検索の欄へ。
+const LOWER_F: u32 = 0x66;
+const UPPER_F: u32 = 0x46;
+/// `XK_F1`。使い方。
+const F1: u32 = 0xffbe;
 /// `XK_v` / `XK_V`。Ctrl と一緒なら貼り付け（クリップボード・FR-015 の逃げ道）。
 const LOWER_V: u32 = 0x76;
 const UPPER_V: u32 = 0x56;
@@ -64,6 +72,9 @@ pub fn intent_of(keysym: u32, modifiers: Modifiers) -> Option<KeyIntent> {
         LOWER_A | UPPER_A if modifiers.control => Some(KeyIntent::SelectAll),
         LOWER_Z | UPPER_Z if modifiers.control => Some(KeyIntent::Undo),
         LOWER_Y | UPPER_Y if modifiers.control => Some(KeyIntent::Redo),
+        LOWER_N | UPPER_N if modifiers.control => Some(KeyIntent::NewItem),
+        LOWER_F | UPPER_F if modifiers.control => Some(KeyIntent::Find),
+        F1 => Some(KeyIntent::Help),
         _ if modifiers.control => None,
         0x20..=0x7e | 0xa0..=0xff => char::from_u32(keysym).map(KeyIntent::Char),
         _ => None,
@@ -108,6 +119,18 @@ mod tests {
         assert_eq!(intent_of(ISO_LEFT_TAB, SHIFT), Some(KeyIntent::BackTab));
         assert_eq!(intent_of(UP, PLAIN), Some(KeyIntent::Up));
         assert_eq!(intent_of(DOWN, PLAIN), Some(KeyIntent::Down));
+    }
+
+    #[test]
+    fn control_n_adds_control_f_finds_and_f1_asks_for_help() {
+        let plain = Modifiers {
+            shift: false,
+            control: false,
+        };
+        assert_eq!(intent_of(LOWER_N, CONTROL), Some(KeyIntent::NewItem));
+        assert_eq!(intent_of(UPPER_F, CONTROL), Some(KeyIntent::Find));
+        assert_eq!(intent_of(F1, plain), Some(KeyIntent::Help));
+        assert_eq!(intent_of(LOWER_N, plain), Some(KeyIntent::Char('n')));
     }
 
     #[test]

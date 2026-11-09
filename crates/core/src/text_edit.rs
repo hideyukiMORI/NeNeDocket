@@ -82,7 +82,10 @@ impl TextEdit {
             | KeyIntent::Tab
             | KeyIntent::BackTab
             | KeyIntent::Undo
-            | KeyIntent::Redo => self.applied(intent),
+            | KeyIntent::Redo
+            | KeyIntent::NewItem
+            | KeyIntent::Find
+            | KeyIntent::Help => self.applied(intent),
         }
     }
 
@@ -147,7 +150,10 @@ impl TextEdit {
             | KeyIntent::Up
             | KeyIntent::Down
             | KeyIntent::Undo
-            | KeyIntent::Redo => self.clone(),
+            | KeyIntent::Redo
+            | KeyIntent::NewItem
+            | KeyIntent::Find
+            | KeyIntent::Help => self.clone(),
         }
     }
 
