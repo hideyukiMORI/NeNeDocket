@@ -1,0 +1,154 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<title>NeNe Docket 部品と状態</title>
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link href="https://fonts.googleapis.com/css2?family=Noto+Sans+JP:wght@400;500;700&amp;family=JetBrains+Mono:wght@400;500&amp;display=swap" rel="stylesheet">
+<style>
+body{margin:0}
+</style>
+</helmet>
+<div style="width: 1440px; height: 1100px; box-sizing: border-box; padding: 48px 56px; display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); column-gap: 48px; row-gap: 36px; align-content: start; background: #300A24; color: #EEEEEC; font-family: 'Noto Sans JP', system-ui, sans-serif; font-size: 13px">
+
+<section style="grid-column: 1 / 3; display: flex; flex-direction: column; gap: 12px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 700">色の札（ubuntu-aubergine・配色 125 はこの 14 枚を地・文字・強調の 3 色から導く。synced も配色ごとに導く）</h2>
+<div style="display: grid; grid-template-columns: repeat(7, minmax(0, 1fr)); gap: 10px">
+<sc-for list="{{tokens}}" as="t" hint-placeholder-count="14">
+<div style="display: flex; flex-direction: column; gap: 6px">
+<span style="height: 40px; border-radius: 6px; background: {{t.hex}}; border: 1px solid #5A2A4C; display: block"></span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 11px">{{t.name}}</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 10.5px; color: #B8A9B3">{{t.hex}}</span>
+</div>
+</sc-for>
+</div>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 700">表の行の状態</h2>
+<div style="border: 1px solid #43183A; border-radius: 8px; overflow: hidden">
+<sc-for list="{{rows}}" as="r" hint-placeholder-count="8">
+<div style="min-height: 46px; display: grid; grid-template-columns: 112px minmax(0, 1fr) 84px; align-items: center; column-gap: 12px; padding: 0 14px; border-top: 1px solid #43183A; background: {{r.bg}}; color: {{r.fg}}">
+<span style="font-size: 11.5px; color: #B8A9B3; display: flex; align-items: center; gap: 6px"><span style="width: 6px; height: 6px; border-radius: 3px; background: {{r.mark}}; display: block"></span>{{r.label}}</span>
+<span style="display: flex; align-items: center; min-width: 0">
+<sc-if value="{{r.editing}}" hint-placeholder-val="{{ false }}">
+<span style="flex: 1; height: 30px; box-sizing: border-box; padding: 0 8px; border-radius: 5px; display: flex; align-items: center; background: #3B1430; border: 1px solid #E95420; font-size: 13px">{{r.text}}<span style="text-decoration: underline; text-decoration-color: #E95420; text-underline-offset: 3px">{{r.preedit}}</span><span style="width: 2px; height: 16px; background: #E95420; display: block; margin-left: 1px"></span></span>
+</sc-if>
+<sc-if value="{{r.plain}}" hint-placeholder-val="{{ true }}">
+<span style="font-weight: {{r.weight}}; overflow: hidden; text-overflow: ellipsis; white-space: nowrap">{{r.text}}</span>
+</sc-if>
+</span>
+<span style="font-family: 'JetBrains Mono', monospace; font-size: 12px; color: {{r.dueFg}}; font-weight: {{r.dueW}}">{{r.due}}</span>
+</div>
+</sc-for>
+</div>
+<div style="align-self: flex-start; margin-left: 140px; margin-top: -8px; width: 220px; border-radius: 6px; overflow: hidden; background: #3B1430; border: 1px solid #5A2A4C; box-shadow: 0 8px 24px rgba(0,0,0,0.4); font-size: 12.5px">
+<div style="height: 26px; display: flex; align-items: center; padding: 0 10px; background: rgba(233,84,32,0.22)"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #B8A9B3; width: 18px">1</span>方針</div>
+<div style="height: 26px; display: flex; align-items: center; padding: 0 10px"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #B8A9B3; width: 18px">2</span>放心</div>
+<div style="height: 26px; display: flex; align-items: center; padding: 0 10px"><span style="font-family: 'JetBrains Mono', monospace; font-size: 11px; color: #B8A9B3; width: 18px">3</span>放信</div>
+</div>
+<span style="font-size: 11.5px; color: #B8A9B3">IME の候補の窓は、欄の左下（OS の窓・ADR 0020）</span>
+</section>
+
+<section style="display: flex; flex-direction: column; gap: 22px">
+<div style="display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 700">状態の札（区分 6 つ・名前は台帳で変えられる）</h2>
+<div style="display: flex; gap: 8px; flex-wrap: wrap">
+<sc-for list="{{pills}}" as="p" hint-placeholder-count="6">
+<span style="display: inline-flex; align-items: center; gap: 6px; height: 24px; padding: 0 10px; border-radius: 12px; font-size: 12px; background: {{p.bg}}; color: {{p.fg}}; border: 1px solid {{p.bd}}"><span style="width: 6px; height: 6px; border-radius: 3px; background: {{p.dot}}; display: block"></span>{{p.name}}</span>
+</sc-for>
+</div>
+<div style="display: flex; gap: 20px; font-size: 12.5px"><span style="color: #F6B49A; font-weight: 700">優先度 高</span><span>優先度 中</span><span style="color: #B8A9B3">優先度 低</span><span style="color: #F6B49A; font-weight: 700; font-family: 'JetBrains Mono', monospace">⚠ 10/18</span><span style="color: #B8A9B3">完了の行は灰色で残す</span></div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 700">ボタンと札</h2>
+<div style="display: flex; gap: 10px; align-items: center; flex-wrap: wrap">
+<button style="height: 32px; padding: 0 14px; border-radius: 6px; border: 0; font: inherit; font-size: 12.5px; font-weight: 500; background: #E95420; color: #FFFFFF">課題を追加</button>
+<button style="height: 32px; padding: 0 14px; border-radius: 6px; border: 0; font: inherit; font-size: 12.5px; font-weight: 500; background: #F06A3A; color: #FFFFFF">押している</button>
+<button style="height: 32px; padding: 0 12px; border-radius: 6px; font: inherit; font-size: 12.5px; background: transparent; color: #EEEEEC; border: 1px solid #5A2A4C">項目</button>
+<button style="height: 32px; padding: 0 12px; border-radius: 6px; font: inherit; font-size: 12.5px; background: #3E1A32; color: #EEEEEC; border: 1px solid #5A2A4C">ポインタが乗った</button>
+<button style="height: 32px; padding: 0 12px; border-radius: 6px; font: inherit; font-size: 12.5px; background: transparent; color: #EEEEEC; border: 1px solid #E95420; box-shadow: 0 0 0 2px rgba(233,84,32,0.35)">キーボードで選んだ</button>
+</div>
+<div style="display: flex; gap: 8px; align-items: center">
+<button style="height: 28px; padding: 0 10px; border-radius: 14px; font: inherit; font-size: 12px; background: rgba(233,84,32,0.16); color: #F6B49A; border: 1px solid rgba(233,84,32,0.55)">未完了 37</button>
+<button style="height: 28px; padding: 0 10px; border-radius: 14px; font: inherit; font-size: 12px; background: transparent; color: #EEEEEC; border: 1px solid #5A2A4C">期限超過 5</button>
+<span style="font-size: 11.5px; color: #B8A9B3">入っている札は橙の地・外れている札は枠だけ</span>
+</div>
+</div>
+
+<div style="display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 700">期限の略記</h2>
+<div style="display: flex; gap: 10px; align-items: center; font-size: 12.5px">
+<span style="height: 30px; width: 120px; box-sizing: border-box; padding: 0 8px; border-radius: 5px; display: flex; align-items: center; background: #3B1430; border: 1px solid #E95420; font-family: 'JetBrains Mono', monospace">+3</span>
+<svg width="18" height="10" viewBox="0 0 18 10" aria-hidden="true"><path d="M1 5h15M12 1l4 4-4 4" fill="none" stroke="#B8A9B3" stroke-width="1.3"></path></svg>
+<span style="font-family: 'JetBrains Mono', monospace">2026-10-25（土）</span>
+<span style="color: #B8A9B3">ほかに 10/31・明日・来週金</span>
+</div>
+</div>
+</section>
+
+<section style="grid-column: 1 / 3; display: flex; flex-direction: column; gap: 10px">
+<h2 style="margin: 0; font-size: 14px; font-weight: 700">知らせと同期の状態（窓の下・ステータスバーの上に 1 行）</h2>
+<div style="display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 10px">
+<sc-for list="{{notices}}" as="n" hint-placeholder-count="4">
+<div style="height: 38px; display: flex; align-items: center; gap: 10px; padding: 0 14px; border-radius: 6px; font-size: 12.5px; background: {{n.bg}}; border: 1px solid {{n.bd}}">
+<span style="width: 8px; height: 8px; border-radius: 4px; background: {{n.dot}}; display: block; flex: none"></span>
+<span style="flex: 1; min-width: 0">{{n.text}}</span>
+<span style="font-size: 12px; color: {{n.actFg}}; font-weight: 500">{{n.act}}</span>
+</div>
+</sc-for>
+</div>
+<div style="display: flex; gap: 24px; font-size: 11.5px; color: #B8A9B3; padding-top: 4px">
+<span style="display: flex; align-items: center; gap: 6px"><span style="width: 7px; height: 7px; border-radius: 4px; background: #7CC4A0; display: block"></span>3 秒前に同期</span>
+<span style="display: flex; align-items: center; gap: 6px"><span style="width: 7px; height: 7px; border-radius: 4px; background: #D7C4E5; display: block"></span>読み直し中</span>
+<span style="display: flex; align-items: center; gap: 6px"><span style="width: 7px; height: 7px; border-radius: 4px; background: #E95420; display: block"></span>共有フォルダを読めません（42 秒前から）</span>
+<span style="display: flex; align-items: center; gap: 6px"><span style="width: 7px; height: 7px; border-radius: 4px; border: 1.5px solid #E95420; box-sizing: border-box; display: block"></span>書けていない操作 2 件（繋がったら書きます）</span>
+</div>
+</section>
+
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props='{"$preview":{"width":1440,"height":1100}}'>
+class Component extends DCLogic {
+  renderVals() {
+    const tokens = [
+      ['background', '#300A24'], ['title_bar', '#1E0516'], ['status', '#26071D'], ['pane', '#2A0820'], ['line', '#43183A'], ['field', '#3B1430'], ['border', '#5A2A4C'],
+      ['text', '#EEEEEC'], ['muted', '#B8A9B3'], ['selection', '#4A1E3D'], ['accent', '#E95420'], ['accent_text', '#F6B49A'], ['check', '#D7C4E5'], ['synced', '#7CC4A0']
+    ].map((t) => ({ name: t[0], hex: t[1] }));
+    const row = (label, text, due, o) => Object.assign({ label, text, due, bg: 'transparent', fg: '#EEEEEC', weight: 500, dueFg: '#EEEEEC', dueW: 400, mark: 'transparent', editing: false, plain: true, preedit: '' }, o || {});
+    const rows = [
+      row('通常', '共有フォルダの権限が人によって違う', '10/25'),
+      row('ポインタ', '共有フォルダの権限が人によって違う', '10/25', { bg: '#3A1030' }),
+      row('選んでいる', '共有フォルダの権限が人によって違う', '10/25', { bg: '#4A1E3D' }),
+      row('編集中', '退職者の権限の', '10/25', { bg: '#4A1E3D', editing: true, plain: false }),
+      row('IME 確定前', '退職者の権限の', '10/25', { bg: '#4A1E3D', editing: true, plain: false, preedit: 'ほうしん' }),
+      row('期限超過', '経費精算の承認が月末に集中する', '⚠ 10/18', { dueFg: '#F6B49A', dueW: 700 }),
+      row('完了', '会議室の予約が重なる', '10/12', { fg: '#B8A9B3', weight: 400, dueFg: '#B8A9B3' }),
+      row('定例で変化', 'VPN が夕方に遅くなる', '10/31', { mark: '#E95420' })
+    ];
+    const pills = [
+      ['未着手', 'transparent', '#B8A9B3', '#5A2A4C', '#B8A9B3'],
+      ['対応中', 'rgba(233,84,32,0.16)', '#F6B49A', 'rgba(233,84,32,0.45)', '#E95420'],
+      ['確認中', 'rgba(215,196,229,0.12)', '#D7C4E5', 'transparent', '#D7C4E5'],
+      ['保留', 'transparent', '#B8A9B3', '#5A2A4C', 'transparent'],
+      ['完了', 'transparent', '#B8A9B3', 'transparent', '#7CC4A0'],
+      ['中止', 'transparent', '#B8A9B3', 'transparent', '#7A6675']
+    ].map((p) => ({ name: p[0], bg: p[1], fg: p[2], bd: p[3], dot: p[4] }));
+    const notices = [
+      { text: 'ジャーナルに書けません。操作は覚えていて、繋がったら書きます', act: '詳しく', dot: '#E95420', bg: 'rgba(233,84,32,0.10)', bd: 'rgba(233,84,32,0.45)', actFg: '#F6B49A' },
+      { text: '他の人の変更を上書きしました（田中・題名）', act: '履歴で選び直す', dot: '#D7C4E5', bg: 'rgba(215,196,229,0.08)', bd: '#5A2A4C', actFg: '#D7C4E5' },
+      { text: '他の人の変更で並び順が変わりました', act: '並べ直す', dot: '#B8A9B3', bg: '#3B1430', bd: '#5A2A4C', actFg: '#EEEEEC' },
+      { text: '期限は 2026-10-25 や +3 の形です。保存していません', act: '', dot: '#E95420', bg: 'rgba(233,84,32,0.10)', bd: 'rgba(233,84,32,0.45)', actFg: '#F6B49A' }
+    ];
+    return { tokens, rows, pills, notices };
+  }
+}
+</script>
+</body>
+</html>
