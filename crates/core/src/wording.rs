@@ -25,9 +25,7 @@ pub const fn text(language: Language, word: Word) -> &'static str {
 const fn japanese(word: Word) -> &'static str {
     match word {
         Word::All => "すべて",
-        Word::StateName(ItemState::Open) => "未着手",
-        Word::StateName(ItemState::InProgress) => "着手中",
-        Word::StateName(ItemState::Done) => "完了",
+        Word::StateName(state) => japanese_state(state),
         Word::FieldName(Field::Title) => "題名",
         Word::FieldName(Field::Body) => "本文",
         Word::FieldName(Field::State) => "状態",
@@ -105,9 +103,7 @@ const fn japanese_attachment(word: AttachmentWord) -> &'static str {
 const fn english(word: Word) -> &'static str {
     match word {
         Word::All => "All",
-        Word::StateName(ItemState::Open) => "Open",
-        Word::StateName(ItemState::InProgress) => "In progress",
-        Word::StateName(ItemState::Done) => "Done",
+        Word::StateName(state) => english_state(state),
         Word::FieldName(Field::Title) => "Title",
         Word::FieldName(Field::Body) => "Body",
         Word::FieldName(Field::State) => "State",
@@ -186,9 +182,7 @@ const fn english_attachment(word: AttachmentWord) -> &'static str {
 const fn simplified_chinese(word: Word) -> &'static str {
     match word {
         Word::All => "全部",
-        Word::StateName(ItemState::Open) => "待处理",
-        Word::StateName(ItemState::InProgress) => "进行中",
-        Word::StateName(ItemState::Done) => "已完成",
+        Word::StateName(state) => simplified_chinese_state(state),
         Word::FieldName(Field::Title) => "标题",
         Word::FieldName(Field::Body) => "正文",
         Word::FieldName(Field::State) => "状态",
@@ -266,9 +260,7 @@ const fn simplified_chinese_attachment(word: AttachmentWord) -> &'static str {
 const fn traditional_chinese(word: Word) -> &'static str {
     match word {
         Word::All => "全部",
-        Word::StateName(ItemState::Open) => "待處理",
-        Word::StateName(ItemState::InProgress) => "進行中",
-        Word::StateName(ItemState::Done) => "已完成",
+        Word::StateName(state) => traditional_chinese_state(state),
         Word::FieldName(Field::Title) => "標題",
         Word::FieldName(Field::Body) => "內文",
         Word::FieldName(Field::State) => "狀態",
@@ -346,9 +338,7 @@ const fn traditional_chinese_attachment(word: AttachmentWord) -> &'static str {
 const fn korean(word: Word) -> &'static str {
     match word {
         Word::All => "전체",
-        Word::StateName(ItemState::Open) => "열림",
-        Word::StateName(ItemState::InProgress) => "진행 중",
-        Word::StateName(ItemState::Done) => "완료",
+        Word::StateName(state) => korean_state(state),
         Word::FieldName(Field::Title) => "제목",
         Word::FieldName(Field::Body) => "본문",
         Word::FieldName(Field::State) => "상태",
@@ -425,9 +415,7 @@ const fn korean_attachment(word: AttachmentWord) -> &'static str {
 const fn spanish(word: Word) -> &'static str {
     match word {
         Word::All => "Todos",
-        Word::StateName(ItemState::Open) => "Abierto",
-        Word::StateName(ItemState::InProgress) => "En curso",
-        Word::StateName(ItemState::Done) => "Hecho",
+        Word::StateName(state) => spanish_state(state),
         Word::FieldName(Field::Title) => "Título",
         Word::FieldName(Field::Body) => "Cuerpo",
         Word::FieldName(Field::State) => "Estado",
@@ -557,16 +545,85 @@ const fn spanish_auto_field(field: AutoField) -> &'static str {
     }
 }
 
+const fn japanese_state(state: ItemState) -> &'static str {
+    match state {
+        ItemState::Open => "未着手",
+        ItemState::InProgress => "対応中",
+        ItemState::Review => "確認中",
+        ItemState::OnHold => "保留",
+        ItemState::Done => "完了",
+        ItemState::Cancelled => "中止",
+    }
+}
+
+const fn english_state(state: ItemState) -> &'static str {
+    match state {
+        ItemState::Open => "Open",
+        ItemState::InProgress => "In progress",
+        ItemState::Review => "Review",
+        ItemState::OnHold => "On hold",
+        ItemState::Done => "Done",
+        ItemState::Cancelled => "Cancelled",
+    }
+}
+
+const fn simplified_chinese_state(state: ItemState) -> &'static str {
+    match state {
+        ItemState::Open => "待处理",
+        ItemState::InProgress => "进行中",
+        ItemState::Review => "待确认",
+        ItemState::OnHold => "搁置",
+        ItemState::Done => "已完成",
+        ItemState::Cancelled => "已取消",
+    }
+}
+
+const fn traditional_chinese_state(state: ItemState) -> &'static str {
+    match state {
+        ItemState::Open => "待處理",
+        ItemState::InProgress => "進行中",
+        ItemState::Review => "待確認",
+        ItemState::OnHold => "擱置",
+        ItemState::Done => "已完成",
+        ItemState::Cancelled => "已取消",
+    }
+}
+
+const fn korean_state(state: ItemState) -> &'static str {
+    match state {
+        ItemState::Open => "열림",
+        ItemState::InProgress => "진행 중",
+        ItemState::Review => "확인 중",
+        ItemState::OnHold => "보류",
+        ItemState::Done => "완료",
+        ItemState::Cancelled => "취소",
+    }
+}
+
+const fn spanish_state(state: ItemState) -> &'static str {
+    match state {
+        ItemState::Open => "Abierto",
+        ItemState::InProgress => "En curso",
+        ItemState::Review => "En revisión",
+        ItemState::OnHold => "En espera",
+        ItemState::Done => "Hecho",
+        ItemState::Cancelled => "Cancelado",
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
 
     /// 全部の語（`Word` の閉じた集合を 1 か所で列挙する。増えたらここも増える）。
-    const WORDS: [Word; 73] = [
+    const WORDS: [Word; 76] = [
         Word::All,
         Word::StateName(ItemState::Open),
         Word::StateName(ItemState::InProgress),
+        Word::StateName(ItemState::Review),
+        Word::StateName(ItemState::OnHold),
         Word::StateName(ItemState::Done),
+        Word::StateName(ItemState::Cancelled),
         Word::FieldName(Field::Title),
         Word::FieldName(Field::Body),
         Word::FieldName(Field::State),

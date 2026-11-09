@@ -1176,7 +1176,28 @@ Xvfb（`LANG=ja_JP.UTF-8`・前の第 52 節で版 6 の設定と版 1 のスナ
 
 `--bench 100000`: 初回 1.13 s・2 回目 0.51 s・step 何もしない 0.36 / 0.90 ms・検索 14.13 / 16.84 ms・encode 0.59 / 0.61 ms（第 52 節と同じ）。課題 1 件あたり 32 バイト増え、10 万件で約 3 MB。
 
-## 54. 再現
+## 54. Issue #120 — 状態の区分 6 つと台帳の版 2（ADR 0024 受理・2026-11-09）
+
+運用の筋書き（Issue #115）の A の最後。`ItemState` に確認中（`review`）・保留（`on_hold`）・中止（`cancelled`）を足し、「着手中」の表示を「対応中」に。完了と中止は `is_closed`（既定の表示から外す・灰色・期限超過を付けない）。`docket.v1.txt` は `version = 2` を書き、版 1 も読んで、開いたときに版 2 へ書き直す（`DocketFile::upgrade_in`・ファイル名は変えない）。状態の文言は 6 言語の小さな表に分けた。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし（抑制なし） |
+| `make test` | 469 件（core: 閉じた状態は完了と中止。store: 6 つの状態がジャーナルの行で往復、版 1 を同じ中身の版 2 に書き直し版 2 は書き直さない、版 3 は拒む。application: 中止は灰色・既定の表示から外れる・期限超過にならない、選択箱と絞り込みの 6 つ。テストの下ごしらえは 3 つの状態の巡回のまま） |
+| `make conformance` | 違反なし |
+
+前の実行ファイルとの組み合わせ（このコンテナ・release・第 52・53 節の台帳を写したもの）:
+
+```text
+$ grep version docket.v1.txt          → version = 1
+$ nene-docket-old <台帳> --audit       → 2026-11-09 22:13  森  森-1: created …（読める）
+$ nene-docket <台帳> --audit           → 読める・docket.v1.txt は version = 2 に
+$ nene-docket-old <台帳> --audit       → NeNe Docket 0.1.0: unknown docket version `2`（終了コード 1）
+```
+
+`nene-docket-old` は #117 まで（状態 3 つ）の main の release。Xvfb（`LANG=ja_JP.UTF-8`）: 選択箱に 6 つ、保留にした `森-2` は普通の色、中止にした `森-4` は灰色（[screenshots/2026-11-09-six-states.png](screenshots/2026-11-09-six-states.png)）。
+
+## 55. 再現
 
 ```bash
 make prove

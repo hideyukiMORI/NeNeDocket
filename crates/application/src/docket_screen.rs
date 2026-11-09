@@ -405,12 +405,20 @@ impl DocketScreen {
 
     /// 絞り込みの候補の文言。
     fn filter_options(&self) -> [&'static str; FILTER_COUNT] {
-        let [open, in_progress, done] = self.state_options();
-        [self.word(Word::All), open, in_progress, done]
+        let [open, in_progress, review, on_hold, done, cancelled] = self.state_options();
+        [
+            self.word(Word::All),
+            open,
+            in_progress,
+            review,
+            on_hold,
+            done,
+            cancelled,
+        ]
     }
 
     /// 状態の候補の文言。
-    fn state_options(&self) -> [&'static str; 3] {
+    fn state_options(&self) -> [&'static str; ItemState::ALL.len()] {
         ItemState::ALL.map(|state| self.word(Word::StateName(state)))
     }
 
@@ -648,7 +656,7 @@ impl DocketScreen {
             .live_items()
             .into_iter()
             .filter(|item| wanted.is_none_or(|state| item.state() == state))
-            .filter(|item| self.show_done || item.state() != ItemState::Done)
+            .filter(|item| self.show_done || !item.state().is_closed())
             .filter(|item| self.matches_search(item))
             .map(Item::id)
             .collect()
@@ -2015,8 +2023,8 @@ impl DocketScreen {
             .as_ref()
             .filter(|_| self.selected == Some(item.id()));
         let shown = past.unwrap_or(item);
-        // 完了の行は消さずに灰色で残す（Excel の課題管理表の習慣・Issue #107）。
-        let paint = if past.is_some() || shown.state() == ItemState::Done {
+        // 閉じた行（完了・中止）は消さずに灰色で残す（Excel の課題管理表の習慣・Issue #107 / #120）。
+        let paint = if past.is_some() || shown.state().is_closed() {
             Paint::Muted
         } else {
             Paint::Ink
@@ -2047,9 +2055,9 @@ impl DocketScreen {
         });
     }
 
-    /// 期限を過ぎていて、まだ完了していない。今日が期限なら過ぎていない。
+    /// 期限を過ぎていて、まだ閉じていない（完了・中止でない）。今日が期限なら過ぎていない。
     fn is_overdue(&self, item: &Item) -> bool {
-        item.state() != ItemState::Done
+        !item.state().is_closed()
             && self
                 .today
                 .zip(item.due())
@@ -2188,6 +2196,8 @@ mod tests {
     /// スクロールバーの溝（1041..1052）。
     const TRACK_X: u16 = 1046;
     const ASSIGNEE_X: u16 = 540;
+    /// 状態の選択箱の「完了」（選択肢は 72 から 28 ずつ: 未着手・対応中・確認中・保留・完了 184..212・中止）。
+    const DONE_OPTION_Y: u16 = 198;
     const DUE_X: u16 = 650;
 
     /// 書き込みを覚え、読み直しで渡す分を積める偽のジャーナル。
@@ -2501,8 +2511,10 @@ mod tests {
         for number in 1..=count {
             let item = ItemId::new(OTHER, number);
             let clock = u64::from(number).saturating_mul(3);
-            let state = ItemState::ALL
-                .get(usize::try_from(number).unwrap_or(0) % ItemState::ALL.len())
+            // 状態を 6 つに増やす前（Issue #120）の 3 つを巡回する。多くのテストがこの並びを前提にする。
+            let cycle = [ItemState::Open, ItemState::InProgress, ItemState::Done];
+            let state = cycle
+                .get(usize::try_from(number).unwrap_or(0) % cycle.len())
                 .copied()
                 .unwrap_or(ItemState::Open);
             ops.push(other_op(clock, OpKind::Create(item)));
@@ -2642,6 +2654,58 @@ mod tests {
     }
 
     #[test]
+    fn a_cancelled_item_is_closed_like_a_done_one() {
+        // 1 を中止にし、期限を過ぎさせる（時計は 2023-11-14）。
+        let journal = FakeJournal::default();
+        let mut ops = others_items(3);
+        let first = ItemId::new(OTHER, 1);
+        ops.push(other_op(
+            101,
+            OpKind::Set {
+                item: first,
+                value: FieldValue::State(ItemState::Cancelled),
+            },
+        ));
+        ops.push(other_op(
+            102,
+            OpKind::Set {
+                item: first,
+                value: FieldValue::Due(Date::new(2023, 11, 1)),
+            },
+        ));
+        journal.pending.borrow_mut().extend(ops);
+        let (mut screen, _) = screen_with(journal);
+        let frame = idle(&mut screen);
+        let painted = text_paints(&frame);
+        assert!(painted.contains(&(String::from("Issue #1"), Paint::Muted)));
+        assert!(painted.contains(&(String::from("2023-11-01"), Paint::Muted)));
+        assert!(painted.contains(&(String::from("Cancelled"), Paint::Muted)));
+        // 「完了も表示」を外すと、完了の 2 と中止の 1 が表から外れる。
+        click(&mut screen, SHOW_DONE_X, TOOLBAR_Y);
+        let shown: Vec<ItemId> = screen
+            .visible_items()
+            .iter()
+            .map(|item| item.id())
+            .collect();
+        assert_eq!(shown, [ItemId::new(OTHER, 3)]);
+    }
+
+    fn text_paints(frame: &DocketFrame) -> Vec<(String, Paint)> {
+        frame
+            .commands()
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::Text { text, paint, .. } => Some((text.clone(), *paint)),
+                DrawCommand::Fill { .. }
+                | DrawCommand::Stroke { .. }
+                | DrawCommand::Clip(_)
+                | DrawCommand::Image { .. }
+                | DrawCommand::Unclip => None,
+            })
+            .collect()
+    }
+
+    #[test]
     fn an_overdue_due_date_is_marked_and_a_done_row_is_greyed() {
         // 時計は 2023-11-14（UTC）。1 は対応中で期限が前日、2 は完了で期限が過ぎている、3 は未着手で期限が今日。
         let journal = FakeJournal::default();
@@ -2723,9 +2787,10 @@ mod tests {
         let (mut screen, _) = screen(30);
         click(&mut screen, FILTER_X, TOOLBAR_Y);
         assert!(screen.filter().is_open());
-        click(&mut screen, FILTER_X, 130);
+        // 選択肢は 36 から 28 ずつ: すべて・未着手・対応中・確認中・保留・完了（176..204）・中止。
+        click(&mut screen, FILTER_X, 190);
         assert!(!screen.filter().is_open());
-        assert_eq!(screen.filter().chosen(), 3);
+        assert_eq!(screen.filter().chosen(), 5);
         assert!(
             screen
                 .visible_items()
@@ -2790,7 +2855,7 @@ mod tests {
         click(&mut screen, 100, FIRST_ROW_Y);
         click(&mut screen, STATE_X, EDITOR_Y);
         assert!(!screen.filter().is_open());
-        click(&mut screen, STATE_X, 142);
+        click(&mut screen, STATE_X, DONE_OPTION_Y);
         assert_eq!(
             screen.ledger().docket().item(first).map(Item::state),
             Some(ItemState::Done)
@@ -2798,7 +2863,7 @@ mod tests {
         keys(&mut screen, &[KeyIntent::Up]);
         assert_eq!(
             screen.ledger().docket().item(first).map(Item::state),
-            Some(ItemState::InProgress)
+            Some(ItemState::OnHold)
         );
         assert_eq!(spy.written.borrow().len(), 2);
     }
@@ -3058,7 +3123,7 @@ mod tests {
         click(&mut screen, HISTORY_X, TOOLBAR_Y);
         click(&mut screen, 100, FIRST_ROW_Y);
         click(&mut screen, STATE_X, EDITOR_Y);
-        click(&mut screen, STATE_X, 142);
+        click(&mut screen, STATE_X, DONE_OPTION_Y);
         keys(&mut screen, &[KeyIntent::Undo]);
         (screen, spy)
     }
@@ -3284,7 +3349,7 @@ mod tests {
         let shown = texts(&frame);
         assert!(shown.iter().any(|text| text == "追加"));
         assert!(shown.iter().any(|text| text == "題名"));
-        assert!(shown.iter().any(|text| text == "着手中"));
+        assert!(shown.iter().any(|text| text == "対応中"));
         keys(&mut screen, &[KeyIntent::Down, KeyIntent::Down]);
         assert_eq!(screen.language(), Language::SimplifiedChinese);
         assert_eq!(spy.saved.borrow().len(), 3);
