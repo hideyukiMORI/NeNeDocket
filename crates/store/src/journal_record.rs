@@ -535,6 +535,22 @@ mod tests {
     }
 
     #[test]
+    fn every_state_round_trips_including_the_three_added_in_version_two() {
+        for state in ItemState::ALL {
+            let written = op(
+                3,
+                OpKind::Set {
+                    item: ItemId::new(B, 7),
+                    value: FieldValue::State(state),
+                },
+            );
+            let line = encode(&written);
+            assert!(line.contains(state.keyword()), "{line}");
+            assert_eq!(decode(&line).map(|(read, _)| read), Ok(written));
+        }
+    }
+
+    #[test]
     fn corruption_is_reported_not_guessed() {
         let line = encode(&op(
             2,

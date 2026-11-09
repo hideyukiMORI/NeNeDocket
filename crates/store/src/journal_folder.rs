@@ -21,7 +21,8 @@ pub struct JournalFolder {
 }
 
 impl JournalFolder {
-    /// フォルダを開く。`docket.v1.txt` が無ければ `name` で作り、`creator` を持ち主にする（権限はまだ無効）。在れば版を確かめる。
+    /// フォルダを開く。`docket.v1.txt` が無ければ `name` で作り、`creator` を持ち主にする（権限はまだ無効）。在れば版を確かめ、
+    /// 版 1 なら版 2 へ書き直す（ADR 0024）。
     ///
     /// # Errors
     ///
@@ -31,6 +32,7 @@ impl JournalFolder {
         name: &str,
         creator: AccountId,
     ) -> Result<Self, StoreFailure> {
+        let _upgraded = DocketFile::upgrade_in(root)?;
         let docket = if let Some(existing) = DocketFile::read_from(root)? {
             existing
         } else {

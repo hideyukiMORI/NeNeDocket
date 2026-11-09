@@ -12,7 +12,7 @@
 | 参加者の段（members pane） | 台帳に参加したアカウント（`keys/`）の名前・ID・役。持ち主は「権限」で有効・無効を切り替え、行を押して選ぶと編集行（「編集者」のチェック・グループの欄・「引き継ぎ先」の箱）が出る | `MembersPane` / `Member` / `MemberRole`（application）・FR-009 / FR-010 |
 | 課題（item） | 台帳の 1 行。題名・本文・状態・担当・期限・ラベル・並び順と、消されているか。併合の派生値 | `Item` / `ItemId`（作ったアカウントと連番）（core） |
 | 項目（field） | 課題の 1 つの属性。操作は項目単位で勝敗が付く | `Field` / `FieldValue`（core・閉じた `enum`） |
-| 状態（state） | 課題の進み具合。閉じた集合 | `ItemState`（core） |
+| 状態（state） | 課題の進み具合。6 つで固定（未着手・対応中・確認中・保留・完了・中止）。完了と中止は閉じた状態（既定の表示から外し、灰色で残す） | `ItemState` / `is_closed`（core）・ADR 0024 |
 | 操作（op） | 台帳を変える最小の単位。ID（論理時計とアカウント）・壁時計・打ち消す操作の ID・種類（作る・置く・消す・戻す）。不変 | `Op` / `OpId` / `OpKind`（core） |
 | 逆の操作 | ある操作を打ち消す操作。Undo はこれを**追記**し、`undoes` に元の ID を持つ。Redo は Undo を打ち消す | `Op::undoing`（core） |
 | ジャーナル（journal） | 1 つのアカウントが書いた操作の列。追記だけ。版を持つ。1 行 1 操作で末尾に CRC-32。権限を有効にした台帳では版 2（署名付き） | `journal/<account 16 進>.v1.log` / `.v2.log`・`journal_record`（store）・ADR 0004 / 0010 |
