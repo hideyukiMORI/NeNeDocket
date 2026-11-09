@@ -56,22 +56,17 @@ impl Docket {
         match op.kind() {
             OpKind::Create(id) => {
                 if !self.items.contains_key(id) {
-                    self.items.insert(*id, Item::created(*id));
+                    self.items.insert(*id, Item::created(*id).applied(op));
                     self.creation_order.push(*id);
                 }
             }
             OpKind::Set { item, .. }
             | OpKind::Attach { item, .. }
-            | OpKind::Detach { item, .. } => match self.items.remove(item) {
+            | OpKind::Detach { item, .. }
+            | OpKind::Delete(item)
+            | OpKind::Restore(item) => match self.items.remove(item) {
                 Some(found) => {
-                    self.items.insert(*item, found.applied(op.kind()));
-                }
-                None => self.orphans = self.orphans.saturating_add(1),
-            },
-            OpKind::Delete(id) | OpKind::Restore(id) => match self.items.remove(id) {
-                Some(found) => {
-                    let deleted = matches!(op.kind(), OpKind::Delete(_));
-                    self.items.insert(*id, found.with_deleted(deleted));
+                    self.items.insert(*item, found.applied(op));
                 }
                 None => self.orphans = self.orphans.saturating_add(1),
             },

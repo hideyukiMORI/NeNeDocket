@@ -181,9 +181,7 @@ impl Ledger {
         let ops = journal.ops_of(item)?;
         let rebuilt = merge::history(&ops, item)
             .into_iter()
-            .fold(Item::created(item), |current, op| {
-                current.applied(op.kind())
-            });
+            .fold(Item::created(item), Item::applied);
         self.docket = core::mem::replace(&mut self.docket, Docket::empty()).replaced(rebuilt);
         Ok(())
     }

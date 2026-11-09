@@ -36,6 +36,7 @@ ADR は「なぜそう決めたか」「何を却下したか」を書く。
 | [0018](0018-image-viewer-png-jpeg.md) | 画像のビューワー: PNG / JPEG を `crates/media`（`png` / `jpeg-decoder`）で復号し、`DrawCommand::Image` で UI が伸縮して描く（ホイールで拡大・ドラッグで移動・2,048 画素に縮めて持つ） | 受理（Issue #64） |
 | [0019](0019-pdf-viewer-hayro-rejected-for-now.md) | PDF のビューワー: `hayro` は描けて速いが、75 クレート・版の重複（`syn` 2 / 3 など）・104 秒のビルドのため今は入れない。PDF は OS の既定のビューワー | 却下（保留・Issue #66） |
 | [0020](0020-japanese-input-ime-paths.md) | 日本語入力: Windows は IMM32 で確定前の文字列を欄に描き、候補の窓を欄の下に置く。X11 は当面 Ctrl+V でクリップボードから貼り、XIM の自前実装は施主の WSLg で届く経路を測ってから。確定前は下線 | 受理（Issue #80） |
+| [0023](0023-derived-automatic-fields.md) | 自動の項目（起票日・起票者・完了日・更新日）は併合の派生値として課題に持つ。スナップショットは版 2、設定は版 7（列 10・出している列を左から）。0021・0022 は未マージの PR #108・#110 | 受理（Issue #117） |
 
 ## これから書くもの（Issue が立ったら）
 

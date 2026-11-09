@@ -1,9 +1,11 @@
-//! 設定ファイルの形（FR-012）。版 6: `version = 6`・`refresh_seconds = <秒>`・`language = system|<tag>`・`theme = system|<name>`・
-//! `columns = <番号>,<状態>,<担当>,<期限>,<ラベル>`（論理画素）・`order = <列>,…`（6 列の並び）・`pane_px = auto|<高さ>`（表の下の段）・
+//! 設定ファイルの形（FR-012）。版 7: `version = 7`・`refresh_seconds = <秒>`・`language = system|<tag>`・`theme = system|<name>`・
+//! `columns = <番号>,<状態>,<担当>,<期限>,<ラベル>,<起票日>,<完了日>,<起票者>,<更新日>`（論理画素）・
+//! `order = <列>,…`（出している列を左から・題名は必ず）・`pane_px = auto|<高さ>`（表の下の段）・
 //! `clock = local|utc`（履歴と `--audit` の時刻・Issue #78）・`recent = <フォルダ>`（新しいものが先、1 行に 1 つ）。
 //!
-//! 版 5（`clock` が無い）・版 4（`pane_px` も無い）・版 3（`order` も無い）・版 2（`columns` も無い）・版 1（`language` と `theme` も無い）も読める。
-//! 無い鍵は既定で補い、書くのは版 6 だけ（ARC-009 の移行）。
+//! 版 6（`columns` は 5 つ・`order` は 6 列ちょうど）・版 5（`clock` が無い）・版 4（`pane_px` も無い）・版 3（`order` も無い）・
+//! 版 2（`columns` も無い）・版 1（`language` と `theme` も無い）も読める。版 6 までの `order` には起票日と完了日を右に足す（ADR 0023）。
+//! 無い鍵は既定で補い、書くのは版 7 だけ（ARC-009 の移行）。
 //! 前の版にその版に無い鍵があれば知らない鍵として拒む。
 //! 形はここ（純関数）、読み書きはアダプタ。知らない版・知らない鍵・読めない値は `None` で、黙って既定値へ落とさない（FR-014）。
 
@@ -20,11 +22,11 @@ use crate::pane_height::PaneHeight;
 use crate::settings::Settings;
 
 /// いま書く版。
-const VERSION: &str = "6";
+const VERSION: &str = "7";
 
 /// 読み取り中の値。
 struct Reading {
-    /// 版の番号（6・5・4・3・2・1）。
+    /// 版の番号（7・6・5・4・3・2・1）。
     version: Option<u8>,
     refresh_seconds: Option<u64>,
     language: Option<LanguageChoice>,
@@ -36,7 +38,7 @@ struct Reading {
     recent: Vec<String>,
 }
 
-/// 文字列から設定を読む（版 6・5・4・3・2・1）。
+/// 文字列から設定を読む（版 7・6・5・4・3・2・1）。
 #[must_use]
 pub fn parse(text: &str) -> Option<Settings> {
     let mut reading = Reading {
@@ -63,7 +65,8 @@ impl Reading {
         match key {
             "version" => {
                 self.version = Some(match value {
-                    VERSION => 6,
+                    VERSION => 7,
+                    "6" => 6,
                     "5" => 5,
                     "4" => 4,
                     "3" => 3,
@@ -100,6 +103,11 @@ impl Reading {
         };
         let columns = since(version, 3, self.columns, ColumnWidths::initial())?;
         let order = since(version, 4, self.order, ColumnOrder::initial())?;
+        let order = if version < 7 {
+            order.with_new_columns()
+        } else {
+            order
+        };
         let pane = since(version, 5, self.pane, PaneHeight::Auto)?;
         let clock = since(version, 6, self.clock, ClockChoice::Local)?;
         Some(
@@ -166,9 +174,19 @@ mod tests {
         let text = encode(&settings);
         assert_eq!(
             text,
-            "version = 6\nrefresh_seconds = 5\nlanguage = ja\ntheme = dracula\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = 200\nclock = utc\nrecent = /srv/team\nrecent = ./docket\n"
+            "version = 7\nrefresh_seconds = 5\nlanguage = ja\ntheme = dracula\ncolumns = 72,110,90,90,120,96,96,80,96\norder = number,title,state,assignee,due,labels,opened,closed\npane_px = 200\nclock = utc\nrecent = /srv/team\nrecent = ./docket\n"
         );
         assert_eq!(parse(&text), Some(settings));
+        // 版 6 は 5 つの幅と 6 列の順。足した列の幅は既定で、起票日と完了日を右に足して読む（ADR 0023）。
+        assert_eq!(
+            parse(
+                "version = 6\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = state,number,title,assignee,due,labels\npane_px = auto\nclock = local\n"
+            )
+            .map(|read| read.order().text()),
+            Some(String::from(
+                "state,number,title,assignee,due,labels,opened,closed"
+            ))
+        );
         assert_eq!(
             parse(
                 "version = 5\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = auto\n"
@@ -240,7 +258,8 @@ mod tests {
     #[test]
     fn a_different_version_a_missing_key_or_an_unknown_key_is_refused() {
         for text in [
-            "version = 7\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = auto\nclock = local\n",
+            "version = 8\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = auto\nclock = local\n",
+            "version = 7\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = auto\n",
             "version = 6\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = auto\n",
             "version = 5\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\n",
             "version = 2\nrefresh_seconds = 3\ntheme = system\n",
@@ -260,7 +279,7 @@ mod tests {
             "version = 2\nrefresh_seconds = 3\nlanguage = fr\ntheme = system\n",
             "version = 2\nrefresh_seconds = 3\nlanguage = system\ntheme = no-such\n",
             "version = 3\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 1,2\n",
-            "version = 4\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = title\n",
+            "version = 4\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number\n",
             "version = 5\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = 10\n",
             "version = 6\nrefresh_seconds = 3\nlanguage = system\ntheme = system\ncolumns = 72,110,90,90,120\norder = number,title,state,assignee,due,labels\npane_px = auto\nclock = jst\n",
             "version = 2\nrefresh_seconds = 3\nlanguage = system\ntheme = system\nrecent =\n",

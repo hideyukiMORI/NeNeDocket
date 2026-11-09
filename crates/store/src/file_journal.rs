@@ -149,6 +149,7 @@ impl FileJournal {
         let mut folder = JournalFolder::open_or_create(root, name, account.id())?;
         let owner = folder.docket().owner() == Some(account.id());
         let _discarded = leftovers::discard(root, account.id(), owner)?;
+        snapshot_file::discard_superseded(root, account.id())?;
         let key_mismatch = key_file::ensure_own(root, account)?;
         if !key_mismatch && administration::adopt(root, account)? {
             folder = JournalFolder::open_or_create(root, name, account.id())?;
@@ -780,16 +781,19 @@ mod tests {
         drop(FileJournal::open(&root, "Team", &me).unwrap());
         let mine = [
             root.join("snapshot")
-                .join(format!("{}.v1.txt.tmp", ME.hex())),
+                .join(format!("{}.v2.txt.tmp", ME.hex())),
             root.join("snapshot")
-                .join(format!("{}.v1.idx.tmp", ME.hex())),
+                .join(format!("{}.v2.idx.tmp", ME.hex())),
+            // 前の版（ADR 0023）の自分のスナップショットは、一時名でなくても捨てる。
+            root.join("snapshot").join(format!("{}.v1.txt", ME.hex())),
+            root.join("snapshot").join(format!("{}.v1.idx", ME.hex())),
             root.join("docket.v1.txt.tmp"),
             root.join("permissions.v1.txt.tmp"),
             key_file::directory(&root).join(format!("{}.tmp", KeyRecord::file_name(ME))),
         ];
         let theirs = root
             .join("snapshot")
-            .join(format!("{}.v1.txt.tmp", OTHER.hex()));
+            .join(format!("{}.v1.txt", OTHER.hex()));
         let attachment = root.join("attachments").join("x").join("1-a.png.tmp");
         std::fs::create_dir_all(root.join("snapshot")).unwrap();
         std::fs::create_dir_all(attachment.parent().unwrap()).unwrap();

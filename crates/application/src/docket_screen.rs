@@ -13,6 +13,7 @@ use alloc::vec::Vec;
 use nene_docket_core::account_id::AccountId;
 use nene_docket_core::attachment::Attachment;
 use nene_docket_core::attachment_word::AttachmentWord;
+use nene_docket_core::auto_field::AutoField;
 use nene_docket_core::button;
 use nene_docket_core::button_phase::ButtonPhase;
 use nene_docket_core::checkbox;
@@ -47,6 +48,7 @@ use nene_docket_core::text_field;
 use nene_docket_core::theme::Theme;
 use nene_docket_core::theme_choice::ThemeChoice;
 use nene_docket_core::ui_scale::UiScale;
+use nene_docket_core::wall_clock::WallClock;
 use nene_docket_core::widget_id::WidgetId;
 use nene_docket_core::word::Word;
 use nene_docket_core::wording;
@@ -1270,6 +1272,10 @@ impl DocketScreen {
             TableColumn::Assignee => Word::FieldName(Field::Assignee),
             TableColumn::Due => Word::FieldName(Field::Due),
             TableColumn::Labels => Word::FieldName(Field::Labels),
+            TableColumn::Opened => Word::AutoField(AutoField::Opened),
+            TableColumn::Opener => Word::AutoField(AutoField::Opener),
+            TableColumn::Closed => Word::AutoField(AutoField::Closed),
+            TableColumn::Updated => Word::AutoField(AutoField::Updated),
         }
     }
 
@@ -1282,7 +1288,19 @@ impl DocketScreen {
             TableColumn::Assignee => item.assignee().to_owned(),
             TableColumn::Due => EditSlot::Due.text_of(item),
             TableColumn::Labels => EditSlot::Labels.text_of(item),
+            TableColumn::Opened => self.local_date(item.opened()),
+            TableColumn::Opener => item_number::short_name(item.id().creator(), &self.names),
+            TableColumn::Closed => item
+                .closed()
+                .map_or_else(String::new, |closed| self.local_date(closed)),
+            TableColumn::Updated => self.local_date(item.updated()),
         }
+    }
+
+    /// 自動の項目の日付（この機械の地方時・`YYYY-MM-DD`）。壁時計は書いた機械の時計なので、ずれていればずれたまま（ADR 0023）。
+    fn local_date(&self, wall: WallClock) -> String {
+        wall.date_at(self.ports.clock().offset_minutes())
+            .map_or_else(String::new, Date::text)
     }
 
     const fn track_of(remaining: PixelRect, width: u16) -> PixelRect {
@@ -1938,7 +1956,9 @@ impl DocketScreen {
             .settings
             .order()
             .columns()
-            .map(|column| self.word(Self::heading_of(column)));
+            .into_iter()
+            .map(|column| self.word(Self::heading_of(column)))
+            .collect::<Vec<&'static str>>();
         let cells = table.cells(header);
         self.probe_column_grips(header, &cells);
         self.probe_column_heads(&cells);
@@ -2425,6 +2445,15 @@ mod tests {
         }
     }
 
+    /// 版 6 までの 6 列の並び（列の座標で測るテストの前提）。
+    fn legacy_order() -> ColumnOrder {
+        ColumnOrder::parse("number,title,state,assignee,due,labels").unwrap()
+    }
+
+    fn six_columns(screen: &mut DocketScreen) {
+        screen.settings = screen.settings.clone().with_order(legacy_order());
+    }
+
     fn screen_with(journal: FakeJournal) -> (DocketScreen, Spy) {
         screen_in(journal, Environment::new(None), false)
     }
@@ -2591,6 +2620,25 @@ mod tests {
         assert_eq!(screen.selected(), Some(ItemId::new(OTHER, 4)));
         let frame = idle(&mut screen);
         assert!(texts(&frame).iter().any(|text| text == "other-4"));
+    }
+
+    #[test]
+    fn the_opened_and_closed_columns_show_local_dates_and_only_a_done_item_has_a_closed_date() {
+        // 2 は完了（ALL の巡回）。操作の壁時計は 1_700_000_000（2023-11-14 22:13 UTC）。
+        let journal = FakeJournal::default();
+        let ops: Vec<Op> = others_items(3)
+            .into_iter()
+            .map(|op| Op::new(op.id(), WallClock::new(1_700_000_000), op.kind().clone()))
+            .collect();
+        journal.pending.borrow_mut().extend(ops);
+        let (mut screen, _) = screen_with(journal);
+        let frame = idle(&mut screen);
+        let shown = texts(&frame);
+        assert!(shown.iter().any(|text| text == "Opened"), "{shown:?}");
+        assert!(shown.iter().any(|text| text == "Closed"), "{shown:?}");
+        let dates = shown.iter().filter(|text| *text == "2023-11-14").count();
+        // 起票日 3 件 ＋ 完了日 1 件。
+        assert_eq!(dates, 4, "{shown:?}");
     }
 
     #[test]
@@ -3926,6 +3974,7 @@ mod tests {
     #[test]
     fn dragging_a_header_grip_resizes_the_column_and_saves_the_settings() {
         let (mut screen, spy) = screen(3);
+        six_columns(&mut screen);
         // 番号の列は 8..79 で、境は x=79 の辺り（ヘッダ y = 80..108）。
         let header_y = 94;
         screen.step(&pointer(79, header_y, ButtonPhase::Pressed));
@@ -4014,12 +4063,13 @@ mod tests {
     #[test]
     fn dragging_a_heading_onto_another_column_reorders_and_saves() {
         let (mut screen, spy) = screen(2);
+        six_columns(&mut screen);
         let header_y = 94;
         // 状態の見出し（630..739）をつまんで番号の列（8..79）の上で離す。
         screen.step(&pointer(700, header_y, ButtonPhase::Pressed));
         screen.step(&pointer(400, header_y, ButtonPhase::Held));
         screen.step(&pointer(40, header_y, ButtonPhase::Held));
-        assert_eq!(screen.settings().order(), ColumnOrder::initial());
+        assert_eq!(screen.settings().order(), legacy_order());
         screen.step(&pointer(40, header_y, ButtonPhase::Released));
         assert_eq!(
             screen.settings().order().text(),
