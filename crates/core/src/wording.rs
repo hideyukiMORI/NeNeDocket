@@ -5,6 +5,7 @@
 use crate::attachment_word::AttachmentWord;
 use crate::auto_field::AutoField;
 use crate::field::Field;
+use crate::help_word::HelpWord;
 use crate::item_state::ItemState;
 use crate::language::Language;
 use crate::toolbar_word::ToolbarWord;
@@ -80,6 +81,7 @@ const fn japanese(word: Word) -> &'static str {
         Word::Attachment(word) => japanese_attachment(word),
         Word::AutoField(field) => japanese_auto_field(field),
         Word::Toolbar(word) => japanese_toolbar(word),
+        Word::Help(word) => japanese_help(word),
     }
 }
 
@@ -160,6 +162,7 @@ const fn english(word: Word) -> &'static str {
         Word::Attachment(word) => english_attachment(word),
         Word::AutoField(field) => english_auto_field(field),
         Word::Toolbar(word) => english_toolbar(word),
+        Word::Help(word) => english_help(word),
     }
 }
 
@@ -239,6 +242,7 @@ const fn simplified_chinese(word: Word) -> &'static str {
         Word::Attachment(word) => simplified_chinese_attachment(word),
         Word::AutoField(field) => simplified_chinese_auto_field(field),
         Word::Toolbar(word) => simplified_chinese_toolbar(word),
+        Word::Help(word) => simplified_chinese_help(word),
     }
 }
 
@@ -318,6 +322,7 @@ const fn traditional_chinese(word: Word) -> &'static str {
         Word::Attachment(word) => traditional_chinese_attachment(word),
         Word::AutoField(field) => traditional_chinese_auto_field(field),
         Word::Toolbar(word) => traditional_chinese_toolbar(word),
+        Word::Help(word) => traditional_chinese_help(word),
     }
 }
 
@@ -397,6 +402,7 @@ const fn korean(word: Word) -> &'static str {
         Word::Attachment(word) => korean_attachment(word),
         Word::AutoField(field) => korean_auto_field(field),
         Word::Toolbar(word) => korean_toolbar(word),
+        Word::Help(word) => korean_help(word),
     }
 }
 
@@ -476,6 +482,7 @@ const fn spanish(word: Word) -> &'static str {
         Word::Attachment(word) => spanish_attachment(word),
         Word::AutoField(field) => spanish_auto_field(field),
         Word::Toolbar(word) => spanish_toolbar(word),
+        Word::Help(word) => spanish_help(word),
     }
 }
 
@@ -636,6 +643,10 @@ const fn japanese_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::Language => "表示言語",
         ToolbarWord::Theme => "配色",
         ToolbarWord::MembersToggle => "参加者と権限",
+        ToolbarWord::Apply => "適用",
+        ToolbarWord::MineSection => "自分だけ（この PC）",
+        ToolbarWord::DocketSection => "この台帳（全員に効く）",
+        ToolbarWord::Columns => "表の列",
     }
 }
 
@@ -657,6 +668,10 @@ const fn english_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::Language => "Language",
         ToolbarWord::Theme => "Colors",
         ToolbarWord::MembersToggle => "Members and permissions",
+        ToolbarWord::Apply => "Apply",
+        ToolbarWord::MineSection => "Just me (this PC)",
+        ToolbarWord::DocketSection => "This docket (everyone)",
+        ToolbarWord::Columns => "Table columns",
     }
 }
 
@@ -678,6 +693,10 @@ const fn simplified_chinese_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::Language => "显示语言",
         ToolbarWord::Theme => "配色",
         ToolbarWord::MembersToggle => "成员与权限",
+        ToolbarWord::Apply => "应用",
+        ToolbarWord::MineSection => "仅自己（本机）",
+        ToolbarWord::DocketSection => "此台账（所有人）",
+        ToolbarWord::Columns => "表格列",
     }
 }
 
@@ -699,6 +718,10 @@ const fn traditional_chinese_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::Language => "顯示語言",
         ToolbarWord::Theme => "配色",
         ToolbarWord::MembersToggle => "成員與權限",
+        ToolbarWord::Apply => "套用",
+        ToolbarWord::MineSection => "僅自己（本機）",
+        ToolbarWord::DocketSection => "此台帳（所有人）",
+        ToolbarWord::Columns => "表格欄",
     }
 }
 
@@ -720,6 +743,10 @@ const fn korean_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::Language => "표시 언어",
         ToolbarWord::Theme => "배색",
         ToolbarWord::MembersToggle => "참가자와 권한",
+        ToolbarWord::Apply => "적용",
+        ToolbarWord::MineSection => "나만 (이 PC)",
+        ToolbarWord::DocketSection => "이 대장 (모두에게)",
+        ToolbarWord::Columns => "표 열",
     }
 }
 
@@ -741,6 +768,172 @@ const fn spanish_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::Language => "Idioma",
         ToolbarWord::Theme => "Colores",
         ToolbarWord::MembersToggle => "Miembros y permisos",
+        ToolbarWord::Apply => "Aplicar",
+        ToolbarWord::MineSection => "Solo yo (este PC)",
+        ToolbarWord::DocketSection => "Este registro (todos)",
+        ToolbarWord::Columns => "Columnas",
+    }
+}
+
+const fn japanese_help(word: HelpWord) -> &'static str {
+    match word {
+        HelpWord::Title => "使い方 — 週 1 回定例をするチームの 1 週間",
+        HelpWord::Keys => {
+            "Ctrl+N 追加 · Ctrl+F 検索 · Ctrl+Z / Ctrl+Y 戻す・やり直す · Tab 次へ · Esc 閉じる · F1 この案内"
+        }
+        HelpWord::Name0 => "始める",
+        HelpWord::What0 => "共有フォルダに台帳を作り、場所をチームに伝える",
+        HelpWord::Go0 => "設定を開く",
+        HelpWord::Name1 => "足す",
+        HelpWord::What1 => "気づいたら誰でも、題名だけで課題を足す",
+        HelpWord::Go1 => "＋ 課題を追加",
+        HelpWord::Name2 => "割り振る",
+        HelpWord::What2 => "担当の決まっていない課題に担当と期限を付ける",
+        HelpWord::Go2 => "未割り当て",
+        HelpWord::Name3 => "毎日",
+        HelpWord::What3 => "自分の分を対応中にし、対応策を本文に書く",
+        HelpWord::Go3 => "未完了",
+        HelpWord::Name4 => "定例",
+        HelpWord::What4 => "期限超過と、変わった所を全員で見る",
+        HelpWord::Go4 => "期限超過",
+        HelpWord::Name5 => "閉じる",
+        HelpWord::What5 => "担当が確認中にし、確認者が完了にする",
+        HelpWord::Go5 => "確認待ち",
+    }
+}
+
+const fn english_help(word: HelpWord) -> &'static str {
+    match word {
+        HelpWord::Title => "How a team runs a week with weekly meetings",
+        HelpWord::Keys => {
+            "Ctrl+N add · Ctrl+F search · Ctrl+Z / Ctrl+Y undo, redo · Tab next · Esc close · F1 this help"
+        }
+        HelpWord::Name0 => "Start",
+        HelpWord::What0 => "Create the docket in a shared folder and tell the team where it is",
+        HelpWord::Go0 => "Open settings",
+        HelpWord::Name1 => "Add",
+        HelpWord::What1 => "Anyone adds an issue with just a title",
+        HelpWord::Go1 => "+ New issue",
+        HelpWord::Name2 => "Assign",
+        HelpWord::What2 => "Give unassigned issues an assignee and a due date",
+        HelpWord::Go2 => "Unassigned",
+        HelpWord::Name3 => "Daily",
+        HelpWord::What3 => "Set your issues to In progress and write the fix in the text",
+        HelpWord::Go3 => "Open",
+        HelpWord::Name4 => "Meeting",
+        HelpWord::What4 => "Review overdue issues and what changed, together",
+        HelpWord::Go4 => "Overdue",
+        HelpWord::Name5 => "Close",
+        HelpWord::What5 => "The assignee sets In review; the reviewer sets Done",
+        HelpWord::Go5 => "In review",
+    }
+}
+
+const fn simplified_chinese_help(word: HelpWord) -> &'static str {
+    match word {
+        HelpWord::Title => "使用方法 — 每周例会团队的一周",
+        HelpWord::Keys => {
+            "Ctrl+N 添加 · Ctrl+F 搜索 · Ctrl+Z / Ctrl+Y 撤销、重做 · Tab 下一个 · Esc 关闭 · F1 本帮助"
+        }
+        HelpWord::Name0 => "开始",
+        HelpWord::What0 => "在共享文件夹中创建台账，并告诉团队位置",
+        HelpWord::Go0 => "打开设置",
+        HelpWord::Name1 => "添加",
+        HelpWord::What1 => "任何人只写标题即可添加问题",
+        HelpWord::Go1 => "＋ 新建问题",
+        HelpWord::Name2 => "分配",
+        HelpWord::What2 => "为未分配的问题指定负责人和期限",
+        HelpWord::Go2 => "未分配",
+        HelpWord::Name3 => "每天",
+        HelpWord::What3 => "把自己的问题设为进行中，在正文写对策",
+        HelpWord::Go3 => "未完成",
+        HelpWord::Name4 => "例会",
+        HelpWord::What4 => "大家一起查看逾期和变更",
+        HelpWord::Go4 => "已逾期",
+        HelpWord::Name5 => "关闭",
+        HelpWord::What5 => "负责人设为待确认，确认人设为已完成",
+        HelpWord::Go5 => "待确认",
+    }
+}
+
+const fn traditional_chinese_help(word: HelpWord) -> &'static str {
+    match word {
+        HelpWord::Title => "使用方式 — 每週例會團隊的一週",
+        HelpWord::Keys => {
+            "Ctrl+N 新增 · Ctrl+F 搜尋 · Ctrl+Z / Ctrl+Y 復原、重做 · Tab 下一個 · Esc 關閉 · F1 本說明"
+        }
+        HelpWord::Name0 => "開始",
+        HelpWord::What0 => "在共用資料夾建立台帳，並告訴團隊位置",
+        HelpWord::Go0 => "開啟設定",
+        HelpWord::Name1 => "新增",
+        HelpWord::What1 => "任何人只寫標題就能新增問題",
+        HelpWord::Go1 => "＋ 新增問題",
+        HelpWord::Name2 => "指派",
+        HelpWord::What2 => "為未指派的問題指定負責人和期限",
+        HelpWord::Go2 => "未指派",
+        HelpWord::Name3 => "每天",
+        HelpWord::What3 => "把自己的問題設為進行中，在內文寫對策",
+        HelpWord::Go3 => "未完成",
+        HelpWord::Name4 => "例會",
+        HelpWord::What4 => "大家一起查看逾期與變更",
+        HelpWord::Go4 => "已逾期",
+        HelpWord::Name5 => "結案",
+        HelpWord::What5 => "負責人設為待確認，確認者設為已完成",
+        HelpWord::Go5 => "待確認",
+    }
+}
+
+const fn korean_help(word: HelpWord) -> &'static str {
+    match word {
+        HelpWord::Title => "사용법 — 주 1회 정례 회의 팀의 1주",
+        HelpWord::Keys => {
+            "Ctrl+N 추가 · Ctrl+F 검색 · Ctrl+Z / Ctrl+Y 실행 취소·다시 실행 · Tab 다음 · Esc 닫기 · F1 이 도움말"
+        }
+        HelpWord::Name0 => "시작",
+        HelpWord::What0 => "공유 폴더에 대장을 만들고 위치를 팀에 알린다",
+        HelpWord::Go0 => "설정 열기",
+        HelpWord::Name1 => "추가",
+        HelpWord::What1 => "누구나 제목만으로 이슈를 추가한다",
+        HelpWord::Go1 => "＋ 이슈 추가",
+        HelpWord::Name2 => "배정",
+        HelpWord::What2 => "미배정 이슈에 담당자와 기한을 정한다",
+        HelpWord::Go2 => "미배정",
+        HelpWord::Name3 => "매일",
+        HelpWord::What3 => "내 이슈를 진행 중으로 하고 대책을 본문에 쓴다",
+        HelpWord::Go3 => "미완료",
+        HelpWord::Name4 => "정례 회의",
+        HelpWord::What4 => "기한 초과와 바뀐 점을 함께 본다",
+        HelpWord::Go4 => "기한 초과",
+        HelpWord::Name5 => "종료",
+        HelpWord::What5 => "담당자가 확인 중으로, 확인자가 완료로 한다",
+        HelpWord::Go5 => "확인 대기",
+    }
+}
+
+const fn spanish_help(word: HelpWord) -> &'static str {
+    match word {
+        HelpWord::Title => "Cómo trabaja una semana un equipo con reunión semanal",
+        HelpWord::Keys => {
+            "Ctrl+N añadir · Ctrl+F buscar · Ctrl+Z / Ctrl+Y deshacer, rehacer · Tab siguiente · Esc cerrar · F1 esta ayuda"
+        }
+        HelpWord::Name0 => "Empezar",
+        HelpWord::What0 => "Crea el registro en una carpeta compartida y avisa al equipo",
+        HelpWord::Go0 => "Abrir ajustes",
+        HelpWord::Name1 => "Añadir",
+        HelpWord::What1 => "Cualquiera añade una incidencia solo con el título",
+        HelpWord::Go1 => "+ Nueva incidencia",
+        HelpWord::Name2 => "Asignar",
+        HelpWord::What2 => "Da responsable y fecha a las incidencias sin asignar",
+        HelpWord::Go2 => "Sin asignar",
+        HelpWord::Name3 => "Cada día",
+        HelpWord::What3 => "Pon tus incidencias en curso y escribe la solución en el texto",
+        HelpWord::Go3 => "Abiertas",
+        HelpWord::Name4 => "Reunión",
+        HelpWord::What4 => "Revisad juntos lo vencido y lo que cambió",
+        HelpWord::Go4 => "Vencidas",
+        HelpWord::Name5 => "Cerrar",
+        HelpWord::What5 => "El responsable pone En revisión; quien revisa, Hecho",
+        HelpWord::Go5 => "En revisión",
     }
 }
 
@@ -749,7 +942,31 @@ mod tests {
     use super::*;
 
     /// 全部の語（`Word` の閉じた集合を 1 か所で列挙する。増えたらここも増える）。
-    const WORDS: [Word; 92] = [
+    const WORDS: [Word; 116] = [
+        Word::Toolbar(ToolbarWord::Apply),
+        Word::Toolbar(ToolbarWord::MineSection),
+        Word::Toolbar(ToolbarWord::DocketSection),
+        Word::Toolbar(ToolbarWord::Columns),
+        Word::Help(HelpWord::Title),
+        Word::Help(HelpWord::Keys),
+        Word::Help(HelpWord::Name0),
+        Word::Help(HelpWord::What0),
+        Word::Help(HelpWord::Go0),
+        Word::Help(HelpWord::Name1),
+        Word::Help(HelpWord::What1),
+        Word::Help(HelpWord::Go1),
+        Word::Help(HelpWord::Name2),
+        Word::Help(HelpWord::What2),
+        Word::Help(HelpWord::Go2),
+        Word::Help(HelpWord::Name3),
+        Word::Help(HelpWord::What3),
+        Word::Help(HelpWord::Go3),
+        Word::Help(HelpWord::Name4),
+        Word::Help(HelpWord::What4),
+        Word::Help(HelpWord::Go4),
+        Word::Help(HelpWord::Name5),
+        Word::Help(HelpWord::What5),
+        Word::Help(HelpWord::Go5),
         Word::Toolbar(ToolbarWord::FilterOpen),
         Word::Toolbar(ToolbarWord::FilterOverdue),
         Word::Toolbar(ToolbarWord::FilterUnassigned),

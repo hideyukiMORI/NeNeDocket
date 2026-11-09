@@ -36,4 +36,12 @@ pub enum ToolbarWord {
     Theme,
     /// 設定の「参加者と権限」（表の下の段を出し入れする）。
     MembersToggle,
+    /// 設定の「適用」（表示言語・WCAG 3.2.2）。
+    Apply,
+    /// 設定の区分「自分だけ（この PC）」。
+    MineSection,
+    /// 設定の区分「この台帳（全員に効く）」。
+    DocketSection,
+    /// 設定の「表の列」。
+    Columns,
 }
