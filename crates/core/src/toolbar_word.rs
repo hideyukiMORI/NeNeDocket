@@ -44,4 +44,18 @@ pub enum ToolbarWord {
     DocketSection,
     /// 設定の「表の列」。
     Columns,
+    /// 台帳が空のときの見出し（Issue #126）。
+    EmptyTitle,
+    /// 台帳が空のときの案内。
+    EmptyText,
+    /// 絞り込みで 0 件のとき（`{filter}` と `{total}` を置き換える）。
+    NoMatchFilter,
+    /// 検索で 0 件のとき（`{search}` を置き換える）。
+    NoMatchSearch,
+    /// 検索で 0 件のときの案内（どこを探したか）。
+    SearchedWhere,
+    /// 「検索を消す」。
+    ClearSearch,
+    /// 「『{search}』を題名にして追加」。
+    AddFromSearch,
 }

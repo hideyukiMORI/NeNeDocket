@@ -647,6 +647,15 @@ const fn japanese_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::MineSection => "自分だけ（この PC）",
         ToolbarWord::DocketSection => "この台帳（全員に効く）",
         ToolbarWord::Columns => "表の列",
+        ToolbarWord::EmptyTitle => "まだ課題がありません",
+        ToolbarWord::EmptyText => {
+            "気づいたことを、題名だけで足せます。担当や期限は後から決めます。"
+        }
+        ToolbarWord::NoMatchFilter => "{filter}の課題はありません（全 {total} 件）",
+        ToolbarWord::NoMatchSearch => "「{search}」を含む課題はありません",
+        ToolbarWord::SearchedWhere => "題名・本文・ラベル・添付の名前を探しました。",
+        ToolbarWord::ClearSearch => "検索を消す",
+        ToolbarWord::AddFromSearch => "「{search}」を題名にして追加",
     }
 }
 
@@ -672,6 +681,15 @@ const fn english_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::MineSection => "Just me (this PC)",
         ToolbarWord::DocketSection => "This docket (everyone)",
         ToolbarWord::Columns => "Table columns",
+        ToolbarWord::EmptyTitle => "No issues yet",
+        ToolbarWord::EmptyText => {
+            "Add what you notice with just a title. Decide the assignee and due date later."
+        }
+        ToolbarWord::NoMatchFilter => "Nothing matches “{filter}” ({total} in total)",
+        ToolbarWord::NoMatchSearch => "No issue contains “{search}”",
+        ToolbarWord::SearchedWhere => "Searched titles, text, labels and attachment names.",
+        ToolbarWord::ClearSearch => "Clear search",
+        ToolbarWord::AddFromSearch => "Add “{search}” as a new issue",
     }
 }
 
@@ -697,6 +715,13 @@ const fn simplified_chinese_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::MineSection => "仅自己（本机）",
         ToolbarWord::DocketSection => "此台账（所有人）",
         ToolbarWord::Columns => "表格列",
+        ToolbarWord::EmptyTitle => "还没有问题",
+        ToolbarWord::EmptyText => "发现什么就只写标题添加。负责人和期限之后再定。",
+        ToolbarWord::NoMatchFilter => "没有“{filter}”的问题（共 {total} 条）",
+        ToolbarWord::NoMatchSearch => "没有包含“{search}”的问题",
+        ToolbarWord::SearchedWhere => "已搜索标题、正文、标签和附件名称。",
+        ToolbarWord::ClearSearch => "清除搜索",
+        ToolbarWord::AddFromSearch => "以“{search}”为标题添加",
     }
 }
 
@@ -722,6 +747,13 @@ const fn traditional_chinese_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::MineSection => "僅自己（本機）",
         ToolbarWord::DocketSection => "此台帳（所有人）",
         ToolbarWord::Columns => "表格欄",
+        ToolbarWord::EmptyTitle => "還沒有問題",
+        ToolbarWord::EmptyText => "發現什麼就只寫標題新增。負責人和期限之後再定。",
+        ToolbarWord::NoMatchFilter => "沒有「{filter}」的問題（共 {total} 筆）",
+        ToolbarWord::NoMatchSearch => "沒有包含「{search}」的問題",
+        ToolbarWord::SearchedWhere => "已搜尋標題、內文、標籤與附件名稱。",
+        ToolbarWord::ClearSearch => "清除搜尋",
+        ToolbarWord::AddFromSearch => "以「{search}」為標題新增",
     }
 }
 
@@ -747,6 +779,15 @@ const fn korean_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::MineSection => "나만 (이 PC)",
         ToolbarWord::DocketSection => "이 대장 (모두에게)",
         ToolbarWord::Columns => "표 열",
+        ToolbarWord::EmptyTitle => "아직 이슈가 없습니다",
+        ToolbarWord::EmptyText => {
+            "발견한 것을 제목만으로 추가하세요. 담당자와 기한은 나중에 정합니다."
+        }
+        ToolbarWord::NoMatchFilter => "「{filter}」 이슈가 없습니다 (전체 {total}건)",
+        ToolbarWord::NoMatchSearch => "「{search}」을(를) 포함한 이슈가 없습니다",
+        ToolbarWord::SearchedWhere => "제목·본문·라벨·첨부 이름을 검색했습니다.",
+        ToolbarWord::ClearSearch => "검색 지우기",
+        ToolbarWord::AddFromSearch => "「{search}」을(를) 제목으로 추가",
     }
 }
 
@@ -772,6 +813,15 @@ const fn spanish_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::MineSection => "Solo yo (este PC)",
         ToolbarWord::DocketSection => "Este registro (todos)",
         ToolbarWord::Columns => "Columnas",
+        ToolbarWord::EmptyTitle => "Aún no hay incidencias",
+        ToolbarWord::EmptyText => {
+            "Añade lo que notes solo con el título. El responsable y la fecha, después."
+        }
+        ToolbarWord::NoMatchFilter => "Nada coincide con «{filter}» ({total} en total)",
+        ToolbarWord::NoMatchSearch => "Ninguna incidencia contiene «{search}»",
+        ToolbarWord::SearchedWhere => "Se buscó en títulos, textos, etiquetas y adjuntos.",
+        ToolbarWord::ClearSearch => "Borrar búsqueda",
+        ToolbarWord::AddFromSearch => "Añadir «{search}» como incidencia",
     }
 }
 
@@ -942,7 +992,14 @@ mod tests {
     use super::*;
 
     /// 全部の語（`Word` の閉じた集合を 1 か所で列挙する。増えたらここも増える）。
-    const WORDS: [Word; 116] = [
+    const WORDS: [Word; 123] = [
+        Word::Toolbar(ToolbarWord::EmptyTitle),
+        Word::Toolbar(ToolbarWord::EmptyText),
+        Word::Toolbar(ToolbarWord::NoMatchFilter),
+        Word::Toolbar(ToolbarWord::NoMatchSearch),
+        Word::Toolbar(ToolbarWord::SearchedWhere),
+        Word::Toolbar(ToolbarWord::ClearSearch),
+        Word::Toolbar(ToolbarWord::AddFromSearch),
         Word::Toolbar(ToolbarWord::Apply),
         Word::Toolbar(ToolbarWord::MineSection),
         Word::Toolbar(ToolbarWord::DocketSection),
