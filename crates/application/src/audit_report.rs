@@ -73,7 +73,7 @@ mod tests {
                 Language::English,
                 ClockDisplay::utc(WallClock::new(120))
             ),
-            "1970-01-01 00:01\talice\t0000-1: created\n1970-01-01 00:02\talice\tturned permissions on\n"
+            "1970-01-01 00:01\talice\talice-1: created\n1970-01-01 00:02\talice\tturned permissions on\n"
         );
         // 地方時（+9 時間）で出し、自分の時計（-180 秒）より 5 分以上先の行（120 秒）には印が付く。
         assert_eq!(
@@ -83,7 +83,7 @@ mod tests {
                 Language::English,
                 ClockDisplay::new(540, WallClock::new(-180))
             ),
-            "1970-01-01 09:01\talice\t0000-1: created\n\u{26a0} 1970-01-01 09:02\talice\tturned permissions on\n"
+            "1970-01-01 09:01\talice\talice-1: created\n\u{26a0} 1970-01-01 09:02\talice\tturned permissions on\n"
         );
         assert_eq!(
             text(

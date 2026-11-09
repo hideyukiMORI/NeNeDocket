@@ -90,7 +90,7 @@ impl HistoryLine {
                         let current = items.remove(&item).unwrap_or_else(|| Item::created(item));
                         let change = change_of(&current, kind);
                         items.insert(item, applied(current, kind));
-                        (change, format!("{}: ", item_number::text(item)))
+                        (change, format!("{}: ", item_number::text(item, names)))
                     }
                     (
                         OpKind::Create(_)

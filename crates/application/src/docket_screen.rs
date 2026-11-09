@@ -17,6 +17,7 @@ use nene_docket_core::button;
 use nene_docket_core::button_phase::ButtonPhase;
 use nene_docket_core::checkbox;
 use nene_docket_core::column_width::ColumnWidth;
+use nene_docket_core::date::Date;
 use nene_docket_core::draw_command::DrawCommand;
 use nene_docket_core::field::Field;
 use nene_docket_core::field_value::FieldValue;
@@ -149,6 +150,9 @@ const WHEEL_ROWS: i32 = 3;
 /// 番号の列に出す作成者の ID の桁数。
 /// 過去の時点を再現している行の番号に付ける印。
 const PREVIEW_MARK: &str = "←";
+/// 期限を過ぎた課題の期限の頭の印。色に頼らず字でも示す（Issue #107）。`⚠` は X11 で選ぶ日本語の家族に字形が無く
+/// □ になる（ADR 0007）ので、JIS X 0208・GB2312・KS X 1001 のどれにもある `▲` を使う。
+const OVERDUE_MARK: &str = "▲";
 
 /// 絞り込みの候補の数。先頭は「すべて」、以降は [`ItemState::ALL`] の順。
 const FILTER_COUNT: usize = ItemState::ALL.len() + 1;
@@ -200,6 +204,8 @@ pub struct DocketScreen {
     history_key: Option<(u64, Option<ItemId>)>,
     /// 読み直しの回数と、最後にスナップショットを書いたときの世代（一定の回数ごとに書く・ADR 0015）。
     refreshes: u64,
+    /// このフレームの地方時の日付。期限超過の判定に使う（壁時計はポートから・ARC-007・Issue #107）。
+    today: Option<Date>,
     checkpointed: u64,
     ports: Ports,
     /// 台帳の `keys/` にある名前（履歴の「誰が」）。読み直しのたびに取り直す。
@@ -263,6 +269,7 @@ impl DocketScreen {
             history_cache: Vec::new(),
             history_key: None,
             refreshes: 0,
+            today: None,
             checkpointed: 0,
             ports,
             names,
@@ -285,6 +292,8 @@ impl DocketScreen {
 
     /// 1 フレーム。読み直し → 鍵 → 部品の問い合わせ → 描画命令 → フォーカスの無い欄の確定。
     pub fn step(&mut self, input: &FrameInput) -> DocketFrame {
+        let clock = self.ports.clock();
+        self.today = clock.now().date_at(clock.offset_minutes());
         if input.refresh() {
             self.refresh();
         }
@@ -1986,23 +1995,31 @@ impl DocketScreen {
             .as_ref()
             .filter(|_| self.selected == Some(item.id()));
         let shown = past.unwrap_or(item);
-        let paint = if past.is_some() {
+        // 完了の行は消さずに灰色で残す（Excel の課題管理表の習慣・Issue #107）。
+        let paint = if past.is_some() || shown.state() == ItemState::Done {
             Paint::Muted
         } else {
             Paint::Ink
         };
+        let overdue = past.is_none() && self.is_overdue(shown);
         let number = if past.is_some() {
-            format!("{PREVIEW_MARK} {}", Self::number_text(item.id()))
+            format!("{PREVIEW_MARK} {}", self.number_text(item.id()))
         } else {
-            Self::number_text(item.id())
+            self.number_text(item.id())
         };
-        let texts = self
-            .settings
-            .order()
-            .columns()
-            .map(|column| self.cell_of(column, shown, &number));
-        for (cell, text) in cells.into_iter().zip(texts) {
-            commands.push(Self::cell_text(cell, &text, paint, self.px(MARGIN_PX)));
+        for (cell, column) in cells.into_iter().zip(self.settings.order().columns()) {
+            let text = self.cell_of(column, shown, &number);
+            let command = if overdue && column == TableColumn::Due {
+                Self::cell_text(
+                    cell,
+                    &format!("{OVERDUE_MARK} {text}"),
+                    Paint::Accent,
+                    self.px(MARGIN_PX),
+                )
+            } else {
+                Self::cell_text(cell, &text, paint, self.px(MARGIN_PX))
+            };
+            commands.push(command);
         }
         commands.push(DrawCommand::Stroke {
             rect: PixelRect::new(rect.x(), rect.bottom(), rect.width(), 1),
@@ -2010,9 +2027,18 @@ impl DocketScreen {
         });
     }
 
-    /// 番号の列。作成者の ID の先頭と、その作成者の中での連番。複数アカウントでも重ならない。
-    fn number_text(id: ItemId) -> String {
-        item_number::text(id)
+    /// 期限を過ぎていて、まだ完了していない。今日が期限なら過ぎていない。
+    fn is_overdue(&self, item: &Item) -> bool {
+        item.state() != ItemState::Done
+            && self
+                .today
+                .zip(item.due())
+                .is_some_and(|(today, due)| due < today)
+    }
+
+    /// 番号の列。作った人の略称と、その人の中での連番。複数アカウントでも重ならない（Issue #107）。
+    fn number_text(&self, id: ItemId) -> String {
+        item_number::text(id, &self.names)
     }
 
     fn cell_text(cell: PixelRect, text: &str, paint: Paint, padding: u16) -> DrawCommand {
@@ -2564,7 +2590,49 @@ mod tests {
         click(&mut screen, 100, FIRST_ROW_Y);
         assert_eq!(screen.selected(), Some(ItemId::new(OTHER, 4)));
         let frame = idle(&mut screen);
-        assert!(texts(&frame).iter().any(|text| text == "0000-4"));
+        assert!(texts(&frame).iter().any(|text| text == "other-4"));
+    }
+
+    #[test]
+    fn an_overdue_due_date_is_marked_and_a_done_row_is_greyed() {
+        // 時計は 2023-11-14（UTC）。1 は対応中で期限が前日、2 は完了で期限が過ぎている、3 は未着手で期限が今日。
+        let journal = FakeJournal::default();
+        let mut ops = others_items(3);
+        for (number, day) in [(1, 13), (2, 1), (3, 14)] {
+            ops.push(other_op(
+                100 + u64::from(number),
+                OpKind::Set {
+                    item: ItemId::new(OTHER, number),
+                    value: FieldValue::Due(Date::new(2023, 11, day)),
+                },
+            ));
+        }
+        journal.pending.borrow_mut().extend(ops);
+        let (mut screen, _) = screen_with(journal);
+        let frame = idle(&mut screen);
+        let painted: Vec<(String, Paint)> = frame
+            .commands()
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::Text { text, paint, .. } => Some((text.clone(), *paint)),
+                DrawCommand::Fill { .. }
+                | DrawCommand::Stroke { .. }
+                | DrawCommand::Clip(_)
+                | DrawCommand::Image { .. }
+                | DrawCommand::Unclip => None,
+            })
+            .collect();
+        let paint_of = |wanted: &str| {
+            painted
+                .iter()
+                .find(|(text, _)| text == wanted)
+                .map(|(_, paint)| *paint)
+        };
+        assert_eq!(paint_of("▲ 2023-11-13"), Some(Paint::Accent));
+        assert_eq!(paint_of("2023-11-14"), Some(Paint::Ink));
+        assert_eq!(paint_of("2023-11-01"), Some(Paint::Muted));
+        assert_eq!(paint_of("Issue #2"), Some(Paint::Muted));
+        assert_eq!(paint_of("Issue #1"), Some(Paint::Ink));
     }
 
     #[test]
@@ -2983,7 +3051,7 @@ mod tests {
         let lines = screen.history_lines();
         assert_eq!(lines.len(), 9);
         let change = lines[0].columns(Language::English, screen.clock_display())[2].clone();
-        assert!(change.starts_with("0000-3: "), "{change}");
+        assert!(change.starts_with("other-3: "), "{change}");
         let frame = idle(&mut screen);
         assert!(texts(&frame).iter().any(|text| text == "When"));
         // 台帳全体の行は再現を持たず、押しても選び直さない。
