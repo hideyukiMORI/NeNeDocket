@@ -8,7 +8,10 @@ use core::cell::RefCell;
 use core::ffi::c_void;
 use core::ptr;
 
+use nene_docket_application::bench_phase::BenchPhase;
 use nene_docket_application::docket_screen::DocketScreen;
+use nene_docket_application::frame_lap::FrameLap;
+use nene_docket_application::stopwatch_port::StopwatchPort;
 use windows::Win32::Foundation::{HWND, LPARAM, LRESULT, POINT, WPARAM};
 use windows::Win32::Graphics::Gdi::{BeginPaint, EndPaint, PAINTSTRUCT, ScreenToClient};
 use windows::Win32::System::LibraryLoader::GetModuleHandleW;
@@ -24,17 +27,18 @@ use windows::Win32::UI::Shell::{
     DragAcceptFiles, DragFinish, DragQueryFileW, DragQueryPoint, HDROP,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    CREATESTRUCTW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DispatchMessageW, GWLP_USERDATA,
-    GetMessageW, GetWindowLongPtrW, IDC_ARROW, KillTimer, LoadCursorW, MSG, PostQuitMessage,
-    RegisterClassExW, SW_SHOW, SetTimer, SetWindowLongPtrW, ShowWindow, TranslateMessage,
-    WINDOW_EX_STYLE, WM_CHAR, WM_DESTROY, WM_DROPFILES, WM_ERASEBKGND, WM_IME_COMPOSITION,
-    WM_IME_ENDCOMPOSITION, WM_IME_SETCONTEXT, WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN,
-    WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL, WM_NCCREATE, WM_PAINT, WM_SIZE, WM_TIMER,
-    WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
+    CREATESTRUCTW, CW_USEDEFAULT, CreateWindowExW, DefWindowProcW, DestroyWindow, DispatchMessageW,
+    GWLP_USERDATA, GetMessageW, GetWindowLongPtrW, IDC_ARROW, KillTimer, LoadCursorW, MSG,
+    PM_REMOVE, PeekMessageW, PostQuitMessage, RegisterClassExW, SW_SHOW, SetTimer,
+    SetWindowLongPtrW, ShowWindow, TranslateMessage, WINDOW_EX_STYLE, WM_CHAR, WM_DESTROY,
+    WM_DROPFILES, WM_ERASEBKGND, WM_IME_COMPOSITION, WM_IME_ENDCOMPOSITION, WM_IME_SETCONTEXT,
+    WM_IME_STARTCOMPOSITION, WM_KEYDOWN, WM_LBUTTONDOWN, WM_LBUTTONUP, WM_MOUSEMOVE, WM_MOUSEWHEEL,
+    WM_NCCREATE, WM_PAINT, WM_SIZE, WM_TIMER, WNDCLASSEXW, WS_OVERLAPPEDWINDOW,
 };
 use windows::core::{PCWSTR, w};
 
 use nene_docket_core::pixel_point::PixelPoint;
+use nene_docket_core::pixel_rect::PixelRect;
 use nene_docket_core::preedit::Preedit;
 
 use crate::ime;
@@ -103,6 +107,50 @@ pub fn run(screen: DocketScreen, refresh_seconds: u64) -> Result<(), Win32Failur
     }
     cell.borrow_mut().close();
     Ok(())
+}
+
+/// 計測の筋書き（`--bench`・Issue #111）を窓で回し、フレームごとの区間と窓の大きさを返す。窓は終わったら壊す。
+/// スナップショットは書かない（合成ルートが計測の前に書いている）。
+///
+/// # Errors
+///
+/// 窓を作れない・描けない。
+#[expect(
+    unsafe_code,
+    reason = "RS-010: Win32 の窓の作成・表示・溜まったメッセージの処理・破棄（ADR 0002 の 4）"
+)]
+pub fn bench(
+    screen: DocketScreen,
+    watch: &dyn StopwatchPort,
+) -> Result<(Vec<(BenchPhase, FrameLap)>, PixelRect), Win32Failure> {
+    register_class()?;
+    let cell: AppCell = RefCell::new(WindowsApp::new(screen, HWND(ptr::null_mut())));
+    let created = create(&raw const cell)?;
+    cell.borrow_mut().attach(created);
+    // SAFETY: 作った窓を見せる。WM_SIZE はここで届き、借りていないので状態に入る。
+    let _was_visible = unsafe { ShowWindow(created, SW_SHOW) };
+    let mut message = MSG::default();
+    // SAFETY: 溜まったメッセージ（大きさ・最初の描き直し）を待たずに配る。
+    while unsafe { PeekMessageW(&raw mut message, None, 0, 0, PM_REMOVE) }.as_bool() {
+        // SAFETY: 取り出したばかりのメッセージを訳して配る。
+        unsafe {
+            let _translated = TranslateMessage(&raw const message);
+            DispatchMessageW(&raw const message);
+        }
+    }
+    let measured = cell.borrow_mut().bench(watch);
+    let bounds = cell.borrow().bounds();
+    // SAFETY: 自分の窓を壊す。WM_DESTROY が WM_QUIT を積み、下のループが終わる。cell は窓より長く生きる。
+    unsafe { DestroyWindow(created) }?;
+    // SAFETY: WM_QUIT まで残りを配る。
+    while unsafe { GetMessageW(&raw mut message, None, 0, 0) }.as_bool() {
+        // SAFETY: 取り出したばかりのメッセージを訳して配る。
+        unsafe {
+            let _translated = TranslateMessage(&raw const message);
+            DispatchMessageW(&raw const message);
+        }
+    }
+    Ok((measured?, bounds))
 }
 
 /// 窓の類を登録する。2 度目の登録の失敗は無視する（同じ類）。

@@ -1,6 +1,9 @@
 //! 台帳の窓。作る・描いたものを転送する・大きさを覚える。OS の通常の窓（FR-018）。
 
+use core::time::Duration;
+
 use nene_docket_application::docket_frame::DocketFrame;
+use nene_docket_application::stopwatch_port::StopwatchPort;
 use nene_docket_core::language::Language;
 use nene_docket_core::pixel_point::PixelPoint;
 use nene_docket_core::pixel_rect::PixelRect;
@@ -118,19 +121,51 @@ impl<'d> DocketWindow<'d> {
     ///
     /// X の要求か cairo が失敗した。
     pub fn present(&mut self, frame: &DocketFrame) -> Result<(), UiFailure> {
+        let mut canvas = self.render(frame)?;
+        self.transfer(&mut canvas)
+    }
+
+    /// [`Self::present`] と同じ 2 段を、描き切るまでと転送して X サーバが受け取り終えるまで（往復 1 回）に分けて測る（`--bench`・Issue #111）。
+    ///
+    /// # Errors
+    ///
+    /// X の要求か cairo が失敗した。
+    pub fn present_measured(
+        &mut self,
+        frame: &DocketFrame,
+        watch: &dyn StopwatchPort,
+    ) -> Result<(Duration, Duration), UiFailure> {
+        let started = watch.elapsed();
+        let mut canvas = self.render(frame)?;
+        let rendered = watch.elapsed();
+        self.transfer(&mut canvas)?;
+        self.display.connection().sync()?;
+        let received = watch.elapsed();
+        Ok((
+            rendered.saturating_sub(started),
+            received.saturating_sub(rendered),
+        ))
+    }
+
+    /// cairo の surface に描き切る。
+    fn render(&mut self, frame: &DocketFrame) -> Result<Canvas, UiFailure> {
         let family = self.font_for(frame.language())?;
-        let mut canvas = Canvas::render(
+        Canvas::render(
             frame,
             self.bounds,
             (self.display.visual().format(), family),
             &mut self.surfaces,
-        )?;
+        )
+    }
+
+    /// 描き切った画素を窓へ転送する。
+    fn transfer(&self, canvas: &mut Canvas) -> Result<(), UiFailure> {
         Transfer::new(
             (self.window.window(), self.gc.gcontext()),
             canvas.width(),
             self.display.visual().depth(),
         )
-        .present(self.display.connection(), &mut canvas)
+        .present(self.display.connection(), canvas)
     }
 
     /// 言語の字を描ける家族。同じ言語なら前回のまま。

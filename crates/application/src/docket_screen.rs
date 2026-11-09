@@ -435,6 +435,15 @@ impl DocketScreen {
         self.search.text()
     }
 
+    /// 検索の欄の中の 1 点。道具の段の左端の欄で、計測の筋書き（`--bench`）が押す（Issue #111）。
+    #[must_use]
+    pub const fn search_point(&self) -> PixelPoint {
+        PixelPoint::new(
+            self.px(MARGIN_PX).saturating_add(self.px(ROW_PX)),
+            self.px(MARGIN_PX).saturating_add(self.px(ROW_PX / 2)),
+        )
+    }
+
     /// 選んでいる課題。
     #[must_use]
     pub const fn selected(&self) -> Option<ItemId> {
@@ -2556,6 +2565,27 @@ mod tests {
         assert_eq!(screen.selected(), Some(ItemId::new(OTHER, 4)));
         let frame = idle(&mut screen);
         assert!(texts(&frame).iter().any(|text| text == "0000-4"));
+    }
+
+    #[test]
+    fn the_bench_plan_focuses_the_search_field_and_types_into_it() {
+        use crate::bench_phase::BenchPhase;
+        use crate::bench_plan::BenchPlan;
+        let (mut screen, _) = screen(30);
+        let plan = BenchPlan::for_screen(&screen);
+        let mut index = 0;
+        loop {
+            let (phase, input) = plan.frame(index, BOUNDS);
+            screen.step(&input);
+            index += 1;
+            if phase == BenchPhase::Search {
+                break;
+            }
+        }
+        assert_eq!(screen.search_text(), "1");
+        let (_, erase) = plan.frame(index, BOUNDS);
+        screen.step(&erase);
+        assert_eq!(screen.search_text(), "");
     }
 
     #[test]

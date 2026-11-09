@@ -1052,7 +1052,78 @@ Xvfb（`TZ=Asia/Tokyo`・`scratchpad/skew78.sh`・送り手は `scratchpad/skew-
 
 🔴 **正直に:** 施主の 2 台の時計を意図的にずらした実機の確認は未実施。遅れている時計には印が付かない（自分より先の時計しか分からない）。X11 の時差は `date` に頼り、無い環境では UTC になる（示さない）。期限の色分けは無い。
 
-## 51. 再現
+## 51. Issue #111 — 性能の計測の口 `--bench`: 中核・描画・提示を分けて測る（2026-11-09）
+
+施主 2026-11-09「X11 を本流にしたまま、Windows アプリとしての性能も練っていける？」。第 37・38 節の数字はリポジトリの外の計測用クレートで、このコンテナでだけ測ったもの。Windows に固有の層（Direct2D / DirectWrite・`EndDraw`・NTFS と SMB・Defender）は施主の手元でしか測れないので、1 回叩けば貼れる数行が出る口を製品に置いた。
+
+`nene-docket --bench <件数> <空か無いフォルダ>`:
+
+1. `store::bench_folder::prepare` が、中身のあるフォルダを拒む（本物の台帳を計測の課題で汚さない・最近の台帳にも覚えない）
+2. 自分のアカウントで `<件数>` 件・1 件 5 操作（作る・題名・担当・ラベル・状態）を画面と同じ経路（`Ledger::compose` → `JournalPort::append`）で追記し、最後に 1 度 sync（`application::bench_seed`）
+3. 初回の起動（`FileJournal::open` ＋ `DocketScreen::open`・全部読む）→ `close`（スナップショットを書く）→ 2 回目の起動（スナップショットから）
+4. 窓を出し、同じ筋書き（`application::bench_plan`: 暖機 5・何もしない 50・検索の欄を押す 2・検索に `1` を足す／消す 50）を、フレームごとに **step**（`DocketScreen::step`）・**encode**（X11 は cairo で描き切る・Windows は `BeginDraw` から命令を積み終えるまで）・**present**（X11 は `PutImage` ＋ 往復 1 回・Windows は `EndDraw`＝垂直同期の待ちを含む）に分けて測る
+5. 中央値と最大を `application::bench_report` の決まった形で標準出力へ
+
+時刻は `StopwatchPort`（application の trait）を adapters-x11 / adapters-windows の `Stopwatch`（単調時計）が実装し、合成ルートから ui の計測ループへ渡す。ui と合成ルートは時刻を読まない（ARC-007 / CNF-012 のまま）。
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `lint-windows` / `doc-check` | 差分なし・0 件・0 件・警告なし |
+| `make test` | 456 件（application: 筋書きの段と数・報告の形・5 操作 × 件数と sync 1 回・筋書きが検索の欄に打てる。store: 中身のあるフォルダを拒む。adapters: 時計が戻らない。app: `--bench` の引数） |
+| `make conformance` | 違反なし |
+| `make build-windows` | `nene-docket.exe` 4.4 MB（**Windows では未実行**） |
+
+Xvfb（`-listen tcp`・`DISPLAY=127.0.0.1:119`・このコンテナ・release）:
+
+```text
+bench (x11, window 1120x600): 10000 items x 5 ops = 50000 ops, 1 account
+seed (append + 1 sync)        1.683 s
+first open (read all + merge) 0.105 s
+snapshot write                0.007 s
+second open (from snapshot)   0.046 s
+frame (median / max)          step | encode | present
+  idle   x50                   0.06 ms / 0.11 ms | 0.43 ms / 0.64 ms | 1.18 ms / 46.45 ms
+  search x50                   1.24 ms / 2.16 ms | 0.48 ms / 0.77 ms | 1.33 ms / 2.80 ms
+
+bench (x11, window 1120x600): 100000 items x 5 ops = 500000 ops, 1 account
+seed (append + 1 sync)        18.049 s
+first open (read all + merge) 1.302 s
+snapshot write                0.160 s
+second open (from snapshot)   0.538 s
+frame (median / max)          step | encode | present
+  idle   x50                   0.38 ms / 0.90 ms | 0.61 ms / 1.11 ms | 1.69 ms / 48.90 ms
+  search x50                   13.41 ms / 19.93 ms | 0.59 ms / 1.72 ms | 1.64 ms / 3.07 ms
+```
+
+10 万件で検索 1 字の step は中央 13 ms（目標 100 ms の中・1 フレーム 16 ms は最大 20 ms で超える）。present の最大 46〜49 ms は筋書きの最初のフレーム（窓が出た直後）。中身のあるフォルダは `--bench needs an empty or missing folder` で止まった。`/usr/bin/time` の RSS（10 万件で 377 MB）は計測用の台帳を作った記憶も含むので、製品の RSS（第 38 節）とは比べない。
+
+**施主の Windows（2026-11-09・PowerShell 7.6・`C:\Users\Public` に写した exe・`$env:TEMP` の下）**。この exe が Windows で動いた最初の記録（窓を作り・描き・壊して終わった）:
+
+```text
+bench (windows, window 1102x553): 10000 items x 5 ops = 50000 ops, 1 account
+seed (append + 1 sync)        2.031 s
+first open (read all + merge) 0.115 s
+snapshot write                0.008 s
+second open (from snapshot)   0.054 s
+frame (median / max)          step | encode | present
+  idle   x50                   0.07 ms / 0.21 ms | 2.11 ms / 2.83 ms | 14.39 ms / 16.57 ms
+  search x50                   1.10 ms / 1.41 ms | 2.75 ms / 2.88 ms | 13.17 ms / 15.15 ms
+```
+
+| 1 万件・中央値 | X11（Xvfb） | Windows | 読み |
+| --- | --- | --- | --- |
+| step（何もしない / 検索） | 0.06 / 1.24 ms | 0.07 / 1.10 ms | 同じ中核なので同じ |
+| encode（何もしない / 検索） | 0.43 / 0.48 ms | **2.11 / 2.75 ms** | Windows の描画が約 5 倍。Issue #112（筆と文字の配置を命令ごとに作る）の的 |
+| present | 1.2 ms | 14.4 ms | `EndDraw` の垂直同期の待ち。encode ＋ present ≒ 16.5 ms で 60 Hz の 1 周期 |
+| 作成 / 初回 / 2 回目 | 1.7 / 0.11 / 0.05 s | 2.0 / 0.12 / 0.05 s | NTFS（＋ Defender）でもほぼ同じ |
+
+窓の中の大きさが 1102×553 なのは、`CreateWindowExW` の 1120×600 が枠を含む外の大きさだから（X11 は中の大きさ）。
+
+施主の Windows での手順（#90 に足す）: `nene-docket.exe --bench 10000 %TEMP%\docket-bench-10k` と `--bench 100000 %TEMP%\docket-bench-100k`、NAS なら共有の上の空のフォルダでも 1 回。出た数行をそのまま貼る。終わったらフォルダは消してよい。
+
+🔴 **正直に:** Windows で動いたのは `--bench` の 1 万件の 1 回だけ（通常の起動・入力・IME・2 プロセスは Issue #22 / #80 のまま未確認）。計測は 1 アカウントだけで、他人のジャーナルの併合と SMB の上の生成は測らない（共有は `--probe-share`）。Windows の present は垂直同期を待つので、60 Hz なら約 16.7 ms が下限で、描画の重さは encode の列で見る。
+
+## 52. 再現
 
 ```bash
 make prove

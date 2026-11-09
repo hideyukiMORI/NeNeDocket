@@ -3,10 +3,12 @@
 //! 1 DIP = 1 物理画素（レンダーターゲットの dpi を 96 に固定）。文字の幅はここで測る。
 //! core はカーソルを文字の添字で渡し、ここが DirectWrite で画素の位置に直す。
 
+use core::time::Duration;
 use std::cell::RefCell;
 use std::collections::BTreeMap;
 
 use nene_docket_application::docket_frame::DocketFrame;
+use nene_docket_application::stopwatch_port::StopwatchPort;
 use nene_docket_core::draw_command::DrawCommand;
 use nene_docket_core::language::Language;
 use nene_docket_core::paint::Paint;
@@ -133,14 +135,44 @@ impl Pen {
     /// # Errors
     ///
     /// 描画に失敗した（レンダーターゲットを作り直すべき失敗も含む）。
-    #[expect(
-        unsafe_code,
-        reason = "RS-010: Direct2D の BeginDraw / EndDraw を呼ぶ（ADR 0002 の 4）"
-    )]
     pub fn paint(&self, frame: &DocketFrame) -> Result<(), Win32Failure> {
         let format = self.format(f32::from(frame.font_px()), frame.language())?;
+        let drawn = self.encode(frame, &format);
+        self.finish()?;
+        drawn
+    }
+
+    /// [`Self::paint`] と同じ 2 段を、描画命令を積み終えるまでと `EndDraw`（提示・垂直同期の待ちを含む）に分けて測る（`--bench`・Issue #111）。
+    ///
+    /// # Errors
+    ///
+    /// 描画に失敗した。
+    pub fn paint_measured(
+        &self,
+        frame: &DocketFrame,
+        watch: &dyn StopwatchPort,
+    ) -> Result<(Duration, Duration), Win32Failure> {
+        let started = watch.elapsed();
+        let format = self.format(f32::from(frame.font_px()), frame.language())?;
+        let drawn = self.encode(frame, &format);
+        let encoded = watch.elapsed();
+        self.finish()?;
+        drawn?;
+        let presented = watch.elapsed();
+        Ok((
+            encoded.saturating_sub(started),
+            presented.saturating_sub(encoded),
+        ))
+    }
+
+    /// `BeginDraw` から命令を全部積むまで。`EndDraw` は呼ばない（[`Self::finish`]）。失敗しても開いた切り抜きは閉じる。
+    #[expect(
+        unsafe_code,
+        reason = "RS-010: Direct2D の BeginDraw と描画の状態を呼ぶ（ADR 0002 の 4）"
+    )]
+    fn encode(&self, frame: &DocketFrame, format: &IDWriteTextFormat) -> Result<(), Win32Failure> {
         let palette = frame.theme().palette();
-        // SAFETY: 描画は BeginDraw と EndDraw の間だけ。矩形は画素に揃え、字は灰色の AA。
+        // SAFETY: 描画は BeginDraw と EndDraw（finish）の間だけ。矩形は画素に揃え、字は灰色の AA。
         unsafe {
             self.target.BeginDraw();
             self.target.SetAntialiasMode(D2D1_ANTIALIAS_MODE_ALIASED);
@@ -150,7 +182,7 @@ impl Pen {
         let mut drawn = Ok(());
         let mut clips = 0_u32;
         for command in frame.commands() {
-            drawn = self.draw((&format, &palette), command, &mut clips);
+            drawn = self.draw((format, &palette), command, &mut clips);
             if drawn.is_err() {
                 break;
             }
@@ -158,9 +190,18 @@ impl Pen {
         for _ in 0..clips {
             self.unclip();
         }
-        // SAFETY: 上の BeginDraw と対になる。
-        unsafe { self.target.EndDraw(None, None) }?;
         drawn
+    }
+
+    /// `EndDraw`。[`Self::encode`] の `BeginDraw` と対になる。
+    #[expect(
+        unsafe_code,
+        reason = "RS-010: Direct2D の EndDraw を呼ぶ（ADR 0002 の 4）"
+    )]
+    fn finish(&self) -> Result<(), Win32Failure> {
+        // SAFETY: encode の BeginDraw と対になる。
+        unsafe { self.target.EndDraw(None, None) }?;
+        Ok(())
     }
 
     /// 1 つの命令を描く。`clips` は開いている切り抜きの数（失敗しても閉じるため）。

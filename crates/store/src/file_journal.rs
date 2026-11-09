@@ -576,6 +576,7 @@ impl JournalPort for FileJournal {
                 StoreFailure::CannotReadAttachment => JournalFailure::AttachmentUnreadable,
                 StoreFailure::CannotDecodeAttachment
                 | StoreFailure::Unwritten(_)
+                | StoreFailure::NotEmptyFolder
                 | StoreFailure::Io(_)
                 | StoreFailure::UnknownDocketVersion(_)
                 | StoreFailure::BadDocketFile
@@ -625,6 +626,7 @@ impl JournalPort for FileJournal {
                 StoreFailure::CannotReadAttachment
                 | StoreFailure::CannotWriteAttachment
                 | StoreFailure::Unwritten(_)
+                | StoreFailure::NotEmptyFolder
                 | StoreFailure::Io(_)
                 | StoreFailure::UnknownDocketVersion(_)
                 | StoreFailure::BadDocketFile
