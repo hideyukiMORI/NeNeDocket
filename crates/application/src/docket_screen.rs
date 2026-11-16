@@ -42,6 +42,7 @@ use nene_docket_core::scroll_bar;
 use nene_docket_core::scroll_state::ScrollState;
 use nene_docket_core::select_box;
 use nene_docket_core::select_state::SelectState;
+use nene_docket_core::tab;
 use nene_docket_core::table_layout::TableLayout;
 use nene_docket_core::text_align::TextAlign;
 use nene_docket_core::text_edit::TextEdit;
@@ -64,7 +65,7 @@ use crate::attachments_context::AttachmentsContext;
 use crate::attachments_pane::AttachmentsPane;
 use crate::body_pane::BodyPane;
 use crate::clock_display::ClockDisplay;
-use crate::detail_layout::DetailLayout;
+use crate::detail_layout::{self, DetailLayout};
 use crate::detail_section::DetailSection;
 use crate::docket_frame::DocketFrame;
 use crate::drag_target::DragTarget;
@@ -139,6 +140,8 @@ const CLEAR_SEARCH: WidgetId = WidgetId::new(43);
 /// 0 件の案内の「『◯◯』を題名にして追加」。
 const ADD_FROM_SEARCH: WidgetId = WidgetId::new(44);
 /// 0 件の案内のボタン。
+/// 詳細のペインの「…」（Issue #127）。中の「削除」は [`DELETE`]。
+const MORE: WidgetId = WidgetId::new(45);
 const EMPTY_BUTTONS: [WidgetId; 4] = [EMPTY_ADD, EMPTY_CLEAR_FILTER, CLEAR_SEARCH, ADD_FROM_SEARCH];
 /// 設定のペインの列の出し入れ（[`SETTABLE_COLUMNS`] の順の番号を足す）。
 const COLUMN_TOGGLE: WidgetId = WidgetId::new(600);
@@ -183,6 +186,8 @@ const SETTABLE_COLUMNS: [TableColumn; 8] = [
 /// 選んでいる絞り込みの札の頭の印（色だけに頼らない・WCAG 1.4.1）。`✓` は X11 で選ぶ日本語の家族に字形が無く □ になる
 /// （ADR 0007・Xvfb で確認）ので、JIS X 0208・GB2312・KS X 1001 のどれにもある `●` を使う。
 const CHOSEN_MARK: &str = "●";
+/// 詳細のペインの「…」の字。
+const MORE_MARK: &str = "…";
 /// 詳細のペインの幅（窓の半分まで・ADR 0022）。
 const DETAIL_WIDTH_PX: u16 = 380;
 /// 詳細のペインの項目名の幅。
@@ -220,6 +225,8 @@ pub struct DocketScreen {
     kept: Option<(ItemId, bool)>,
     /// F1 の案内（Issue #125）。
     help: HelpOverlay,
+    /// 詳細のペインの「…」の中（「削除」）を開いているか（Issue #127）。
+    more_open: bool,
     /// 絞り込みの札ごとの件数（検索だけを当てた数）と台帳の全件、その鍵。
     counts: Option<(CountsKey, [usize; 6])>,
     scroll: ScrollState,
@@ -296,6 +303,7 @@ impl DocketScreen {
         let language = settings.language().resolve(environment.language());
         let theme = settings.theme().resolve(environment.appearance());
         let names = ports.journal().names();
+        let chosen_language = settings.language().position();
         Self {
             scale: environment.scale(),
             interaction: Interaction::idle(),
@@ -304,6 +312,7 @@ impl DocketScreen {
             mode: PaneMode::Item,
             kept: None,
             help: HelpOverlay::closed(environment.scale()),
+            more_open: false,
             counts: None,
             scroll: ScrollState::top(0, 0),
             selected: None,
@@ -341,10 +350,7 @@ impl DocketScreen {
             read_failure,
             admin_failure: None,
             environment,
-            language_select: SelectState::closed(
-                LanguageChoice::ALL.len(),
-                settings.language().position(),
-            ),
+            language_select: SelectState::closed(LanguageChoice::ALL.len(), chosen_language),
             theme_edit: TextEdit::showing(settings.theme().keyword()),
             settings,
             language,
@@ -600,8 +606,9 @@ impl DocketScreen {
     }
 
     /// 鍵（台帳の世代・選んだ課題）が前のフレームと同じならキャッシュを返す。
+    /// 区画が履歴でなくても、課題を選んでいれば数える（タブの件数・Issue #127）。返すのは出すときだけ。
     fn cached_history_lines(&mut self) -> Vec<HistoryLine> {
-        if !self.history.is_shown() {
+        if !self.history.is_shown() && self.selected.is_none() {
             return Vec::new();
         }
         let key = (self.ledger.generation(), self.selected);
@@ -615,7 +622,11 @@ impl DocketScreen {
             }
             self.history_key = Some(key);
         }
-        self.history_cache.clone()
+        if self.history.is_shown() {
+            self.history_cache.clone()
+        } else {
+            Vec::new()
+        }
     }
 
     /// 窓を閉じるとき。入力中の欄を確定し、スナップショットを書く（ADR 0015）。
@@ -947,12 +958,7 @@ impl DocketScreen {
             main.height(),
         );
         let detail = if self.selected.is_some() && self.mode == PaneMode::Item {
-            DetailLayout::of_item(
-                pane,
-                self.px(ROW_PX),
-                gap,
-                (self.px(BUTTON_WIDTH_PX), self.px(FIELD_NAME_PX)),
-            )
+            DetailLayout::of_item(pane, self.px(ROW_PX), gap, self.px(FIELD_NAME_PX))
         } else {
             DetailLayout::of_docket(pane)
         };
@@ -998,21 +1004,20 @@ impl DocketScreen {
             return Some(self.probe_settings(detail.pane(), commands));
         }
         let id = self.selected?;
+        let item = self.selected_item()?;
+        let head = format!(
+            "{}  {}",
+            self.number_text(id),
+            self.word(Word::StateName(item.state()))
+        );
+        commands.push(Self::cell_text(detail.number(), &head, Paint::Muted, 0));
+        let stamps = self.stamps_text(&item);
+        commands.push(Self::cell_text(detail.stamps(), &stamps, Paint::Muted, 0));
         commands.push(Self::cell_text(
-            detail.number(),
-            &self.number_text(id),
+            detail.title_name(),
+            self.word(Word::FieldName(Field::Title)),
             Paint::Muted,
             0,
-        ));
-        let delete = self.interaction.probe(DELETE, detail.delete(), true);
-        if delete.clicked() {
-            self.delete_item();
-            return None;
-        }
-        commands.extend(button::button(
-            detail.delete(),
-            self.word(Word::Delete),
-            delete,
         ));
         let title = self.interaction.probe(TITLE, detail.title(), true);
         commands.extend(text_field::text_field(detail.title(), &self.title, title));
@@ -1033,8 +1038,61 @@ impl DocketScreen {
             let response = self.interaction.probe(Self::slot_id(slot), rect, true);
             commands.extend(text_field::text_field(rect, self.slot(slot), response));
         }
-        self.probe_section_tabs(detail.tabs(), commands);
+        let counts = [
+            None,
+            Some(item.attachments().len()),
+            Some(self.history_cache.len()),
+        ];
+        self.probe_section_tabs(detail.tabs(), counts, commands);
+        self.probe_more(detail.more(), commands);
         None
+    }
+
+    /// 番号の下の 1 行: いつ誰が起票し、いつ更新したか（ADR 0023 の自動の項目）。
+    fn stamps_text(&self, item: &Item) -> String {
+        self.word(Word::Toolbar(ToolbarWord::Stamps))
+            .replace("{opened}", &self.local_date(item.opened()))
+            .replace(
+                "{opener}",
+                &item_number::short_name(item.id().creator(), &self.names),
+            )
+            .replace("{updated}", &self.local_date(item.updated()))
+    }
+
+    /// 「…」と、開いていればその下の「削除」（普段は状態の「中止」で閉じる・Issue #127）。
+    /// 最後に問い合わせるので、下の欄より先に押せる。外を押すか Esc で閉じる。
+    fn probe_more(&mut self, more: PixelRect, commands: &mut Vec<DrawCommand>) {
+        let response = self.interaction.probe(MORE, more, true);
+        if response.clicked() {
+            self.more_open = !self.more_open;
+        }
+        commands.extend(button::button(more, MORE_MARK, response));
+        if !self.more_open {
+            return;
+        }
+        let width = self.px(BUTTON_WIDTH_PX);
+        let menu = PixelRect::new(
+            more.right().saturating_add(1).saturating_sub(width),
+            more.bottom().saturating_add(1),
+            width,
+            more.height(),
+        );
+        let delete = self.interaction.probe(DELETE, menu, true);
+        if delete.clicked() {
+            self.more_open = false;
+            self.delete_item();
+            return;
+        }
+        let pointer = self.interaction.pointer();
+        let outside = pointer.phase() == ButtonPhase::Pressed
+            && pointer
+                .position()
+                .is_some_and(|point| !menu.contains(point) && !more.contains(point));
+        if outside {
+            self.more_open = false;
+            return;
+        }
+        commands.extend(button::button(menu, self.word(Word::Delete), delete));
     }
 
     /// 下書き: 見出し「新しい課題」・題名の欄・案内。Enter で初めて追記する（Issue #124）。
@@ -1252,19 +1310,25 @@ impl DocketScreen {
     }
 
     /// 状態の札 6 つ。押せばその状態の `Set` を作る（同じ状態なら何もしない）。
+    /// 問い合わせ（Tab）の順は見えている順（1 段目の 4 つ、2 段目の 2 つ・WCAG 2.4.3）。
     fn probe_state_chips(&mut self, rects: [PixelRect; 6], commands: &mut Vec<DrawCommand>) {
-        for (index, (rect, state)) in rects.into_iter().zip(ItemState::ALL).enumerate() {
+        for index in detail_layout::CHIP_TAB_ORDER {
+            let (Some(&rect), Some(&state)) = (rects.get(index), ItemState::ALL.get(index)) else {
+                continue;
+            };
             let id = STATE_CHIP.indexed(u32::try_from(index).unwrap_or(u32::MAX));
             let response = self.interaction.probe(id, rect, true);
             if response.clicked() {
                 self.choose_state(index);
             }
-            commands.extend(chip::chip(
-                rect,
-                self.word(Word::StateName(state)),
-                self.state.chosen() == index,
-                response,
-            ));
+            let chosen = self.state.chosen() == index;
+            let name = self.word(Word::StateName(state));
+            let label = if chosen {
+                format!("{CHOSEN_MARK} {name}")
+            } else {
+                String::from(name)
+            };
+            commands.extend(chip::chip(rect, &label, chosen, response));
         }
     }
 
@@ -1275,9 +1339,31 @@ impl DocketScreen {
         self.state_changed(before);
     }
 
-    /// 区画の切り替えの札（本文・添付・履歴）。
-    fn probe_section_tabs(&mut self, rects: [PixelRect; 3], commands: &mut Vec<DrawCommand>) {
-        for (index, (rect, section)) in rects.into_iter().zip(DetailSection::ALL).enumerate() {
+    /// 区画のタブ（本文・添付・履歴）。下線で状態の札と見分け、添付と履歴は件数を添える（Issue #127）。
+    fn probe_section_tabs(
+        &mut self,
+        rects: [PixelRect; 3],
+        counts: [Option<usize>; 3],
+        commands: &mut Vec<DrawCommand>,
+    ) {
+        if let (Some(first), Some(last)) = (rects.first(), rects.last()) {
+            commands.push(DrawCommand::Fill {
+                rect: PixelRect::new(
+                    first.x(),
+                    first.bottom(),
+                    last.right().saturating_sub(first.x()).saturating_add(1),
+                    1,
+                ),
+                paint: Paint::Border,
+            });
+        }
+        let underline = self.px(tab::UNDERLINE_PX);
+        for (index, ((rect, section), count)) in rects
+            .into_iter()
+            .zip(DetailSection::ALL)
+            .zip(counts)
+            .enumerate()
+        {
             let id = SECTION_TAB.indexed(u32::try_from(index).unwrap_or(u32::MAX));
             let response = self.interaction.probe(id, rect, true);
             if response.clicked() {
@@ -1289,10 +1375,14 @@ impl DocketScreen {
                 DetailSection::Attachments => Word::Attachment(AttachmentWord::Attachments),
                 DetailSection::History => Word::History,
             };
-            commands.extend(chip::chip(
+            let label = count.map_or_else(
+                || String::from(self.word(word)),
+                |count| format!("{} {count}", self.word(word)),
+            );
+            commands.extend(tab::tab(
                 rect,
-                self.word(word),
-                self.section == section,
+                &label,
+                (self.section == section, underline),
                 response,
             ));
         }
@@ -1783,6 +1873,7 @@ impl DocketScreen {
             KeyIntent::Tab => self.interaction.focus_next(),
             KeyIntent::BackTab => self.interaction.focus_previous(),
             KeyIntent::Escape if self.help.is_open() => self.help.close(),
+            KeyIntent::Escape if self.more_open => self.more_open = false,
             KeyIntent::Escape if !self.any_options_open() && self.draft().is_some() => {
                 self.cancel_draft();
             }
@@ -1889,6 +1980,10 @@ impl DocketScreen {
             }
             CLEAR_FILTER => {
                 self.clear_filter();
+                return true;
+            }
+            MORE => {
+                self.more_open = !self.more_open;
                 return true;
             }
             LANGUAGE_APPLY => {
@@ -2078,6 +2173,7 @@ impl DocketScreen {
             self.kept = None;
         }
         self.selected = Some(id);
+        self.more_open = false;
         self.bad_due = false;
         self.overwrote = None;
         let item = self.selected_item();
@@ -2865,21 +2961,24 @@ mod tests {
     const CLOSE_AT: (u16, u16) = (1317, 58);
     /// 下書きの題名の欄（80..108）。
     const DRAFT_AT: (u16, u16) = (1100, 94);
-    /// 詳細のペイン（972..1351）: 番号と「削除」44..72・題名 80..108・札 116..144 / 152..180・担当 188..216・期限 224..252・
-    /// ラベル 260..288・区画の札 296..324・区画 332..591。札は 972..1092・1101..1221・1230..1351、欄は 1052..1351。
+    /// 詳細のペイン（972..1351）: 番号と状態と「…」44..72（「…」は 1324..1351・開くと下に「削除」1282..1351 × 80..108）・
+    /// 起票と更新 80..108・題名 116..144・札 152..180 / 188..216・担当 224..252・期限 260..288・ラベル 296..324・
+    /// 区画のタブ 332..360・区画 368..591。札は 4 列（972..1060・1069..1157・1166..1254・1263..1351）、欄は 1052..1351。
     const HEAD_Y: u16 = 58;
-    const DELETE_X: u16 = 1317;
+    const MORE_X: u16 = 1337;
+    /// 「…」を開いた下の「削除」。
+    const DELETE_AT: (u16, u16) = (1317, 94);
     const TITLE_X: u16 = 1100;
-    const TITLE_Y: u16 = 94;
+    const TITLE_Y: u16 = 130;
     const FIELD_X: u16 = 1200;
-    const ASSIGNEE_Y: u16 = 202;
-    const DUE_Y: u16 = 238;
-    const LABELS_Y: u16 = 274;
-    const CHIP_XS: [u16; 3] = [1032, 1161, 1290];
-    const CHIP_YS: [u16; 2] = [130, 166];
-    /// 状態の札の「完了」（2 段目の真ん中）。
-    const DONE_CHIP: (u16, u16) = (1161, 166);
-    const TAB_Y: u16 = 310;
+    const ASSIGNEE_Y: u16 = 238;
+    const DUE_Y: u16 = 274;
+    const LABELS_Y: u16 = 310;
+    const CHIP_XS: [u16; 4] = [1016, 1113, 1210, 1307];
+    const CHIP_YS: [u16; 2] = [166, 202];
+    /// 状態の札の「完了」（1 段目の右端）。
+    const DONE_CHIP: (u16, u16) = (1307, 166);
+    const TAB_Y: u16 = 346;
     const BODY_TAB_X: u16 = 1032;
     const ATTACHMENTS_TAB_X: u16 = 1161;
     const HISTORY_TAB_X: u16 = 1290;
@@ -3809,21 +3908,56 @@ mod tests {
         click(&mut screen, 100, FIRST_ROW_Y);
         let shown = texts(&idle(&mut screen));
         for name in [
-            "other-1",
-            "Delete",
+            "other-1  In progress",
+            "Opened 1970-01-01 by other · Updated 1970-01-01",
+            "Title",
+            "…",
             "Assignee",
             "Due",
             "Labels",
             "Body",
-            "Attachments",
-            "History",
+            "Attachments 0",
+            "History 3",
         ] {
             assert!(shown.iter().any(|text| text == name), "{name}: {shown:?}");
         }
-        for state in ItemState::ALL {
+        assert!(!shown.iter().any(|text| text == "Delete"));
+        assert!(ItemState::ALL.into_iter().all(|state| {
             let word = wording::text(Language::English, Word::StateName(state));
-            assert!(shown.iter().any(|text| text == word), "{word}");
-        }
+            shown.iter().any(|text| text.ends_with(word))
+        }));
+    }
+
+    #[test]
+    fn delete_is_inside_the_more_button_and_closes_by_a_click_outside_or_esc() {
+        let (mut screen, _) = screen(2);
+        click(&mut screen, 100, FIRST_ROW_Y);
+        // 「削除」は「…」の中。開くまで出ない。
+        assert!(
+            !texts(&idle(&mut screen))
+                .iter()
+                .any(|text| text == "Delete")
+        );
+        click(&mut screen, MORE_X, HEAD_Y);
+        assert!(
+            texts(&idle(&mut screen))
+                .iter()
+                .any(|text| text == "Delete")
+        );
+        // 外を押すか Esc で閉じる。
+        click(&mut screen, TITLE_X, TITLE_Y);
+        assert!(
+            !texts(&idle(&mut screen))
+                .iter()
+                .any(|text| text == "Delete")
+        );
+        click(&mut screen, MORE_X, HEAD_Y);
+        keys(&mut screen, &[KeyIntent::Escape]);
+        assert!(
+            !texts(&idle(&mut screen))
+                .iter()
+                .any(|text| text == "Delete")
+        );
     }
 
     #[test]
@@ -3851,7 +3985,11 @@ mod tests {
                 _ => None,
             })
             .collect();
-        assert!(chosen.contains(&String::from("In progress")), "{chosen:?}");
+        // 選んだ札には印（✓ は X11 の日本語の家族に字形が無いので ●）。
+        assert!(
+            chosen.contains(&String::from("● In progress")),
+            "{chosen:?}"
+        );
         click(&mut screen, DONE_CHIP.0, DONE_CHIP.1);
         assert_eq!(
             screen.ledger().docket().item(first).map(Item::state),
@@ -3860,7 +3998,7 @@ mod tests {
         // 同じ札をもう 1 度押しても何も足さない。
         click(&mut screen, DONE_CHIP.0, DONE_CHIP.1);
         assert_eq!(spy.written.borrow().len(), 1);
-        // 「保留」（2 段目の左）にフォーカスを移して Enter。
+        // 「保留」（2 段目の左）を押し、Tab で右隣の「中止」へ移って Enter（Tab は見えている順）。
         click(&mut screen, CHIP_XS[0], CHIP_YS[1]);
         assert_eq!(
             screen.ledger().docket().item(first).map(Item::state),
@@ -3869,7 +4007,7 @@ mod tests {
         keys(&mut screen, &[KeyIntent::Tab, KeyIntent::Enter]);
         assert_eq!(
             screen.ledger().docket().item(first).map(Item::state),
-            Some(ItemState::Done)
+            Some(ItemState::Cancelled)
         );
         assert_eq!(spy.written.borrow().len(), 3);
     }
@@ -3879,7 +4017,8 @@ mod tests {
         let (mut screen, spy) = screen(3);
         let first = ItemId::new(OTHER, 1);
         click(&mut screen, 100, FIRST_ROW_Y);
-        click(&mut screen, DELETE_X, HEAD_Y);
+        click(&mut screen, MORE_X, HEAD_Y);
+        click(&mut screen, DELETE_AT.0, DELETE_AT.1);
         assert_eq!(screen.selected(), None);
         assert_eq!(screen.visible_items().len(), 2);
         keys(&mut screen, &[KeyIntent::Undo]);
@@ -3907,13 +4046,17 @@ mod tests {
     #[test]
     fn delete_by_key_needs_the_focus_and_a_selection() {
         let (mut screen, spy) = screen(2);
-        // 道具の行の 8 つ（検索・札 5・設定・追加）の後。選んでいなければ「削除」は無い。
+        // 道具の行の 8 つ（検索・札 5・設定・追加）の後。選んでいなければ「…」も「削除」も無い。
         keys(&mut screen, &[KeyIntent::Tab; 9]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 0);
         click(&mut screen, 100, FIRST_ROW_Y);
         keys(&mut screen, &[KeyIntent::Escape]);
-        keys(&mut screen, &[KeyIntent::Tab; 9]);
+        // 道具の行 8・題名・状態の札 6・欄 3・区画のタブ 3 の後が「…」。Enter で開き、Tab で「削除」へ。
+        keys(&mut screen, &[KeyIntent::Tab; 22]);
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert_eq!(spy.written.borrow().len(), 0);
+        keys(&mut screen, &[KeyIntent::Tab]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 1);
     }
@@ -4246,8 +4389,9 @@ mod tests {
     }
 
     /// 履歴の段（1060×400・残り 80..391 の 2/5 = 124）: 段は 268..391、ヘッダ 268..292、行は 292 から 24 ずつ。
-    const FIRST_HISTORY_Y: u16 = 368;
-    const SECOND_HISTORY_Y: u16 = 392;
+    /// 区画は 368 から（Issue #127 で 36 下がった）: ヘッダ 368..392、行は 392 から 24 ずつ。
+    const FIRST_HISTORY_Y: u16 = 404;
+    const SECOND_HISTORY_Y: u16 = 428;
 
     #[test]
     fn clicking_a_history_line_re_picks_its_value_as_a_new_op() {
@@ -4610,16 +4754,16 @@ mod tests {
     const SUCCESSOR_X: u16 = 862;
     const SHIFTED_FIRST_MEMBER_Y: u16 = 438;
 
-    /// 添付の区画（972..1351・332 から）: 編集行 332..356（名 972..1031・パス 1036..1163・「添付する」1168..1257・
-    /// 「外す」1262..1351）、一覧の見出し 360..384、1 行目 384..408。
-    const ATTACH_ROW_Y: u16 = 344;
+    /// 添付の区画（972..1351・368 から）: 編集行 368..392（名 972..1031・パス 1036..1163・「添付する」1168..1257・
+    /// 「外す」1262..1351）、一覧の見出し 396..420、1 行目 420..444。
+    const ATTACH_ROW_Y: u16 = 380;
     const ATTACH_PATH_X: u16 = 1100;
     const ATTACH_BUTTON_X: u16 = 1212;
     const DETACH_BUTTON_X: u16 = 1306;
-    const FIRST_ATTACHMENT_Y: u16 = 396;
-    /// 中身の区画の中の 1 点（一覧が見出し ＋ 1 行のとき、中身は 412..591）。
+    const FIRST_ATTACHMENT_Y: u16 = 432;
+    /// 中身の区画の中の 1 点（一覧が見出し ＋ 1 行のとき、中身は 448..591）。
     const VIEW_X: u16 = 1160;
-    const VIEW_Y: u16 = 500;
+    const VIEW_Y: u16 = 536;
 
     fn attachment_names(screen: &DocketScreen, id: ItemId) -> Vec<String> {
         screen
@@ -4717,9 +4861,9 @@ mod tests {
         assert!(!texts(&closed).iter().any(|text| text == "⚠ bad.txt"));
     }
 
-    /// 中身の区画の「開く」の中央（一覧が見出し ＋ 1 行のとき、中身は 412 から・ボタンは右端の 90）。
+    /// 中身の区画の「開く」の中央（一覧が見出し ＋ 1 行のとき、中身は 448 から・ボタンは右端の 90）。
     const OPEN_BUTTON_X: u16 = 1306;
-    const VIEW_ROW_Y: u16 = 424;
+    const VIEW_ROW_Y: u16 = 460;
 
     /// 課題 1 を選び、段を出し、`path` を添付して、その行を選ぶ。
     fn attach_and_select(path: &str) -> (DocketScreen, Spy) {

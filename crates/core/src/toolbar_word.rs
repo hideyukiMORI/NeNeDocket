@@ -58,4 +58,6 @@ pub enum ToolbarWord {
     ClearSearch,
     /// 「『{search}』を題名にして追加」。
     AddFromSearch,
+    /// 詳細のペインの番号の下（`{opened}`・`{opener}`・`{updated}` を置き換える・Issue #127）。
+    Stamps,
 }
