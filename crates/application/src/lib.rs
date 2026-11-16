@@ -39,6 +39,7 @@ pub mod docket_frame;
 pub mod docket_screen;
 pub mod drag_target;
 pub mod edit_slot;
+pub mod empty_case;
 pub mod environment;
 pub mod frame_input;
 pub mod frame_lap;

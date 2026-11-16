@@ -1251,7 +1251,29 @@ Xvfb（`LANG=ja_JP.UTF-8`）: 設定のペイン（[screenshots/2026-11-10-setti
 
 🔴 **正直に:** 案内の下の画面は薄くしない（`Paint` に透かしが無い）。Windows の見えは未確認。
 
-## 58. 再現
+## 58. Issue #126 — 0 件のときの案内 3 通り（台帳が空・検索・絞り込み）（2026-11-16）
+
+運用の筋書きの B の後半の 3。設計は [docs/design/2026-11-09-toolbar-and-settings.md](../design/2026-11-09-toolbar-and-settings.md) 第 4 節。
+
+- 表が 0 件のとき、理由を `EmptyCase::of`（application・純関数）で決め、表の中央に見出し・添え書き・次の一手を出す。順は 台帳が空 → 検索が台帳のどこにも合わない → 札が隠している
+- 台帳が空: 「まだ課題がありません」と「＋ 課題を追加」（下書きを開く・取り込みは E まで出さない）
+- 検索で 0 件: 「『◯◯』を含む課題はありません」・探した所（題名・本文・ラベル・添付の名前）・「検索を消す」・「『◯◯』を題名にして追加」（足した課題を選ぶ）
+- 絞り込みで 0 件: 「確認待ちの課題はありません（全 2 件）」と「絞り込みを外す」。全件は検索だけを当てた数（外せば出る数）。検索に合う課題を札が隠しているときも、外すのは札
+- ボタンは鍵（Enter・Space）でも押せる。部品の ID は 41〜44
+- 文言は core の `ToolbarWord` の 7 語 × 6 言語
+
+| target | 結果 |
+| --- | --- |
+| `make fmt-check` / `lint` / `doc-check` | 差分なし・0 件・警告なし（抑制なし） |
+| `cargo test -p nene-docket-application` | 146 件（3 通りの文言・各ボタン・検索に合うが札が隠す場合・`EmptyCase::of` の順） |
+| `cargo test -p nene-docket-core wording` | 全語 × 6 言語が空でない |
+| `make conformance` | 違反なし |
+
+Xvfb（`LANG=ja_JP.UTF-8`・1400×800）: 台帳が空（[screenshots/2026-11-16-empty-docket.png](screenshots/2026-11-16-empty-docket.png)）、検索（[screenshots/2026-11-16-empty-search.png](screenshots/2026-11-16-empty-search.png)）、絞り込み（[screenshots/2026-11-16-empty-filter.png](screenshots/2026-11-16-empty-filter.png)）。このコンテナの Xvfb は unix のソケットを作れなかったので、`-listen tcp -nolisten unix` と `DISPLAY=127.0.0.1:97` で撮った。
+
+🔴 **正直に:** 絞り込みの場合は添え書きが無く、見出しとボタンの間が 1 行空く（3 通りでボタンの位置をそろえた）。英語以外の翻訳と Windows の見えは未確認。
+
+## 59. 再現
 
 ```bash
 make prove
