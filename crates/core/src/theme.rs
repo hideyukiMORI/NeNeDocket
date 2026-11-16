@@ -92,4 +92,28 @@ mod tests {
             assert_eq!(theme.appearance(), seed.appearance());
         }
     }
+
+    /// ADR 0025 の下限: 部品の縁は地と面に 3:1、選びの面の上の前景は 4.5:1、灰色の字は地・面・選びの面に 4.5:1
+    /// （前景そのものが届かない配色では前景と同じ）。整数の計算とは別に、浮動小数の式で確かめる。
+    #[test]
+    fn every_builtin_theme_meets_the_contrast_floors() {
+        for seed in &theme_catalog::SEEDS {
+            let palette = Theme::of(seed).palette();
+            let colour = |paint| palette.colour(paint);
+            let name = seed.name();
+            for under in [Paint::Background, Paint::Surface] {
+                let ratio = contrast(colour(Paint::Control), colour(under));
+                assert!(ratio >= 3.0_f64, "{name}: control on {under:?} {ratio}");
+            }
+            let ink = contrast(colour(Paint::Ink), colour(Paint::Selection));
+            assert!(ink >= 4.5_f64, "{name}: ink on selection {ink}");
+            let muted_fits = [Paint::Background, Paint::Surface, Paint::Selection]
+                .into_iter()
+                .all(|under| contrast(colour(Paint::Muted), colour(under)) >= 4.5_f64);
+            assert!(
+                muted_fits || colour(Paint::Muted) == colour(Paint::Ink),
+                "{name}: muted"
+            );
+        }
+    }
 }

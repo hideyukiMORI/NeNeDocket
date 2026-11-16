@@ -4,6 +4,7 @@ use alloc::string::String;
 use alloc::vec::Vec;
 
 use crate::draw_command::DrawCommand;
+use crate::focus_ring;
 use crate::paint::Paint;
 use crate::pixel_rect::PixelRect;
 use crate::response::Response;
@@ -40,11 +41,7 @@ pub fn text_area(
         },
         DrawCommand::Stroke {
             rect,
-            paint: if response.focused() {
-                Paint::Accent
-            } else {
-                Paint::Border
-            }
+            paint: Paint::Control
         },
         DrawCommand::Clip(rect.inset(1)),
     ];
@@ -68,6 +65,7 @@ pub fn text_area(
         start = start.saturating_add(length).saturating_add(1);
     }
     commands.push(DrawCommand::Unclip);
+    commands.extend(focus_ring::ring(rect, response));
     commands
 }
 

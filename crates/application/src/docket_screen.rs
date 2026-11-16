@@ -189,6 +189,8 @@ const SETTABLE_COLUMNS: [TableColumn; 8] = [
 /// 選んでいる絞り込みの札の頭の印（色だけに頼らない・WCAG 1.4.1）。`✓` は X11 で選ぶ日本語の家族に字形が無く □ になる
 /// （ADR 0007・Xvfb で確認）ので、JIS X 0208・GB2312・KS X 1001 のどれにもある `●` を使う。
 const CHOSEN_MARK: &str = "●";
+/// 選んでいる行の左の強調の帯の幅（ADR 0025）。
+const SELECTED_BAR_PX: u16 = 3;
 /// 詳細のペインの「…」の字。
 const MORE_MARK: &str = "…";
 /// 詳細のペインの幅（窓の半分まで・ADR 0022）。
@@ -2895,6 +2897,11 @@ impl DocketScreen {
                 rect,
                 paint: Paint::Selection,
             });
+            // 面の色だけに頼らない（WCAG 1.4.1・ADR 0025）: 左に強調の帯。
+            commands.push(DrawCommand::Fill {
+                rect: PixelRect::new(rect.x(), rect.y(), self.px(SELECTED_BAR_PX), rect.height()),
+                paint: Paint::Accent,
+            });
         }
         // 履歴の行の上にポインタがあれば、選んだ行はその時点の値で（控えめな色・番号に印）。
         let past = self
@@ -3559,6 +3566,20 @@ mod tests {
         assert_eq!(screen.ledger().docket().len(), 10_000);
         assert_eq!(frame.font_px(), 13);
         assert!(screen.notices().is_empty());
+    }
+
+    #[test]
+    fn the_selected_row_has_an_accent_bar_on_its_left() {
+        let (mut screen, _) = screen(3);
+        let bar = |frame: &DocketFrame| {
+            frame.commands().iter().any(|command| {
+                matches!(command, DrawCommand::Fill { rect, paint: Paint::Accent }
+                    if rect.width() == 3 && rect.x() == 8 && rect.contains(PixelPoint::new(9, FIRST_ROW_Y)))
+            })
+        };
+        assert!(!bar(&idle(&mut screen)));
+        click(&mut screen, 100, FIRST_ROW_Y);
+        assert!(bar(&idle(&mut screen)));
     }
 
     #[test]

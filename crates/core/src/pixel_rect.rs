@@ -75,6 +75,25 @@ impl PixelRect {
             && point.y() <= self.bottom()
     }
 
+    /// 四辺を `amount` だけ外側に広げた矩形（フォーカスの輪・ADR 0025）。左上は 0 で止まる。
+    #[must_use]
+    pub const fn outset(self, amount: u16) -> Self {
+        let x = self.x.saturating_sub(amount);
+        let y = self.y.saturating_sub(amount);
+        Self::new(
+            x,
+            y,
+            self.right()
+                .saturating_add(amount)
+                .saturating_sub(x)
+                .saturating_add(1),
+            self.bottom()
+                .saturating_add(amount)
+                .saturating_sub(y)
+                .saturating_add(1),
+        )
+    }
+
     /// 四辺を `amount` だけ内側に寄せた矩形。寄せきれなければ幅か高さが 0 になる。
     #[must_use]
     pub const fn inset(self, amount: u16) -> Self {

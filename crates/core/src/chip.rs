@@ -4,6 +4,7 @@ use alloc::borrow::ToOwned;
 use alloc::vec::Vec;
 
 use crate::draw_command::DrawCommand;
+use crate::focus_ring;
 use crate::paint::Paint;
 use crate::pixel_rect::PixelRect;
 use crate::response::Response;
@@ -18,12 +19,12 @@ pub fn chip(rect: PixelRect, label: &str, chosen: bool, response: Response) -> V
         (ResponsePhase::Hovered, _) | (ResponsePhase::Idle, true) => (Paint::Selection, Paint::Ink),
         (ResponsePhase::Idle, false) => (Paint::Surface, Paint::Muted),
     };
-    let border = if chosen || response.focused() {
+    let border = if chosen {
         Paint::Accent
     } else {
-        Paint::Border
+        Paint::Control
     };
-    alloc::vec![
+    let mut commands = alloc::vec![
         DrawCommand::Fill { rect, paint: face },
         DrawCommand::Stroke {
             rect,
@@ -36,7 +37,9 @@ pub fn chip(rect: PixelRect, label: &str, chosen: bool, response: Response) -> V
             paint: ink,
             caret: None,
         },
-    ]
+    ];
+    commands.extend(focus_ring::ring(rect, response));
+    commands
 }
 
 #[cfg(test)]

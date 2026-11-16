@@ -1,8 +1,9 @@
-//! 本文の 3 色（背景・前景・強調）と明暗から、台帳の 8 つの色を整数の補間だけで導く（ADR 0012。nene-nib ADR 0017 の `derive_ui` と同じ形）。
+//! 本文の 3 色（背景・前景・強調）と明暗から、台帳の 9 つの色を整数の補間だけで導く（ADR 0012。nene-nib ADR 0017 の `derive_ui` と同じ形）。
 //!
 //! sRGB の値のまま線形に混ぜる（ガンマは扱わない）。百分率の表は明暗ごとに 1 つ。決定的で、浮動小数も乱数も使わない。
 
 use crate::appearance::Appearance;
+use crate::contrast;
 use crate::palette::Palette;
 use crate::rgb::Rgb;
 
@@ -38,7 +39,7 @@ const BLACK: Rgb = Rgb::new(0x00, 0x00, 0x00);
 /// 強調の明るさがこれ以上なら、その上の字は黒。
 const BRIGHT_ACCENT: u32 = 160;
 
-/// 台帳の 8 色。
+/// 台帳の 9 色。縁・選びの面・灰色の字は下限（ADR 0025）を満たすまで百分率を 1 ずつ動かす。
 #[must_use]
 pub fn derive(
     (background, foreground, accent): (Rgb, Rgb, Rgb),
@@ -52,16 +53,71 @@ pub fn derive(
         Appearance::Dark => mix(background, foreground, weights.surface),
         Appearance::Light => mix(background, WHITE, weights.surface),
     };
+    // 部品の縁: 縁の量から前景へ寄せ、地と面の両方に 3:1。
+    let control = first_fit(
+        (weights.border..=100).map(|percent| mix(background, foreground, percent)),
+        |colour| {
+            contrast::at_least(colour, background, contrast::NON_TEXT)
+                && contrast::at_least(colour, surface, contrast::NON_TEXT)
+        },
+    )
+    .unwrap_or(foreground);
+    // 選びの面と灰色の字は一緒に決める: 選びの面を強調の量から地へ戻しながら、灰色の字が前景から離れたまま
+    // 地・面・選びの面に 4.5:1 を取れる最初の組（選びの面の上の前景も 4.5:1）。取れなければ灰色の字は前景。
+    let (selection, muted) = (0..=weights.selection)
+        .rev()
+        .map(|percent| mix(background, accent, percent))
+        .filter(|selection| contrast::at_least(foreground, *selection, contrast::TEXT))
+        .find_map(|selection| {
+            muted_on(
+                [background, surface, selection],
+                (foreground, background),
+                weights.muted,
+            )
+            .map(|muted| (selection, muted))
+        })
+        .unwrap_or_else(|| {
+            let selection = first_fit(
+                (0..=weights.selection)
+                    .rev()
+                    .map(|percent| mix(background, accent, percent)),
+                |colour| contrast::at_least(foreground, colour, contrast::TEXT),
+            )
+            .unwrap_or(background);
+            (selection, foreground)
+        });
     Palette::new([
         background,
         surface,
         mix(background, foreground, weights.border),
+        control,
         foreground,
-        mix(foreground, background, weights.muted),
+        muted,
         accent,
         on_accent(accent),
-        mix(background, accent, weights.selection),
+        selection,
     ])
+}
+
+/// 灰色の字: 前景から地へ `most` から 1 ずつ離す量を減らし、`unders` の全部に 4.5:1 を取れる最初の色。
+/// 前景そのもの（0）は灰色にならないので候補にしない。
+fn muted_on(unders: [Rgb; 3], (foreground, background): (Rgb, Rgb), most: u8) -> Option<Rgb> {
+    first_fit(
+        (1..=most)
+            .rev()
+            .map(|percent| mix(foreground, background, percent)),
+        |colour| {
+            unders
+                .into_iter()
+                .all(|under| contrast::at_least(colour, under, contrast::TEXT))
+        },
+    )
+}
+
+/// 候補を順に見て、初めて `fits` を満たす色。
+fn first_fit<I: Iterator<Item = Rgb>, F: Fn(Rgb) -> bool>(candidates: I, fits: F) -> Option<Rgb> {
+    let mut candidates = candidates;
+    candidates.find(|colour| fits(*colour))
 }
 
 /// `from` から `to` へ `percent` だけ寄せる（0 で `from`、100 で `to`）。
