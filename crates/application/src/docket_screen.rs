@@ -1037,6 +1037,9 @@ impl DocketScreen {
             ));
             let response = self.interaction.probe(Self::slot_id(slot), rect, true);
             commands.extend(text_field::text_field(rect, self.slot(slot), response));
+            if slot == EditSlot::Due {
+                commands.extend(self.due_aside(rect, response.focused()));
+            }
         }
         let counts = [
             None,
@@ -1046,6 +1049,36 @@ impl DocketScreen {
         self.probe_section_tabs(detail.tabs(), counts, commands);
         self.probe_more(detail.more(), commands);
         None
+    }
+
+    /// 期限の欄の中の右寄せの添え書き（Issue #133）。空でフォーカスが無ければ書き方の案内、読めれば曜日
+    /// （`11/30`・`+3` のように書いた途中なら、確定したときの日付も）。
+    fn due_aside(&self, rect: PixelRect, focused: bool) -> Option<DrawCommand> {
+        let text = self.due.text();
+        let aside = if text.trim().is_empty() {
+            (!focused).then(|| String::from(self.word(Word::Toolbar(ToolbarWord::DueHint))))?
+        } else {
+            let date = Date::parse_near(text, self.today)?;
+            let weekday = self.word(Word::Weekday(date.weekday()));
+            if date.text() == text.trim() {
+                format!("({weekday})")
+            } else {
+                format!("→ {} ({weekday})", date.text())
+            }
+        };
+        let padding = self.px(MARGIN_PX);
+        Some(DrawCommand::Text {
+            rect: PixelRect::new(
+                rect.x().saturating_add(padding),
+                rect.y(),
+                rect.width().saturating_sub(padding.saturating_mul(2)),
+                rect.height(),
+            ),
+            text: aside,
+            align: TextAlign::End,
+            paint: Paint::Muted,
+            caret: None,
+        })
     }
 
     /// 番号の下の 1 行: いつ誰が起票し、いつ更新したか（ADR 0023 の自動の項目）。
@@ -2225,7 +2258,7 @@ impl DocketScreen {
             return;
         };
         let text = self.slot(slot).text().to_owned();
-        let Some(value) = slot.value_of(&text) else {
+        let Some(value) = slot.value_of(&text, self.today) else {
             self.bad_due = true;
             return;
         };
@@ -4077,6 +4110,40 @@ mod tests {
         assert_eq!(spy.written.borrow().len(), 1);
         let frame = idle(&mut screen);
         assert!(texts(&frame).iter().filter(|text| *text == "rina").count() >= 2);
+    }
+
+    #[test]
+    fn the_due_field_hints_its_forms_reads_days_ahead_and_shows_the_weekday() {
+        // 偽の時計の今日は 2023-11-14（火）。
+        let (mut screen, _) = screen(1);
+        let first = ItemId::new(OTHER, 1);
+        click(&mut screen, 100, FIRST_ROW_Y);
+        let hint = "e.g. 11/30 (month/day) or +3 (days)";
+        assert!(texts(&idle(&mut screen)).iter().any(|text| text == hint));
+        click(&mut screen, FIELD_X, DUE_Y);
+        assert!(!texts(&idle(&mut screen)).iter().any(|text| text == hint));
+        keys(&mut screen, &chars("+3"));
+        let typing = texts(&idle(&mut screen));
+        assert!(
+            typing.iter().any(|text| text == "→ 2023-11-17 (Fri)"),
+            "{typing:?}"
+        );
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert_eq!(
+            screen.ledger().docket().item(first).and_then(Item::due),
+            nene_docket_core::date::Date::new(2023, 11, 17)
+        );
+        // 確定すると正規の形になり、曜日だけが残る。
+        let shown = texts(&idle(&mut screen));
+        assert!(shown.iter().any(|text| text == "2023-11-17"));
+        assert!(shown.iter().any(|text| text == "(Fri)"), "{shown:?}");
+        keys(&mut screen, &[KeyIntent::SelectAll]);
+        keys(&mut screen, &chars("1/5"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert_eq!(
+            screen.ledger().docket().item(first).and_then(Item::due),
+            nene_docket_core::date::Date::new(2024, 1, 5)
+        );
     }
 
     #[test]

@@ -87,6 +87,7 @@ pub mod theme_seed;
 pub mod toolbar_word;
 pub mod ui_scale;
 pub mod wall_clock;
+pub mod weekday;
 pub mod widget_id;
 pub mod word;
 pub mod wording;

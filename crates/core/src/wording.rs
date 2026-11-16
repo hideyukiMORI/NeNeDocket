@@ -9,6 +9,7 @@ use crate::help_word::HelpWord;
 use crate::item_state::ItemState;
 use crate::language::Language;
 use crate::toolbar_word::ToolbarWord;
+use crate::weekday::Weekday;
 use crate::word::Word;
 
 /// 言語ごとの文字列。
@@ -50,7 +51,7 @@ const fn japanese(word: Word) -> &'static str {
         Word::CannotReadJournals => "他の人のジャーナルを読めません",
         Word::OrphanOperations => "宛先の無い操作",
         Word::RejectedLines => "読めなかった行",
-        Word::NotADate => "期限は YYYY-MM-DD の形です。保存していません",
+        Word::NotADate => "期限は 2026-11-30・11/30・+3 の形です。保存していません",
         Word::CannotWriteSettings => "設定を書けません",
         Word::UnknownTheme => "知らないテーマです",
         Word::FollowSystem => "OS に従う",
@@ -80,6 +81,7 @@ const fn japanese(word: Word) -> &'static str {
         Word::OwnerChanged => "持ち主を替えた",
         Word::Attachment(word) => japanese_attachment(word),
         Word::AutoField(field) => japanese_auto_field(field),
+        Word::Weekday(day) => japanese_weekday(day),
         Word::Toolbar(word) => japanese_toolbar(word),
         Word::Help(word) => japanese_help(word),
     }
@@ -131,7 +133,7 @@ const fn english(word: Word) -> &'static str {
         Word::CannotReadJournals => "journal: cannot read others",
         Word::OrphanOperations => "operations on unknown items",
         Word::RejectedLines => "unreadable journal lines",
-        Word::NotADate => "due: not a date (YYYY-MM-DD), not saved",
+        Word::NotADate => "due: not a date (2026-11-30, 11/30 or +3), not saved",
         Word::CannotWriteSettings => "settings: cannot write",
         Word::UnknownTheme => "unknown theme",
         Word::FollowSystem => "System",
@@ -161,6 +163,7 @@ const fn english(word: Word) -> &'static str {
         Word::OwnerChanged => "changed the owner",
         Word::Attachment(word) => english_attachment(word),
         Word::AutoField(field) => english_auto_field(field),
+        Word::Weekday(day) => english_weekday(day),
         Word::Toolbar(word) => english_toolbar(word),
         Word::Help(word) => english_help(word),
     }
@@ -211,7 +214,7 @@ const fn simplified_chinese(word: Word) -> &'static str {
         Word::CannotReadJournals => "无法读取他人的日志",
         Word::OrphanOperations => "目标不存在的操作",
         Word::RejectedLines => "无法读取的行",
-        Word::NotADate => "截止日期须为 YYYY-MM-DD，未保存",
+        Word::NotADate => "截止日期须为 2026-11-30、11/30 或 +3，未保存",
         Word::CannotWriteSettings => "无法写入设置",
         Word::UnknownTheme => "未知的主题",
         Word::FollowSystem => "跟随系统",
@@ -241,6 +244,7 @@ const fn simplified_chinese(word: Word) -> &'static str {
         Word::OwnerChanged => "更换了所有者",
         Word::Attachment(word) => simplified_chinese_attachment(word),
         Word::AutoField(field) => simplified_chinese_auto_field(field),
+        Word::Weekday(day) => simplified_chinese_weekday(day),
         Word::Toolbar(word) => simplified_chinese_toolbar(word),
         Word::Help(word) => simplified_chinese_help(word),
     }
@@ -291,7 +295,7 @@ const fn traditional_chinese(word: Word) -> &'static str {
         Word::CannotReadJournals => "無法讀取他人的日誌",
         Word::OrphanOperations => "目標不存在的操作",
         Word::RejectedLines => "無法讀取的行",
-        Word::NotADate => "截止日期須為 YYYY-MM-DD，未儲存",
+        Word::NotADate => "截止日期須為 2026-11-30、11/30 或 +3，未儲存",
         Word::CannotWriteSettings => "無法寫入設定",
         Word::UnknownTheme => "未知的主題",
         Word::FollowSystem => "跟隨系統",
@@ -321,6 +325,7 @@ const fn traditional_chinese(word: Word) -> &'static str {
         Word::OwnerChanged => "更換了擁有者",
         Word::Attachment(word) => traditional_chinese_attachment(word),
         Word::AutoField(field) => traditional_chinese_auto_field(field),
+        Word::Weekday(day) => traditional_chinese_weekday(day),
         Word::Toolbar(word) => traditional_chinese_toolbar(word),
         Word::Help(word) => traditional_chinese_help(word),
     }
@@ -371,7 +376,7 @@ const fn korean(word: Word) -> &'static str {
         Word::CannotReadJournals => "다른 사람의 저널을 읽을 수 없음",
         Word::OrphanOperations => "대상이 없는 작업",
         Word::RejectedLines => "읽을 수 없는 줄",
-        Word::NotADate => "기한은 YYYY-MM-DD 형식이어야 합니다. 저장되지 않음",
+        Word::NotADate => "기한은 2026-11-30 · 11/30 · +3 형식이어야 합니다. 저장되지 않음",
         Word::CannotWriteSettings => "설정을 쓸 수 없음",
         Word::UnknownTheme => "알 수 없는 테마",
         Word::FollowSystem => "시스템",
@@ -401,6 +406,7 @@ const fn korean(word: Word) -> &'static str {
         Word::OwnerChanged => "소유자를 변경함",
         Word::Attachment(word) => korean_attachment(word),
         Word::AutoField(field) => korean_auto_field(field),
+        Word::Weekday(day) => korean_weekday(day),
         Word::Toolbar(word) => korean_toolbar(word),
         Word::Help(word) => korean_help(word),
     }
@@ -451,7 +457,7 @@ const fn spanish(word: Word) -> &'static str {
         Word::CannotReadJournals => "diario: no se pueden leer los ajenos",
         Word::OrphanOperations => "operaciones sobre elementos desconocidos",
         Word::RejectedLines => "líneas ilegibles del diario",
-        Word::NotADate => "fecha límite: no es una fecha (AAAA-MM-DD), no guardada",
+        Word::NotADate => "fecha límite: no es una fecha (2026-11-30, 11/30 o +3), no guardada",
         Word::CannotWriteSettings => "configuración: no se puede escribir",
         Word::UnknownTheme => "tema desconocido",
         Word::FollowSystem => "Sistema",
@@ -481,6 +487,7 @@ const fn spanish(word: Word) -> &'static str {
         Word::OwnerChanged => "cambió el propietario",
         Word::Attachment(word) => spanish_attachment(word),
         Word::AutoField(field) => spanish_auto_field(field),
+        Word::Weekday(day) => spanish_weekday(day),
         Word::Toolbar(word) => spanish_toolbar(word),
         Word::Help(word) => spanish_help(word),
     }
@@ -625,6 +632,18 @@ const fn spanish_state(state: ItemState) -> &'static str {
     }
 }
 
+const fn japanese_weekday(day: Weekday) -> &'static str {
+    match day {
+        Weekday::Monday => "月",
+        Weekday::Tuesday => "火",
+        Weekday::Wednesday => "水",
+        Weekday::Thursday => "木",
+        Weekday::Friday => "金",
+        Weekday::Saturday => "土",
+        Weekday::Sunday => "日",
+    }
+}
+
 const fn japanese_toolbar(word: ToolbarWord) -> &'static str {
     match word {
         ToolbarWord::FilterOpen => "未完了",
@@ -657,6 +676,19 @@ const fn japanese_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::ClearSearch => "検索を消す",
         ToolbarWord::AddFromSearch => "「{search}」を題名にして追加",
         ToolbarWord::Stamps => "起票 {opened} {opener} · 更新 {updated}",
+        ToolbarWord::DueHint => "例 11/30・+3（3 日後）",
+    }
+}
+
+const fn english_weekday(day: Weekday) -> &'static str {
+    match day {
+        Weekday::Monday => "Mon",
+        Weekday::Tuesday => "Tue",
+        Weekday::Wednesday => "Wed",
+        Weekday::Thursday => "Thu",
+        Weekday::Friday => "Fri",
+        Weekday::Saturday => "Sat",
+        Weekday::Sunday => "Sun",
     }
 }
 
@@ -692,6 +724,19 @@ const fn english_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::ClearSearch => "Clear search",
         ToolbarWord::AddFromSearch => "Add “{search}” as a new issue",
         ToolbarWord::Stamps => "Opened {opened} by {opener} · Updated {updated}",
+        ToolbarWord::DueHint => "e.g. 11/30 (month/day) or +3 (days)",
+    }
+}
+
+const fn simplified_chinese_weekday(day: Weekday) -> &'static str {
+    match day {
+        Weekday::Monday => "周一",
+        Weekday::Tuesday => "周二",
+        Weekday::Wednesday => "周三",
+        Weekday::Thursday => "周四",
+        Weekday::Friday => "周五",
+        Weekday::Saturday => "周六",
+        Weekday::Sunday => "周日",
     }
 }
 
@@ -725,6 +770,19 @@ const fn simplified_chinese_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::ClearSearch => "清除搜索",
         ToolbarWord::AddFromSearch => "以“{search}”为标题添加",
         ToolbarWord::Stamps => "{opener} 于 {opened} 创建 · 更新于 {updated}",
+        ToolbarWord::DueHint => "例：11/30（月/日）或 +3（3 天后）",
+    }
+}
+
+const fn traditional_chinese_weekday(day: Weekday) -> &'static str {
+    match day {
+        Weekday::Monday => "週一",
+        Weekday::Tuesday => "週二",
+        Weekday::Wednesday => "週三",
+        Weekday::Thursday => "週四",
+        Weekday::Friday => "週五",
+        Weekday::Saturday => "週六",
+        Weekday::Sunday => "週日",
     }
 }
 
@@ -758,6 +816,19 @@ const fn traditional_chinese_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::ClearSearch => "清除搜尋",
         ToolbarWord::AddFromSearch => "以「{search}」為標題新增",
         ToolbarWord::Stamps => "{opener} 於 {opened} 建立 · 更新於 {updated}",
+        ToolbarWord::DueHint => "例：11/30（月/日）或 +3（3 天後）",
+    }
+}
+
+const fn korean_weekday(day: Weekday) -> &'static str {
+    match day {
+        Weekday::Monday => "월",
+        Weekday::Tuesday => "화",
+        Weekday::Wednesday => "수",
+        Weekday::Thursday => "목",
+        Weekday::Friday => "금",
+        Weekday::Saturday => "토",
+        Weekday::Sunday => "일",
     }
 }
 
@@ -793,6 +864,19 @@ const fn korean_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::ClearSearch => "검색 지우기",
         ToolbarWord::AddFromSearch => "「{search}」을(를) 제목으로 추가",
         ToolbarWord::Stamps => "{opener} {opened} 등록 · {updated} 갱신",
+        ToolbarWord::DueHint => "예: 11/30 (월/일) · +3 (3일 후)",
+    }
+}
+
+const fn spanish_weekday(day: Weekday) -> &'static str {
+    match day {
+        Weekday::Monday => "lun",
+        Weekday::Tuesday => "mar",
+        Weekday::Wednesday => "mié",
+        Weekday::Thursday => "jue",
+        Weekday::Friday => "vie",
+        Weekday::Saturday => "sáb",
+        Weekday::Sunday => "dom",
     }
 }
 
@@ -828,6 +912,7 @@ const fn spanish_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::ClearSearch => "Borrar búsqueda",
         ToolbarWord::AddFromSearch => "Añadir «{search}» como incidencia",
         ToolbarWord::Stamps => "Abierta {opened} por {opener} · Actualizada {updated}",
+        ToolbarWord::DueHint => "p. ej. 11/30 (mes/día) o +3 (días)",
     }
 }
 
@@ -998,7 +1083,15 @@ mod tests {
     use super::*;
 
     /// 全部の語（`Word` の閉じた集合を 1 か所で列挙する。増えたらここも増える）。
-    const WORDS: [Word; 124] = [
+    const WORDS: [Word; 132] = [
+        Word::Toolbar(ToolbarWord::DueHint),
+        Word::Weekday(Weekday::Monday),
+        Word::Weekday(Weekday::Tuesday),
+        Word::Weekday(Weekday::Wednesday),
+        Word::Weekday(Weekday::Thursday),
+        Word::Weekday(Weekday::Friday),
+        Word::Weekday(Weekday::Saturday),
+        Word::Weekday(Weekday::Sunday),
         Word::Toolbar(ToolbarWord::Stamps),
         Word::Toolbar(ToolbarWord::EmptyTitle),
         Word::Toolbar(ToolbarWord::EmptyText),
