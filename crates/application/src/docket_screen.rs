@@ -58,6 +58,7 @@ use nene_docket_core::wording;
 
 use crate::account::Account;
 use crate::administration_log;
+use crate::assignee_picker::AssigneePicker;
 use crate::attachment_view::AttachmentView;
 use crate::attachment_view_cache::AttachmentViewCache;
 use crate::attachments_action::AttachmentsAction;
@@ -142,6 +143,8 @@ const ADD_FROM_SEARCH: WidgetId = WidgetId::new(44);
 /// 0 件の案内のボタン。
 /// 詳細のペインの「…」（Issue #127）。中の「削除」は [`DELETE`]。
 const MORE: WidgetId = WidgetId::new(45);
+/// 担当の欄の候補（番号を足す・Issue #133）。
+const ASSIGNEE_OPTION: WidgetId = WidgetId::new(9_000);
 const EMPTY_BUTTONS: [WidgetId; 4] = [EMPTY_ADD, EMPTY_CLEAR_FILTER, CLEAR_SEARCH, ADD_FROM_SEARCH];
 /// 設定のペインの列の出し入れ（[`SETTABLE_COLUMNS`] の順の番号を足す）。
 const COLUMN_TOGGLE: WidgetId = WidgetId::new(600);
@@ -227,6 +230,8 @@ pub struct DocketScreen {
     help: HelpOverlay,
     /// 詳細のペインの「…」の中（「削除」）を開いているか（Issue #127）。
     more_open: bool,
+    /// 担当の欄の候補（Issue #133）。
+    assignee_picker: AssigneePicker,
     /// 絞り込みの札ごとの件数（検索だけを当てた数）と台帳の全件、その鍵。
     counts: Option<(CountsKey, [usize; 6])>,
     scroll: ScrollState,
@@ -313,6 +318,7 @@ impl DocketScreen {
             kept: None,
             help: HelpOverlay::closed(environment.scale()),
             more_open: false,
+            assignee_picker: AssigneePicker::closed(),
             counts: None,
             scroll: ScrollState::top(0, 0),
             selected: None,
@@ -1005,6 +1011,7 @@ impl DocketScreen {
         }
         let id = self.selected?;
         let item = self.selected_item()?;
+        let assignee_focused = self.interaction.focus() == Some(Self::slot_id(EditSlot::Assignee));
         let head = format!(
             "{}  {}",
             self.number_text(id),
@@ -1047,8 +1054,109 @@ impl DocketScreen {
             Some(self.history_cache.len()),
         ];
         self.probe_section_tabs(detail.tabs(), counts, commands);
-        self.probe_more(detail.more(), commands);
+        self.probe_overlays(detail, assignee_focused, commands);
         None
+    }
+
+    /// ペインの上に重なるもの（「…」の中・担当の候補）。最後に問い合わせるので、下の欄より先に押せる。
+    /// `assignee_focused` はフレームの始めに担当の欄がフォーカスを持っていたか。
+    fn probe_overlays(
+        &mut self,
+        detail: &DetailLayout,
+        assignee_focused: bool,
+        commands: &mut Vec<DrawCommand>,
+    ) {
+        self.probe_more(detail.more(), commands);
+        if let Some(field) = detail.fields().first().filter(|_| assignee_focused) {
+            self.probe_assignee_options(*field, commands);
+        }
+    }
+
+    /// 担当の候補（参加者と使われている担当）。打った字で絞る。
+    fn assignee_candidates(&mut self) -> Vec<String> {
+        let ledger = &self.ledger;
+        self.assignee_picker.refresh(ledger.generation(), || {
+            ledger
+                .docket()
+                .live_items()
+                .into_iter()
+                .map(|item| String::from(item.assignee()))
+                .collect()
+        });
+        let members: Vec<String> = self
+            .members()
+            .iter()
+            .map(|member| String::from(member.name()))
+            .collect();
+        self.assignee_picker
+            .list(&members, self.slot(EditSlot::Assignee).text())
+    }
+
+    /// 担当の欄の下の候補。押した時点で選んで確定する（離すまで待つと、欄が先に打ちかけの字を確定する）。
+    fn probe_assignee_options(&mut self, field: PixelRect, commands: &mut Vec<DrawCommand>) {
+        let candidates = self.assignee_candidates();
+        if candidates.is_empty() {
+            return;
+        }
+        let pointer = self.interaction.pointer();
+        let mut chosen = None;
+        for (index, rect) in select_box::option_rects(field, candidates.len())
+            .into_iter()
+            .enumerate()
+        {
+            let id = ASSIGNEE_OPTION.indexed(u32::try_from(index).unwrap_or(u32::MAX));
+            let response = self.interaction.probe(id, rect, false);
+            if pointer.phase() == ButtonPhase::Pressed && response.phase() == ResponsePhase::Held {
+                chosen = Some(index);
+            }
+            let lit = response.phase() != ResponsePhase::Idle
+                || self.assignee_picker.highlighted() == Some(index);
+            commands.push(DrawCommand::Fill {
+                rect,
+                paint: if lit {
+                    Paint::Selection
+                } else {
+                    Paint::Surface
+                },
+            });
+            let name = candidates.get(index).map_or("", String::as_str);
+            commands.push(Self::cell_text(rect, name, Paint::Ink, self.px(MARGIN_PX)));
+        }
+        commands.push(DrawCommand::Stroke {
+            rect: select_box::list_rect(field, candidates.len()),
+            paint: Paint::Border,
+        });
+        if let Some(name) = chosen.and_then(|index| candidates.get(index)) {
+            self.take_assignee(name);
+        }
+    }
+
+    /// 担当の欄の鍵: 上下は候補を選び、Enter は選んだ候補があればそれを取る。済ませたら真。
+    /// ほかの鍵は選びを外して欄へ（偽）。
+    fn assignee_key(&mut self, key: KeyIntent) -> bool {
+        let candidates = self.assignee_candidates();
+        if matches!(key, KeyIntent::Up | KeyIntent::Down) {
+            self.assignee_picker.key(key, candidates.len());
+            return true;
+        }
+        let picked = self
+            .assignee_picker
+            .highlighted()
+            .and_then(|index| candidates.get(index))
+            .filter(|_| key == KeyIntent::Enter);
+        if let Some(name) = picked {
+            self.take_assignee(name);
+            return true;
+        }
+        self.assignee_picker.key(key, candidates.len());
+        false
+    }
+
+    /// 候補を担当にして確定する。
+    fn take_assignee(&mut self, name: &str) {
+        *self.slot_mut(EditSlot::Assignee) = TextEdit::showing(name);
+        self.assignee_picker.reset();
+        self.commit_slot(EditSlot::Assignee);
     }
 
     /// 期限の欄の中の右寄せの添え書き（Issue #133）。空でフォーカスが無ければ書き方の案内、読めれば曜日
@@ -1973,7 +2081,12 @@ impl DocketScreen {
         if slot == EditSlot::Body {
             let edit = self.body.edit_mut();
             *edit = edit.applied_in_area(key);
-        } else if key == KeyIntent::Enter {
+            return;
+        }
+        if slot == EditSlot::Assignee && self.assignee_key(key) {
+            return;
+        }
+        if key == KeyIntent::Enter {
             self.commit_slot(slot);
         } else {
             let edit = self.slot_mut(slot);
@@ -4092,6 +4205,50 @@ mod tests {
         keys(&mut screen, &[KeyIntent::Tab]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 1);
+    }
+
+    #[test]
+    fn the_assignee_field_offers_members_and_used_names_by_key_and_by_press() {
+        let (mut screen, spy) = screen(2);
+        let second = ItemId::new(OTHER, 2);
+        click(&mut screen, 100, FIRST_ROW_Y);
+        click(&mut screen, FIELD_X, ASSIGNEE_Y);
+        keys(&mut screen, &chars("alicemori"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        click(&mut screen, 100, SECOND_ROW_Y);
+        click(&mut screen, FIELD_X, ASSIGNEE_Y);
+        // 参加者（ID の順で me・other）、続いて使われている担当。
+        let offered = texts(&idle(&mut screen));
+        let at = |name: &str| offered.iter().position(|text| text == name);
+        assert!(
+            at("me") < at("other") && at("other") < at("alicemori"),
+            "{offered:?}"
+        );
+        keys(&mut screen, &chars("ALI"));
+        keys(&mut screen, &[KeyIntent::Down, KeyIntent::Enter]);
+        assert_eq!(
+            screen.ledger().docket().item(second).map(Item::assignee),
+            Some("alicemori")
+        );
+        assert_eq!(spy.written.borrow().len(), 2);
+        // 打ちかけの字は書かず、押した候補だけを書く。候補の 1 つ目は欄のすぐ下（252..280）。
+        keys(&mut screen, &[KeyIntent::SelectAll]);
+        keys(&mut screen, &chars("o"));
+        click(&mut screen, FIELD_X, ASSIGNEE_Y.saturating_add(28));
+        assert_eq!(
+            screen.ledger().docket().item(second).map(Item::assignee),
+            Some("other")
+        );
+        assert_eq!(spy.written.borrow().len(), 3);
+        // 候補に無い名前も書ける。
+        click(&mut screen, FIELD_X, ASSIGNEE_Y);
+        keys(&mut screen, &[KeyIntent::SelectAll]);
+        keys(&mut screen, &chars("外注の佐藤"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert_eq!(
+            screen.ledger().docket().item(second).map(Item::assignee),
+            Some("外注の佐藤")
+        );
     }
 
     #[test]

@@ -16,6 +16,7 @@ pub mod account_file;
 pub mod account_reading;
 pub mod administration_log;
 pub mod admission_report;
+pub mod assignee_picker;
 pub mod attachment_text;
 pub mod attachment_view;
 pub mod attachment_view_cache;
