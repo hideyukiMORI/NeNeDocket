@@ -60,4 +60,6 @@ pub enum ToolbarWord {
     AddFromSearch,
     /// 詳細のペインの番号の下（`{opened}`・`{opener}`・`{updated}` を置き換える・Issue #127）。
     Stamps,
+    /// 期限の欄が空のときの書き方の案内（Issue #133）。
+    DueHint,
 }

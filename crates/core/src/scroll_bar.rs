@@ -17,16 +17,26 @@ pub fn scroll_bar(track: PixelRect, state: ScrollState, response: Response) -> V
         ResponsePhase::Hovered => Paint::Ink,
         ResponsePhase::Idle => Paint::Muted,
     };
-    alloc::vec![
-        DrawCommand::Fill {
-            rect: track,
-            paint: Paint::Surface
-        },
-        DrawCommand::Fill {
-            rect: state.thumb(track).inset(2),
-            paint: thumb_paint
-        },
-    ]
+    // 押せる幅は軌道のまま。見せるのは中央の細い線と、その 1/4 の幅のつまみだけ（Issue #133・1x で 1 px と 3 px）。
+    let line = (track.width() / 12).max(1);
+    let thumb_width = (track.width() / 4).max(1);
+    let center = |width: u16| {
+        track
+            .x()
+            .saturating_add(track.width().saturating_sub(width) / 2)
+    };
+    let mut commands = alloc::vec![DrawCommand::Fill {
+        rect: PixelRect::new(center(line), track.y(), line, track.height()),
+        paint: Paint::Border,
+    }];
+    if state.max_offset() > 0 {
+        let thumb = state.thumb(track);
+        commands.push(DrawCommand::Fill {
+            rect: PixelRect::new(center(thumb_width), thumb.y(), thumb_width, thumb.height()),
+            paint: thumb_paint,
+        });
+    }
+    commands
 }
 
 #[cfg(test)]
@@ -34,7 +44,7 @@ mod tests {
     use super::*;
 
     #[test]
-    fn thumb_follows_the_state_and_the_pointer() {
+    fn a_thin_line_and_a_thin_thumb_follow_the_state_and_the_pointer() {
         let track = PixelRect::new(100, 0, 12, 300);
         let state = ScrollState::top(1200, 300);
         let idle = scroll_bar(
@@ -43,9 +53,16 @@ mod tests {
             Response::new(ResponsePhase::Idle, false, false),
         );
         assert_eq!(
+            idle.first(),
+            Some(&DrawCommand::Fill {
+                rect: PixelRect::new(105, 0, 1, 300),
+                paint: Paint::Border
+            })
+        );
+        assert_eq!(
             idle.get(1),
             Some(&DrawCommand::Fill {
-                rect: PixelRect::new(102, 2, 8, 71),
+                rect: PixelRect::new(104, 0, 3, 75),
                 paint: Paint::Muted
             })
         );
@@ -72,6 +89,29 @@ mod tests {
                 paint: Paint::Ink,
                 ..
             })
+        ));
+    }
+
+    #[test]
+    fn nothing_to_scroll_shows_only_the_line_and_a_doubled_track_doubles_the_widths() {
+        let track = PixelRect::new(0, 0, 24, 300);
+        let fits = scroll_bar(
+            track,
+            ScrollState::top(200, 300),
+            Response::new(ResponsePhase::Idle, false, false),
+        );
+        assert_eq!(fits.len(), 1);
+        let long = scroll_bar(
+            track,
+            ScrollState::top(1200, 300),
+            Response::new(ResponsePhase::Idle, false, false),
+        );
+        assert!(matches!(
+            long.as_slice(),
+            [
+                DrawCommand::Fill { rect: line, .. },
+                DrawCommand::Fill { rect: thumb, .. },
+            ] if line.width() == 2 && thumb.width() == 6
         ));
     }
 }

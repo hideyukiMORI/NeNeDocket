@@ -114,7 +114,7 @@ mod tests {
         assert!(
             Notice::NotADate
                 .describe(Language::Spanish)
-                .contains("AAAA-MM-DD")
+                .contains("11/30 o +3")
         );
         assert!(
             Notice::UnverifiedLines(3)

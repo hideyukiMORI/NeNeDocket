@@ -62,14 +62,15 @@ impl EditSlot {
         }
     }
 
-    /// 欄の文字列を項目の値にする。期限の形が違えば `None`（追記しない・FR-014 で示す）。
+    /// 欄の文字列を項目の値にする。期限は `Date::parse_near`（`11/30`・`+3` は `today` から）で、形が違えば `None`
+    /// （追記しない・FR-014 で示す）。
     #[must_use]
-    pub fn value_of(self, text: &str) -> Option<FieldValue> {
+    pub fn value_of(self, text: &str, today: Option<Date>) -> Option<FieldValue> {
         match self {
             Self::Title => Some(FieldValue::Title(String::from(text))),
             Self::Assignee => Some(FieldValue::Assignee(String::from(text))),
-            Self::Due if text.is_empty() => Some(FieldValue::Due(None)),
-            Self::Due => Date::parse(text).map(|date| FieldValue::Due(Some(date))),
+            Self::Due if text.trim().is_empty() => Some(FieldValue::Due(None)),
+            Self::Due => Date::parse_near(text, today).map(|date| FieldValue::Due(Some(date))),
             Self::Labels => Some(FieldValue::Labels(Self::labels_of(text))),
             Self::Body => Some(FieldValue::Body(String::from(text))),
         }
@@ -105,7 +106,10 @@ mod tests {
             ]));
         for slot in EditSlot::ALL {
             let text = slot.text_of(&item);
-            assert_eq!(slot.value_of(&text), Some(item.value_of(slot.field())));
+            assert_eq!(
+                slot.value_of(&text, None),
+                Some(item.value_of(slot.field()))
+            );
         }
         assert_eq!(EditSlot::Due.text_of(&item), "2026-12-31");
         assert_eq!(EditSlot::Body.text_of(&item), "line 1\nline 2");
@@ -119,19 +123,22 @@ mod tests {
                 String::from("bug"),
                 String::from("ui")
             ]));
-        assert_eq!(EditSlot::Due.value_of(""), Some(FieldValue::Due(None)));
-        assert_eq!(EditSlot::Due.value_of("2026-13-01"), None);
-        assert_eq!(EditSlot::Due.value_of("tomorrow"), None);
+        assert_eq!(
+            EditSlot::Due.value_of("", None),
+            Some(FieldValue::Due(None))
+        );
+        assert_eq!(EditSlot::Due.value_of("2026-13-01", None), None);
+        assert_eq!(EditSlot::Due.value_of("tomorrow", None), None);
         assert_eq!(EditSlot::Labels.text_of(&item), "bug, ui");
         assert_eq!(
-            EditSlot::Labels.value_of(" bug ,, ui,"),
+            EditSlot::Labels.value_of(" bug ,, ui,", None),
             Some(FieldValue::Labels(alloc::vec![
                 String::from("bug"),
                 String::from("ui")
             ]))
         );
         assert_eq!(
-            EditSlot::Labels.value_of(""),
+            EditSlot::Labels.value_of("", None),
             Some(FieldValue::Labels(Vec::new()))
         );
     }

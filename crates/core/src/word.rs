@@ -6,10 +6,13 @@ use crate::field::Field;
 use crate::help_word::HelpWord;
 use crate::item_state::ItemState;
 use crate::toolbar_word::ToolbarWord;
+use crate::weekday::Weekday;
 
 /// 画面の語。閉じた集合（RS-002）。
 #[derive(Debug, Clone, Copy, PartialEq, Eq)]
 pub enum Word {
+    /// 曜日（期限の欄に添える・Issue #133）。
+    Weekday(Weekday),
     /// 絞り込みの「すべて」。
     All,
     /// 課題の状態の名前。

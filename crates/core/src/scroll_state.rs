@@ -12,7 +12,7 @@ pub struct ScrollState {
 
 impl ScrollState {
     /// つまみの最小の長さ。
-    const MIN_THUMB_PX: u32 = 16;
+    const MIN_THUMB_PX: u32 = 32;
 
     /// 中身と見えている高さから、先頭で始める。
     #[must_use]
@@ -143,6 +143,6 @@ mod tests {
         let track = PixelRect::new(0, 0, 8, 300);
         assert_eq!(ScrollState::top(200, 300).thumb(track), track);
         assert_eq!(ScrollState::top(0, 300).thumb(track), track);
-        assert_eq!(ScrollState::top(1_000_000, 300).thumb(track).height(), 16);
+        assert_eq!(ScrollState::top(1_000_000, 300).thumb(track).height(), 32);
     }
 }
