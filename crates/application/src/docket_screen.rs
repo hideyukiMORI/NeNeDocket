@@ -84,6 +84,7 @@ use crate::journal_failure::JournalFailure;
 use crate::journal_port::JournalPort;
 use crate::ledger::Ledger;
 use crate::ledger_opening;
+use crate::list_counts::ListCounts;
 use crate::list_filter::ListFilter;
 use crate::member::Member;
 use crate::members_action::MembersAction;
@@ -96,14 +97,22 @@ use crate::ports::Ports;
 use crate::settings::Settings;
 use crate::settings_failure::SettingsFailure;
 use crate::table_column::TableColumn;
+use crate::view_tab::ViewTab;
 use nene_docket_core::admin_command::AdminCommand;
 
-/// 表の一覧のキャッシュの鍵（台帳の世代・検索・絞り込みの札・今日・足したばかりの課題）。
-type VisibleKey = (u64, String, ListFilter, Option<Date>, Option<ItemId>);
-/// 改変した添付のキャッシュの鍵（台帳の世代・選んだ課題）。
+/// 表の一覧のキャッシュの鍵（台帳の世代・検索・絞り込みの札・今日・足したばかりの課題・タブと自分の名前）。
+type VisibleKey = (
+    u64,
+    String,
+    ListFilter,
+    Option<Date>,
+    Option<ItemId>,
+    (ViewTab, String),
+);
+/// 改変した添付と履歴の行のキャッシュの鍵（台帳の世代・選んだ課題）。
 type AlteredKey = (u64, Option<ItemId>);
-/// 札の件数のキャッシュの鍵（台帳の世代・検索・今日）。
-type CountsKey = (u64, String, Option<Date>);
+/// 札の件数のキャッシュの鍵（台帳の世代・検索・今日・タブと自分の名前）。
+type CountsKey = (u64, String, Option<Date>, (ViewTab, String));
 
 /// 部品の ID。候補は `*_OPTION` に番号を足し、表の行は `ROW` に見えている順の番号を足す。
 const SEARCH: WidgetId = WidgetId::new(1);
@@ -148,7 +157,17 @@ const ADD_FROM_SEARCH: WidgetId = WidgetId::new(44);
 const MORE: WidgetId = WidgetId::new(45);
 /// 担当の欄の候補（番号を足す・Issue #133）。
 const ASSIGNEE_OPTION: WidgetId = WidgetId::new(9_000);
-const EMPTY_BUTTONS: [WidgetId; 4] = [EMPTY_ADD, EMPTY_CLEAR_FILTER, CLEAR_SEARCH, ADD_FROM_SEARCH];
+const EMPTY_BUTTONS: [WidgetId; 5] = [
+    EMPTY_ADD,
+    EMPTY_CLEAR_FILTER,
+    CLEAR_SEARCH,
+    ADD_FROM_SEARCH,
+    SHOW_ALL,
+];
+/// 0 件の案内の「全件を見る」（自分の担当のタブが空・Issue #145）。
+const SHOW_ALL: WidgetId = WidgetId::new(46);
+/// 共有ビューのタブ（`ViewTab::ALL` の順の番号を足す・Issue #145）。
+const VIEW_TAB: WidgetId = WidgetId::new(800);
 /// 設定のペインの列の出し入れ（[`SETTABLE_COLUMNS`] の順の番号を足す）。
 const COLUMN_TOGGLE: WidgetId = WidgetId::new(600);
 /// 状態の札（詳細のペイン・`ItemState::ALL` の順の番号を足す・Issue #122）。
@@ -170,8 +189,10 @@ const MARGIN_PX: u16 = 8;
 const ROW_PX: u16 = 28;
 /// 絞り込みの札 1 つ。
 const FILTER_CHIP_WIDTH_PX: u16 = 104;
+/// 共有ビューのタブ 1 つ（「自分の担当 3」）。
+const VIEW_TAB_WIDTH_PX: u16 = 100;
 /// 「N 件を表示（全 M 件）」。
-const SHOWING_WIDTH_PX: u16 = 180;
+const SHOWING_WIDTH_PX: u16 = 160;
 /// 「設定」。
 const SETTINGS_WIDTH_PX: u16 = 80;
 /// 「＋ 課題を追加」。
@@ -225,8 +246,9 @@ pub struct DocketScreen {
     scale: UiScale,
     interaction: Interaction,
     search: TextEdit,
-    /// 絞り込みの札（Issue #124）。
+    /// 絞り込みの札（Issue #124）と共有ビューのタブ（Issue #145）。札はタブの中で効く。
     list_filter: ListFilter,
+    view: ViewTab,
     /// 右のペインに出すもの（課題・下書き・設定）。
     mode: PaneMode,
     /// 足したばかりで、絞り込みの外でも表に残す課題と、絞り込みの外にあるか（「絞り込みを外す」を知らせる）。
@@ -238,7 +260,7 @@ pub struct DocketScreen {
     /// 担当の欄の候補（Issue #133）。
     assignee_picker: AssigneePicker,
     /// 絞り込みの札ごとの件数（検索だけを当てた数）と台帳の全件、その鍵。
-    counts: Option<(CountsKey, [usize; 6])>,
+    counts: Option<(CountsKey, ListCounts)>,
     scroll: ScrollState,
     selected: Option<ItemId>,
     title: TextEdit,
@@ -276,8 +298,7 @@ pub struct DocketScreen {
     visible_cache: Vec<ItemId>,
     visible_key: Option<VisibleKey>,
     /// 履歴の段の行のキャッシュと、その鍵（台帳の世代・選んだ課題）。行はジャーナルから引くので毎フレームは読まない（ADR 0015）。
-    history_cache: Vec<HistoryLine>,
-    history_key: Option<(u64, Option<ItemId>)>,
+    history_lines: Option<(AlteredKey, Vec<HistoryLine>)>,
     /// 読み直しの回数と、最後にスナップショットを書いたときの世代（一定の回数ごとに書く・ADR 0015）。
     refreshes: u64,
     /// このフレームの地方時の日付。期限超過の判定に使う（壁時計はポートから・ARC-007・Issue #107）。
@@ -320,6 +341,7 @@ impl DocketScreen {
             interaction: Interaction::idle(),
             search: TextEdit::empty(),
             list_filter: ListFilter::Open,
+            view: ViewTab::All,
             mode: PaneMode::Item,
             kept: None,
             help: HelpOverlay::closed(environment.scale()),
@@ -350,8 +372,7 @@ impl DocketScreen {
             ledger,
             visible_cache: Vec::new(),
             visible_key: None,
-            history_cache: Vec::new(),
-            history_key: None,
+            history_lines: None,
             refreshes: 0,
             today: None,
             checkpointed: 0,
@@ -509,8 +530,15 @@ impl DocketScreen {
     /// 検索の欄の中の 1 点。道具の段の左端の欄で、計測の筋書き（`--bench`）が押す（Issue #111）。
     #[must_use]
     pub const fn search_point(&self) -> PixelPoint {
+        // 道具の行の左のタブ 2 つ（Issue #145）の右から。
+        let tabs = self
+            .px(VIEW_TAB_WIDTH_PX)
+            .saturating_add(self.px(MARGIN_PX))
+            .saturating_mul(2);
         PixelPoint::new(
-            self.px(MARGIN_PX).saturating_add(self.px(ROW_PX)),
+            self.px(MARGIN_PX)
+                .saturating_add(tabs)
+                .saturating_add(self.px(ROW_PX)),
             self.px(MARGIN_PX).saturating_add(self.px(ROW_PX / 2)),
         )
     }
@@ -630,20 +658,20 @@ impl DocketScreen {
             return Vec::new();
         }
         let key = (self.ledger.generation(), self.selected);
-        if self.history_key != Some(key) {
-            match self.read_history_lines() {
-                Ok(lines) => self.history_cache = lines,
-                Err(failure) => {
-                    self.history_cache = Vec::new();
-                    self.read_failure = Some(failure);
-                }
-            }
-            self.history_key = Some(key);
+        if self
+            .history_lines
+            .as_ref()
+            .is_none_or(|(known, _)| *known != key)
+        {
+            let lines = self.read_history_lines().unwrap_or_else(|failure| {
+                self.read_failure = Some(failure);
+                Vec::new()
+            });
+            self.history_lines = Some((key, lines));
         }
-        if self.history.is_shown() {
-            self.history_cache.clone()
-        } else {
-            Vec::new()
+        match &self.history_lines {
+            Some((_, lines)) if self.history.is_shown() => lines.clone(),
+            Some(_) | None => Vec::new(),
         }
     }
 
@@ -734,6 +762,7 @@ impl DocketScreen {
             self.list_filter,
             self.today,
             self.kept.map(|(id, _)| id),
+            (self.view, self.me()),
         );
         if self.visible_key.as_ref() != Some(&key) {
             self.visible_cache = self.visible_ids();
@@ -744,10 +773,12 @@ impl DocketScreen {
 
     /// 絞り込みの札と検索に合う課題。足したばかりの課題は札の外でも残す（Issue #124）。
     fn visible_ids(&self) -> Vec<ItemId> {
+        let me = self.me();
         self.ledger
             .docket()
             .live_items()
             .into_iter()
+            .filter(|item| self.view.matches(item, &me))
             .filter(|item| {
                 self.kept.is_some_and(|(id, _)| id == item.id())
                     || self.list_filter.matches(item, self.today)
@@ -757,37 +788,56 @@ impl DocketScreen {
             .collect()
     }
 
-    /// 札ごとの件数（検索だけを当てた数・札どうしは影響しない）と、最後に台帳の全件。鍵が同じならキャッシュ。
-    fn cached_counts(&mut self) -> [usize; 6] {
+    /// 札ごとの件数（タブの中で検索だけを当てた数・札どうしは影響しない）・タブの中の全件・台帳の全件・
+    /// タブごとの未完了の件数。鍵が同じならキャッシュ。
+    fn cached_counts(&mut self) -> ListCounts {
+        let me = self.me();
         let key = (
             self.ledger.generation(),
             String::from(self.search.text()),
             self.today,
+            (self.view, me.clone()),
         );
         if let Some((known, counts)) = &self.counts
             && *known == key
         {
             return *counts;
         }
-        {
-            let items = self.ledger.docket().live_items();
-            let searched: Vec<&Item> = items
+        let items = self.ledger.docket().live_items();
+        let in_view: Vec<&Item> = items
+            .iter()
+            .copied()
+            .filter(|item| self.view.matches(item, &me))
+            .collect();
+        let searched: Vec<&Item> = in_view
+            .iter()
+            .copied()
+            .filter(|item| self.matches_search(item))
+            .collect();
+        let by_filter = ListFilter::ALL.map(|filter| {
+            searched
                 .iter()
-                .copied()
-                .filter(|item| self.matches_search(item))
-                .collect();
-            let mut counts = ListFilter::ALL.map(|filter| {
-                searched
-                    .iter()
-                    .filter(|item| filter.matches(item, self.today))
-                    .count()
-            });
-            let total = items.len();
-            let all: [usize; 6] =
-                core::array::from_fn(|index| counts.get_mut(index).map_or(total, |count| *count));
-            self.counts = Some((key, all));
-            all
-        }
+                .filter(|item| filter.matches(item, self.today))
+                .count()
+        });
+        let open_by_tab = ViewTab::ALL.map(|tab| {
+            items
+                .iter()
+                .filter(|item| tab.matches(item, &me) && !item.state().is_closed())
+                .count()
+        });
+        let counts = ListCounts::new(by_filter, (in_view.len(), items.len()), open_by_tab);
+        self.counts = Some((key, counts));
+        counts
+    }
+
+    /// 自分のアカウントの名前（台帳の `keys/` の名前・無ければアカウントの名前）。「自分の担当」はこれと比べる。
+    fn me(&self) -> String {
+        let account = self.ledger.account();
+        self.names
+            .iter()
+            .find(|(id, _)| *id == account.id())
+            .map_or_else(|| String::from(account.name()), |(_, name)| name.clone())
     }
 
     /// 検索欄が空か、題名か本文かラベルに含まれる。
@@ -816,9 +866,12 @@ impl DocketScreen {
     }
 
     /// 道具の行: 検索・絞り込みの札 5 つ・件数・「設定」・「＋ 課題を追加」（Issue #124）。
-    fn toolbar_widths(&self) -> [ColumnWidth; 9] {
+    fn toolbar_widths(&self) -> [ColumnWidth; 11] {
         let chip = ColumnWidth::Fixed(self.px(FILTER_CHIP_WIDTH_PX));
+        let tab = ColumnWidth::Fixed(self.px(VIEW_TAB_WIDTH_PX));
         [
+            tab,
+            tab,
             ColumnWidth::Fill,
             chip,
             chip,
@@ -1071,7 +1124,11 @@ impl DocketScreen {
         let counts = [
             None,
             Some(item.attachments().len()),
-            Some(self.history_cache.len()),
+            Some(
+                self.history_lines
+                    .as_ref()
+                    .map_or(0, |(_, lines)| lines.len()),
+            ),
         ];
         self.probe_section_tabs(detail.tabs(), counts, commands);
         self.probe_overlays(detail, assignee_focused, commands);
@@ -1497,7 +1554,10 @@ impl DocketScreen {
             }
             1 => self.start_draft(),
             2 => self.choose_filter(ListFilter::Unassigned),
-            3 => self.choose_filter(ListFilter::Open),
+            3 => {
+                self.choose_view(ViewTab::Mine);
+                self.choose_filter(ListFilter::Open);
+            }
             4 => self.choose_filter(ListFilter::Overdue),
             _ => self.choose_filter(ListFilter::Review),
         }
@@ -2219,10 +2279,7 @@ impl DocketScreen {
             self.help_go(step);
             return true;
         }
-        if let Some(filter) = Self::index_in(id, FILTER_CHIP, ListFilter::ALL.len())
-            .and_then(|index| ListFilter::ALL.get(index).copied())
-        {
-            self.choose_filter(filter);
+        if self.press_list_choice(id) {
             return true;
         }
         if let Some(index) = Self::index_in(id, STATE_CHIP, ItemState::ALL.len()) {
@@ -2234,6 +2291,23 @@ impl DocketScreen {
         {
             self.section = section;
             self.sync_sections();
+            return true;
+        }
+        false
+    }
+
+    /// 共有ビューのタブか絞り込みの札を鍵で押した。それ以外は偽。
+    fn press_list_choice(&mut self, id: WidgetId) -> bool {
+        if let Some(view) = Self::index_in(id, VIEW_TAB, ViewTab::ALL.len())
+            .and_then(|index| ViewTab::ALL.get(index).copied())
+        {
+            self.choose_view(view);
+            return true;
+        }
+        if let Some(filter) = Self::index_in(id, FILTER_CHIP, ListFilter::ALL.len())
+            .and_then(|index| ListFilter::ALL.get(index).copied())
+        {
+            self.choose_filter(filter);
             return true;
         }
         false
@@ -2362,7 +2436,7 @@ impl DocketScreen {
             Ok(fresh) => {
                 self.read_failure = self.ledger.absorb(fresh, self.ports.journal()).err();
                 self.names = self.ports.journal().names();
-                self.history_key = None;
+                self.history_lines = None;
             }
             Err(failure) => self.read_failure = Some(failure),
         }
@@ -2594,6 +2668,8 @@ impl DocketScreen {
         commands: &mut Vec<DrawCommand>,
     ) {
         let [
+            all_tab,
+            mine_tab,
             search_rect,
             open_rect,
             overdue_rect,
@@ -2604,6 +2680,7 @@ impl DocketScreen {
             settings_rect,
             add_rect,
         ] = Self::rects(toolbar);
+        self.probe_view_tabs([all_tab, mine_tab], commands);
         let search = self.interaction.probe(SEARCH, search_rect, true);
         commands.extend(text_field::text_field(
             search_rect,
@@ -2629,7 +2706,7 @@ impl DocketScreen {
             ],
             commands,
         );
-        let total = counts.get(5).copied().unwrap_or(0);
+        let total = counts.in_view();
         let showing = self
             .word(Word::Toolbar(ToolbarWord::Showing))
             .replace("{shown}", &format!("{shown}"))
@@ -2644,12 +2721,38 @@ impl DocketScreen {
         self.probe_toolbar_buttons(settings_rect, add_rect, commands);
     }
 
-    /// 絞り込みの札 5 つ。選んだ札は印と縁で示し、件数を添える。件数（と最後に全件）を返す。
+    /// 共有ビューのタブ（下線・未完了の件数）。札・検索・件数はタブの中で効く（Issue #145）。
+    fn probe_view_tabs(&mut self, rects: [PixelRect; 2], commands: &mut Vec<DrawCommand>) {
+        let counts = self.cached_counts();
+        let underline = self.px(tab::UNDERLINE_PX);
+        for (index, (rect, view)) in rects.into_iter().zip(ViewTab::ALL).enumerate() {
+            let id = VIEW_TAB.indexed(u32::try_from(index).unwrap_or(u32::MAX));
+            let response = self.interaction.probe(id, rect, true);
+            if response.clicked() {
+                self.choose_view(view);
+            }
+            let label = format!("{} {}", self.word(view.word()), counts.open_in_tab(index));
+            commands.extend(tab::tab(
+                rect,
+                &label,
+                (self.view == view, underline),
+                response,
+            ));
+        }
+    }
+
+    /// タブを選ぶ。足したばかりの課題を残すのも、ここで終わる。
+    fn choose_view(&mut self, view: ViewTab) {
+        self.view = view;
+        self.kept = None;
+    }
+
+    /// 絞り込みの札 5 つ。選んだ札は印と縁で示し、件数を添える。件数を返す。
     fn probe_filter_chips(
         &mut self,
         chips: [PixelRect; 5],
         commands: &mut Vec<DrawCommand>,
-    ) -> [usize; 6] {
+    ) -> ListCounts {
         let counts = self.cached_counts();
         for (index, (rect, filter)) in chips.into_iter().zip(ListFilter::ALL).enumerate() {
             let id = FILTER_CHIP.indexed(u32::try_from(index).unwrap_or(u32::MAX));
@@ -2658,7 +2761,7 @@ impl DocketScreen {
                 self.choose_filter(filter);
             }
             let chosen = self.list_filter == filter;
-            let count = counts.get(index).copied().unwrap_or(0);
+            let count = counts.filter(index);
             let label = if chosen {
                 format!("{CHOSEN_MARK} {} {count}", self.word(filter.word()))
             } else {
@@ -2897,10 +3000,13 @@ impl DocketScreen {
     /// 0 件の案内（Issue #126）。理由（台帳が空・検索・絞り込み）ごとに文言と次の一手を表の中央に出す。
     fn probe_empty(&mut self, body: PixelRect, commands: &mut Vec<DrawCommand>) {
         let counts = self.cached_counts();
-        let total = counts.get(5).copied().unwrap_or(0);
-        let searched = counts.get(4).copied().unwrap_or(0);
+        let searched = counts.searched();
         let search = String::from(self.search.text());
-        let case = EmptyCase::of(total, searched, !search.is_empty(), self.list_filter);
+        let case = EmptyCase::of(
+            (counts.total(), counts.in_view(), searched),
+            !search.is_empty(),
+            self.list_filter,
+        );
         let row = self.px(ROW_PX);
         let top = body
             .y()
@@ -2953,6 +3059,10 @@ impl DocketScreen {
                 word(ToolbarWord::NoMatchSearch).replace("{search}", search),
                 word(ToolbarWord::SearchedWhere),
             ),
+            EmptyCase::Mine => (
+                word(ToolbarWord::NoMine).replace("{name}", &self.me()),
+                String::new(),
+            ),
             EmptyCase::Filter(filter) => (
                 word(ToolbarWord::NoMatchFilter)
                     .replace("{filter}", self.word(filter.word()))
@@ -2976,6 +3086,7 @@ impl DocketScreen {
                     self.px(ADD_FROM_SEARCH_WIDTH_PX),
                 ),
             ],
+            EmptyCase::Mine => alloc::vec![(SHOW_ALL, word(ToolbarWord::ShowAll), add)],
             EmptyCase::Filter(_) => {
                 alloc::vec![(EMPTY_CLEAR_FILTER, word(ToolbarWord::ClearFilter), add)]
             }
@@ -2989,6 +3100,7 @@ impl DocketScreen {
             EMPTY_CLEAR_FILTER => self.clear_filter(),
             CLEAR_SEARCH => self.clear_search(),
             ADD_FROM_SEARCH => self.add_from_search(),
+            SHOW_ALL => self.choose_view(ViewTab::All),
             _ => {}
         }
     }
@@ -3192,11 +3304,13 @@ mod tests {
     const FIRST_ROW_Y: u16 = 86;
     const SECOND_ROW_Y: u16 = 114;
     const TOOLBAR_Y: u16 = 20;
-    /// 道具の段（1360 幅）: 検索 8..367・札 376..479 / 488..591 / 600..703 / 712..815 / 824..927・件数 936..1115・
-    /// 設定 1124..1203・追加 1212..1351。
-    const SEARCH_X: u16 = 50;
+    /// 道具の段（1360 幅）: タブ 8..107 / 116..215・検索 224..387・札 396..499 / 508..611 / 620..723 / 732..835 /
+    /// 844..947・件数 956..1115・設定 1124..1203・追加 1212..1351。
+    const ALL_TAB_X: u16 = 57;
+    const MINE_TAB_X: u16 = 165;
+    const SEARCH_X: u16 = 300;
     /// 絞り込みの札（未完了・期限超過・未割り当て・確認待ち・すべて）の中央。
-    const FILTER_XS: [u16; 5] = [427, 539, 651, 763, 875];
+    const FILTER_XS: [u16; 5] = [447, 559, 671, 783, 895];
     const SETTINGS_X: u16 = 1163;
     const ADD_X: u16 = 1281;
     /// 設定のペイン: 見出しと「閉じる」44..72（1282..1351）・「自分だけ」80..108・言語 116..144（箱 1052..1273・
@@ -4391,14 +4505,14 @@ mod tests {
     #[test]
     fn delete_by_key_needs_the_focus_and_a_selection() {
         let (mut screen, spy) = screen(2);
-        // 道具の行の 8 つ（検索・札 5・設定・追加）の後。選んでいなければ「…」も「削除」も無い。
-        keys(&mut screen, &[KeyIntent::Tab; 9]);
+        // 道具の行の 10（タブ 2・検索・札 5・設定・追加）の後。選んでいなければ「…」も「削除」も無い。
+        keys(&mut screen, &[KeyIntent::Tab; 11]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 0);
         click(&mut screen, 100, FIRST_ROW_Y);
         keys(&mut screen, &[KeyIntent::Escape]);
-        // 道具の行 8・題名・状態の札 6・欄 3・区画のタブ 3 の後が「…」。Enter で開き、Tab で「削除」へ。
-        keys(&mut screen, &[KeyIntent::Tab; 22]);
+        // 道具の行 10・題名・状態の札 6・欄 3・区画のタブ 3 の後が「…」。Enter で開き、Tab で「削除」へ。
+        keys(&mut screen, &[KeyIntent::Tab; 24]);
         keys(&mut screen, &[KeyIntent::Enter]);
         assert_eq!(spy.written.borrow().len(), 0);
         keys(&mut screen, &[KeyIntent::Tab]);
@@ -4786,7 +4900,8 @@ mod tests {
     fn tab_moves_focus_through_the_toolbar_and_the_editor() {
         let (mut screen, _) = screen(3);
         idle(&mut screen);
-        keys(&mut screen, &[KeyIntent::Tab]);
+        // 道具の行は左のタブ 2 つの次が検索。
+        keys(&mut screen, &[KeyIntent::Tab; 3]);
         keys(&mut screen, &[KeyIntent::Char('a')]);
         assert_eq!(screen.search_text(), "a");
         // 検索の次は絞り込みの札。Enter で選ぶ。
@@ -5106,6 +5221,78 @@ mod tests {
             screen.settings().order().text(),
             "number,title,assignee,due,opened,closed,labels"
         );
+    }
+
+    /// 他人の 4 件（1 は対応中・2 は完了・3 は未着手・4 は対応中）のうち、1 と 2 の担当を自分（`me`）、3 を `other` にする。
+    fn screen_with_mine() -> DocketScreen {
+        let journal = FakeJournal::default();
+        journal.pending.borrow_mut().extend(others_items(4));
+        for (number, name) in [(1, "me"), (2, "me"), (3, "other")] {
+            journal.pending.borrow_mut().push(other_op(
+                100_u64.saturating_add(number),
+                OpKind::Set {
+                    item: ItemId::new(OTHER, u32::try_from(number).unwrap_or(0)),
+                    value: FieldValue::Assignee(String::from(name)),
+                },
+            ));
+        }
+        screen_in(journal, Environment::new(None), false).0
+    }
+
+    #[test]
+    fn the_mine_tab_shows_my_issues_and_the_chips_and_counts_work_inside_it() {
+        let mut screen = screen_with_mine();
+        let shown = texts(&idle(&mut screen));
+        // タブの数は未完了の件数（全件は 1・3・4、自分の担当は 1）。
+        for label in [
+            "All issues 3",
+            "Assigned to me 1",
+            "● Open 3",
+            "Showing 3 of 4",
+        ] {
+            assert!(shown.iter().any(|text| text == label), "{label}: {shown:?}");
+        }
+        click(&mut screen, MINE_TAB_X, TOOLBAR_Y);
+        let ids = |listed: &DocketScreen| {
+            listed
+                .visible_items()
+                .iter()
+                .map(|item| item.id().sequence())
+                .collect::<Vec<_>>()
+        };
+        assert_eq!(ids(&screen), [1]);
+        let mine = texts(&idle(&mut screen));
+        for label in ["● Open 1", "All 2", "Showing 1 of 2"] {
+            assert!(mine.iter().any(|text| text == label), "{label}: {mine:?}");
+        }
+        // 札「すべて」はタブの中のすべて（完了の 2 も）。
+        click(&mut screen, FILTER_XS[4], TOOLBAR_Y);
+        assert_eq!(ids(&screen), [1, 2]);
+        // 鍵でも戻せる（タブにフォーカスがある）: 左隣の「全件」へ Shift+Tab と Enter。
+        click(&mut screen, MINE_TAB_X, TOOLBAR_Y);
+        keys(&mut screen, &[KeyIntent::BackTab, KeyIntent::Enter]);
+        assert_eq!(ids(&screen), [1, 2, 3, 4]);
+    }
+
+    #[test]
+    fn an_empty_mine_tab_names_me_and_offers_all_issues() {
+        let (mut screen, _) = screen(3);
+        click(&mut screen, MINE_TAB_X, TOOLBAR_Y);
+        let frame = idle(&mut screen);
+        let shown = texts(&frame);
+        assert!(
+            shown
+                .iter()
+                .any(|text| text == "Nothing is assigned to “me”"),
+            "{shown:?}"
+        );
+        let (x, y) = center_of(&frame, "Show all issues");
+        click(&mut screen, x, y);
+        assert_eq!(screen.visible_items().len(), 3);
+        click(&mut screen, MINE_TAB_X, TOOLBAR_Y);
+        assert!(screen.visible_items().is_empty());
+        click(&mut screen, ALL_TAB_X, TOOLBAR_Y);
+        assert_eq!(screen.visible_items().len(), 3);
     }
 
     #[test]

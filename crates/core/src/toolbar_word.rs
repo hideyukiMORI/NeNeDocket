@@ -62,4 +62,12 @@ pub enum ToolbarWord {
     Stamps,
     /// 期限の欄が空のときの書き方の案内（Issue #133）。
     DueHint,
+    /// 共有ビューのタブ「全件」（Issue #145）。
+    ViewAll,
+    /// 共有ビューのタブ「自分の担当」。
+    ViewMine,
+    /// 「自分の担当」で 0 件のとき（`{name}` を置き換える）。
+    NoMine,
+    /// 「全件を見る」。
+    ShowAll,
 }
