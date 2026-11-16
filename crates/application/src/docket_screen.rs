@@ -2340,10 +2340,14 @@ impl DocketScreen {
     }
 
     /// 台帳が変わった後、編集欄をいまの値に合わせる。`force` でなければ入力中の欄は触らない。
+    /// フォーカスがあっても、読み込んだ時点の字のままの欄（打っていない欄）は合わせる（Issue #91）。
     fn reload_editor(&mut self, force: bool) {
         let item = self.selected_item();
         for slot in EditSlot::ALL {
-            if force || self.interaction.focus() != Some(Self::slot_id(slot)) {
+            if force
+                || self.interaction.focus() != Some(Self::slot_id(slot))
+                || self.untouched(slot)
+            {
                 *self.slot_mut(slot) = TextEdit::showing(
                     &item
                         .as_ref()
@@ -2367,7 +2371,15 @@ impl DocketScreen {
         }
     }
 
+    /// 欄の字が、読み込んだ時点の課題の字のままか（打っていない）。読み込んだ課題が無ければ偽。
+    fn untouched(&self, slot: EditSlot) -> bool {
+        self.base
+            .as_ref()
+            .is_some_and(|base| self.slot(slot).text() == slot.text_of(base))
+    }
+
     /// 欄が課題と違えば `Set` を作る。期限の形が違えば追記せず示す（FR-014）。
+    /// 欄の値が読み込んだ時点の値のままなら打っていないので作らない。他人の変更を戻さない（FR-008・Issue #91）。
     fn commit_slot(&mut self, slot: EditSlot) {
         let Some(item) = self.selected_item() else {
             return;
@@ -2380,7 +2392,11 @@ impl DocketScreen {
         if slot == EditSlot::Due {
             self.bad_due = false;
         }
-        if item.value_of(slot.field()) != value {
+        let unedited = self
+            .base
+            .as_ref()
+            .is_some_and(|base| base.value_of(slot.field()) == value);
+        if !unedited && item.value_of(slot.field()) != value {
             let changed_by_others = self
                 .base
                 .as_ref()
@@ -4686,6 +4702,29 @@ mod tests {
         click(&mut screen, TITLE_X, TITLE_Y);
         keys(&mut screen, &chars("!"));
         keys(&mut screen, &[KeyIntent::Enter]);
+        assert!(screen.notices().is_empty());
+    }
+
+    #[test]
+    fn an_untouched_field_keeps_a_change_that_arrived_while_focused() {
+        let (mut screen, spy) = screen(2);
+        let item = ItemId::new(OTHER, 1);
+        click(&mut screen, 100, FIRST_ROW_Y);
+        // 題名の欄を押すだけで打たない。
+        click(&mut screen, TITLE_X, TITLE_Y);
+        spy.pending.borrow_mut().push(other_op(
+            50,
+            OpKind::Set {
+                item,
+                value: FieldValue::Title(String::from("theirs")),
+            },
+        ));
+        screen.step(&FrameInput::new(BOUNDS, PointerInput::absent()).with_refresh());
+        assert_eq!(screen.slot(EditSlot::Title).text(), "theirs");
+        let written = spy.written.borrow().len();
+        click(&mut screen, 100, SECOND_ROW_Y);
+        assert_eq!(title_of(&screen, item), "theirs");
+        assert_eq!(spy.written.borrow().len(), written);
         assert!(screen.notices().is_empty());
     }
 
