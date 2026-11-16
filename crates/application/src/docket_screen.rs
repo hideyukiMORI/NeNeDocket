@@ -69,6 +69,7 @@ use crate::detail_section::DetailSection;
 use crate::docket_frame::DocketFrame;
 use crate::drag_target::DragTarget;
 use crate::edit_slot::EditSlot;
+use crate::empty_case::EmptyCase;
 use crate::environment::Environment;
 use crate::frame_input::FrameInput;
 use crate::help_overlay::HelpOverlay;
@@ -129,6 +130,16 @@ const SETTINGS_CLOSE: WidgetId = WidgetId::new(37);
 /// 設定のペインの表示言語の「適用」（Issue #125・WCAG 3.2.2）。
 const LANGUAGE_APPLY: WidgetId = WidgetId::new(38);
 // 39・40・700〜 は F1 の案内（`help_overlay`）。
+/// 0 件の案内の「＋ 課題を追加」（台帳が空・Issue #126）。
+const EMPTY_ADD: WidgetId = WidgetId::new(41);
+/// 0 件の案内の「絞り込みを外す」（札が全部を隠している）。
+const EMPTY_CLEAR_FILTER: WidgetId = WidgetId::new(42);
+/// 0 件の案内の「検索を消す」。
+const CLEAR_SEARCH: WidgetId = WidgetId::new(43);
+/// 0 件の案内の「『◯◯』を題名にして追加」。
+const ADD_FROM_SEARCH: WidgetId = WidgetId::new(44);
+/// 0 件の案内のボタン。
+const EMPTY_BUTTONS: [WidgetId; 4] = [EMPTY_ADD, EMPTY_CLEAR_FILTER, CLEAR_SEARCH, ADD_FROM_SEARCH];
 /// 設定のペインの列の出し入れ（[`SETTABLE_COLUMNS`] の順の番号を足す）。
 const COLUMN_TOGGLE: WidgetId = WidgetId::new(600);
 /// 状態の札（詳細のペイン・`ItemState::ALL` の順の番号を足す・Issue #122）。
@@ -156,6 +167,8 @@ const SHOWING_WIDTH_PX: u16 = 180;
 const SETTINGS_WIDTH_PX: u16 = 80;
 /// 「＋ 課題を追加」。
 const ADD_WIDTH_PX: u16 = 140;
+/// 0 件の案内の「『◯◯』を題名にして追加」（検索の字が入るので広く）。
+const ADD_FROM_SEARCH_WIDTH_PX: u16 = 280;
 /// 設定で出し入れできる列（番号と題名は常に出す）。
 const SETTABLE_COLUMNS: [TableColumn; 8] = [
     TableColumn::State,
@@ -1855,6 +1868,7 @@ impl DocketScreen {
                 let action = self.attachments.open_key();
                 self.act_on_attachments(action);
             }
+            id if pressed && EMPTY_BUTTONS.contains(&id) => self.press_empty(id),
             ADD if key == KeyIntent::Enter => self.start_draft(),
             DELETE if key == KeyIntent::Enter => self.delete_item(),
             _ => return false,
@@ -2387,19 +2401,40 @@ impl DocketScreen {
         else {
             return;
         };
+        self.add_titled(title);
+        self.mode = PaneMode::Draft(TextEdit::empty());
+    }
+
+    /// 題名だけの課題を足す（作る ＋ 題名）。絞り込みの外なら残して知らせる。
+    fn add_titled(&mut self, title: String) -> ItemId {
         let id = self.ledger.fresh_item_id();
         self.compose(OpKind::Create(id));
         self.compose(OpKind::Set {
             item: id,
             value: FieldValue::Title(title),
         });
-        self.mode = PaneMode::Draft(TextEdit::empty());
         let shown = self
             .ledger
             .docket()
             .item(id)
             .is_some_and(|item| self.list_filter.matches(item, self.today));
         self.kept = Some((id, !shown));
+        id
+    }
+
+    /// 「検索を消す」（0 件の案内）。
+    fn clear_search(&mut self) {
+        self.search = TextEdit::empty();
+    }
+
+    /// 「『◯◯』を題名にして追加」（0 件の案内）。足した課題を選んで、担当や期限をすぐ書けるようにする。
+    fn add_from_search(&mut self) {
+        let title = self.search.text().trim().to_owned();
+        if title.is_empty() {
+            return;
+        }
+        let id = self.add_titled(title);
+        self.select(id);
     }
 
     /// 下書きを捨てる（何も残らない）。
@@ -2502,6 +2537,108 @@ impl DocketScreen {
         commands.push(DrawCommand::Unclip);
         if let Some(id) = chosen {
             self.select(id);
+        }
+        if visible.is_empty() {
+            self.probe_empty(table.body(), commands);
+        }
+    }
+
+    /// 0 件の案内（Issue #126）。理由（台帳が空・検索・絞り込み）ごとに文言と次の一手を表の中央に出す。
+    fn probe_empty(&mut self, body: PixelRect, commands: &mut Vec<DrawCommand>) {
+        let counts = self.cached_counts();
+        let total = counts.get(5).copied().unwrap_or(0);
+        let searched = counts.get(4).copied().unwrap_or(0);
+        let search = String::from(self.search.text());
+        let case = EmptyCase::of(total, searched, !search.is_empty(), self.list_filter);
+        let row = self.px(ROW_PX);
+        let top = body
+            .y()
+            .saturating_add(body.height().saturating_sub(row.saturating_mul(3)) / 2);
+        let (title, text) = self.empty_words(case, &search, searched);
+        for (line, (words, paint)) in [(title, Paint::Ink), (text, Paint::Muted)]
+            .into_iter()
+            .enumerate()
+        {
+            let offset = row.saturating_mul(u16::try_from(line).unwrap_or(0));
+            commands.push(DrawCommand::Text {
+                rect: PixelRect::new(body.x(), top.saturating_add(offset), body.width(), row),
+                text: words,
+                align: TextAlign::Center,
+                paint,
+                caret: None,
+            });
+        }
+        let buttons = self.empty_buttons(case, &search);
+        let gap = self.px(MARGIN_PX);
+        let width = buttons
+            .iter()
+            .fold(0_u16, |sum, (_, _, w)| {
+                sum.saturating_add(*w).saturating_add(gap)
+            })
+            .saturating_sub(gap);
+        let mut x = body
+            .x()
+            .saturating_add(body.width().saturating_sub(width) / 2);
+        let y = top
+            .saturating_add(row.saturating_mul(2))
+            .saturating_add(gap);
+        for (id, label, w) in buttons {
+            let rect = PixelRect::new(x, y, w, row);
+            let response = self.interaction.probe(id, rect, true);
+            if response.clicked() {
+                self.press_empty(id);
+            }
+            commands.extend(button::button(rect, &label, response));
+            x = x.saturating_add(w).saturating_add(gap);
+        }
+    }
+
+    /// 0 件の案内の見出しと添え書き。`searched` は検索だけを当てた件数（絞り込みを外せば出る数）。
+    fn empty_words(&self, case: EmptyCase, search: &str, searched: usize) -> (String, String) {
+        let word = |toolbar| String::from(self.word(Word::Toolbar(toolbar)));
+        match case {
+            EmptyCase::Docket => (word(ToolbarWord::EmptyTitle), word(ToolbarWord::EmptyText)),
+            EmptyCase::Search => (
+                word(ToolbarWord::NoMatchSearch).replace("{search}", search),
+                word(ToolbarWord::SearchedWhere),
+            ),
+            EmptyCase::Filter(filter) => (
+                word(ToolbarWord::NoMatchFilter)
+                    .replace("{filter}", self.word(filter.word()))
+                    .replace("{total}", &format!("{searched}")),
+                String::new(),
+            ),
+        }
+    }
+
+    /// 0 件の案内の次の一手（ID・文言・幅）。
+    fn empty_buttons(&self, case: EmptyCase, search: &str) -> Vec<(WidgetId, String, u16)> {
+        let word = |toolbar| String::from(self.word(Word::Toolbar(toolbar)));
+        let add = self.px(ADD_WIDTH_PX);
+        match case {
+            EmptyCase::Docket => alloc::vec![(EMPTY_ADD, word(ToolbarWord::AddItem), add)],
+            EmptyCase::Search => alloc::vec![
+                (CLEAR_SEARCH, word(ToolbarWord::ClearSearch), add),
+                (
+                    ADD_FROM_SEARCH,
+                    word(ToolbarWord::AddFromSearch).replace("{search}", search),
+                    self.px(ADD_FROM_SEARCH_WIDTH_PX),
+                ),
+            ],
+            EmptyCase::Filter(_) => {
+                alloc::vec![(EMPTY_CLEAR_FILTER, word(ToolbarWord::ClearFilter), add)]
+            }
+        }
+    }
+
+    /// 0 件の案内のボタンを押した（ポインタでも鍵でも）。
+    fn press_empty(&mut self, id: WidgetId) {
+        match id {
+            EMPTY_ADD => self.start_draft(),
+            EMPTY_CLEAR_FILTER => self.clear_filter(),
+            CLEAR_SEARCH => self.clear_search(),
+            ADD_FROM_SEARCH => self.add_from_search(),
+            _ => {}
         }
     }
 
@@ -3478,6 +3615,145 @@ mod tests {
                 .iter()
                 .any(|text| text == "Clear filter")
         );
+    }
+
+    /// 文言 `label` を描いた矩形の中央（0 件の案内のボタンを押す）。
+    fn center_of(frame: &DocketFrame, label: &str) -> (u16, u16) {
+        frame
+            .commands()
+            .iter()
+            .find_map(|command| match command {
+                DrawCommand::Text { rect, text, .. } if text == label => Some((
+                    rect.x().saturating_add(rect.width() / 2),
+                    rect.y().saturating_add(rect.height() / 2),
+                )),
+                DrawCommand::Text { .. }
+                | DrawCommand::Fill { .. }
+                | DrawCommand::Stroke { .. }
+                | DrawCommand::Clip(_)
+                | DrawCommand::Image { .. }
+                | DrawCommand::Unclip => None,
+            })
+            .unwrap_or((0, 0))
+    }
+
+    #[test]
+    fn an_empty_docket_says_so_and_its_button_opens_the_draft() {
+        let (mut screen, spy) = screen(0);
+        let frame = idle(&mut screen);
+        let shown = texts(&frame);
+        assert!(
+            shown.iter().any(|text| text == "No issues yet"),
+            "{shown:?}"
+        );
+        assert!(
+            shown
+                .iter()
+                .any(|text| text.starts_with("Add what you notice"))
+        );
+        // 道具の行の「＋ 課題を追加」と、案内の中の同じボタン。
+        let adds = shown.iter().filter(|text| *text == "+ New issue").count();
+        assert_eq!(adds, 2, "{shown:?}");
+        let (x, y) = frame
+            .commands()
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::Text { rect, text, .. } if text == "+ New issue" => {
+                    Some((rect.x().saturating_add(rect.width() / 2), rect.y()))
+                }
+                DrawCommand::Text { .. }
+                | DrawCommand::Fill { .. }
+                | DrawCommand::Stroke { .. }
+                | DrawCommand::Clip(_)
+                | DrawCommand::Image { .. }
+                | DrawCommand::Unclip => None,
+            })
+            .max_by_key(|(_, y)| *y)
+            .unwrap_or((0, 0));
+        click(&mut screen, x, y.saturating_add(4));
+        assert_eq!(screen.draft_text(), Some(""));
+        assert!(spy.written.borrow().is_empty());
+        // 1 件足せば案内は消える。
+        keys(&mut screen, &chars("First"));
+        keys(&mut screen, &[KeyIntent::Enter]);
+        assert!(
+            !texts(&idle(&mut screen))
+                .iter()
+                .any(|text| text == "No issues yet")
+        );
+    }
+
+    #[test]
+    fn a_filter_that_hides_everything_names_itself_and_the_total_and_clears_by_its_button() {
+        let journal = FakeJournal::default();
+        journal.pending.borrow_mut().extend(others_items(3));
+        let (mut screen, _) = screen_in(journal, Environment::new(None), false);
+        click(&mut screen, FILTER_XS[3], TOOLBAR_Y);
+        let frame = idle(&mut screen);
+        let shown = texts(&frame);
+        let line = "Nothing matches “In review” (3 in total)";
+        assert!(shown.iter().any(|text| text == line), "{shown:?}");
+        let (x, y) = center_of(&frame, "Clear filter");
+        click(&mut screen, x, y);
+        assert_eq!(screen.list_filter(), ListFilter::All);
+        assert_eq!(screen.visible_items().len(), 3);
+        assert!(!texts(&idle(&mut screen)).iter().any(|text| text == line));
+    }
+
+    #[test]
+    fn a_search_that_finds_nothing_clears_or_adds_the_words_as_a_new_issue() {
+        let (mut screen, spy) = screen(3);
+        click(&mut screen, SEARCH_X, TOOLBAR_Y);
+        keys(&mut screen, &chars("printer"));
+        let frame = idle(&mut screen);
+        let shown = texts(&frame);
+        assert!(
+            shown
+                .iter()
+                .any(|text| text == "No issue contains “printer”"),
+            "{shown:?}"
+        );
+        assert!(shown.iter().any(|text| text.starts_with("Searched titles")));
+        let (x, y) = center_of(&frame, "Clear search");
+        click(&mut screen, x, y);
+        assert_eq!(screen.search_text(), "");
+        assert_eq!(screen.visible_items().len(), 3);
+        // もう一度探して、その字を題名にして足す。足した課題は選ばれ、検索に合うので表に出る。
+        click(&mut screen, SEARCH_X, TOOLBAR_Y);
+        keys(&mut screen, &chars("printer"));
+        let again = idle(&mut screen);
+        let (add_x, add_y) = center_of(&again, "Add “printer” as a new issue");
+        click(&mut screen, add_x, add_y);
+        let mine = ItemId::new(ME, 1);
+        assert_eq!(title_of(&screen, mine), "printer");
+        assert_eq!(spy.written.borrow().len(), 2);
+        assert_eq!(screen.selected(), Some(mine));
+        assert_eq!(
+            screen
+                .visible_items()
+                .iter()
+                .map(|item| item.id())
+                .collect::<Vec<_>>(),
+            [mine]
+        );
+    }
+
+    #[test]
+    fn a_search_that_matches_only_hidden_issues_points_at_the_filter() {
+        let journal = FakeJournal::default();
+        journal.pending.borrow_mut().extend(others_items(3));
+        let (mut screen, _) = screen_in(journal, Environment::new(None), false);
+        click(&mut screen, SEARCH_X, TOOLBAR_Y);
+        // 「Issue #2」は完了なので「未完了」の札が隠す。
+        keys(&mut screen, &chars("#2"));
+        let shown = texts(&idle(&mut screen));
+        assert!(
+            shown
+                .iter()
+                .any(|text| text == "Nothing matches “Open” (1 in total)"),
+            "{shown:?}"
+        );
+        assert!(!shown.iter().any(|text| text == "Clear search"));
     }
 
     #[test]
