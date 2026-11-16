@@ -99,6 +99,8 @@ use nene_docket_core::admin_command::AdminCommand;
 
 /// 表の一覧のキャッシュの鍵（台帳の世代・検索・絞り込みの札・今日・足したばかりの課題）。
 type VisibleKey = (u64, String, ListFilter, Option<Date>, Option<ItemId>);
+/// 改変した添付のキャッシュの鍵（台帳の世代・選んだ課題）。
+type AlteredKey = (u64, Option<ItemId>);
 /// 札の件数のキャッシュの鍵（台帳の世代・検索・今日）。
 type CountsKey = (u64, String, Option<Date>);
 
@@ -246,8 +248,7 @@ pub struct DocketScreen {
     members: MembersPane,
     attachments: AttachmentsPane,
     /// 写しが記録と合わない添付の連番のキャッシュと、その鍵（台帳の世代・選んだ課題）。ファイルを毎フレーム読まない。
-    altered_cache: Vec<u32>,
-    altered_key: Option<(u64, Option<ItemId>)>,
+    altered: Option<(AlteredKey, Vec<u32>)>,
     /// 選んだ添付の中身（文・表・パス）の覚え（FR-022）。
     view_cache: AttachmentViewCache,
     /// OS の既定のアプリで開けなかった（FR-022）。次に開けるまで示す。
@@ -285,6 +286,8 @@ pub struct DocketScreen {
     /// 台帳の `keys/` にある名前（履歴の「誰が」）。読み直しのたびに取り直す。
     names: Vec<(AccountId, String)>,
     write_failure: Option<JournalFailure>,
+    /// スナップショットを書けなかった（FR-014）。次に書けたら消す。自分の操作の書きの失敗とは別に持つ（Issue #100）。
+    checkpoint_failure: Option<JournalFailure>,
     read_failure: Option<JournalFailure>,
     admin_failure: Option<JournalFailure>,
     environment: Environment,
@@ -331,8 +334,7 @@ impl DocketScreen {
             body: BodyPane::hidden(),
             members: MembersPane::hidden(environment.scale()),
             attachments: AttachmentsPane::hidden(environment.scale()),
-            altered_cache: Vec::new(),
-            altered_key: None,
+            altered: None,
             view_cache: AttachmentViewCache::empty(),
             open_failure: None,
             base: None,
@@ -355,6 +357,7 @@ impl DocketScreen {
             ports,
             names,
             write_failure: None,
+            checkpoint_failure: None,
             read_failure,
             admin_failure: None,
             environment,
@@ -643,13 +646,20 @@ impl DocketScreen {
         self.checkpoint();
     }
 
-    /// スナップショットを書く。書けなければ示す（FR-014）。
+    /// スナップショットを書く。書けなければ示し、次の回にまた試す。書けたら知らせを消す（FR-014・Issue #100）。
+    /// 書けていない操作が残る間は試さない（store が拒む・嘘の読み位置を残さない）。その間の知らせは `write_failure` が出している。
     fn checkpoint(&mut self) {
-        let snapshot = self.ledger.snapshot();
-        if let Err(failure) = self.ports.journal_mut().checkpoint(&snapshot) {
-            self.write_failure = Some(failure);
+        if self.write_failure == Some(JournalFailure::Unwritable) {
+            return;
         }
-        self.checkpointed = self.ledger.generation();
+        let snapshot = self.ledger.snapshot();
+        match self.ports.journal_mut().checkpoint(&snapshot) {
+            Ok(()) => {
+                self.checkpoint_failure = None;
+                self.checkpointed = self.ledger.generation();
+            }
+            Err(failure) => self.checkpoint_failure = Some(failure),
+        }
     }
 
     /// 利用者に示す降格（FR-014）。無ければ空。
@@ -657,6 +667,11 @@ impl DocketScreen {
     pub fn notices(&self) -> Vec<Notice> {
         let mut notices = Vec::new();
         notices.extend(self.write_failure.map(Notice::Journal));
+        notices.extend(
+            self.checkpoint_failure
+                .filter(|failure| self.write_failure != Some(*failure))
+                .map(Notice::Journal),
+        );
         notices.extend(self.read_failure.map(Notice::Journal));
         notices.extend(self.admin_failure.map(Notice::Journal));
         notices.extend(self.open_failure.map(Notice::Open));
@@ -1641,12 +1656,15 @@ impl DocketScreen {
     /// 写しが記録と合わない添付の連番。鍵（台帳の世代・選んだ課題）が変わったときだけファイルを読む。
     fn altered_attachments(&mut self, item: Option<&Item>) -> Vec<u32> {
         let key = (self.ledger.generation(), self.selected);
-        if self.altered_key != Some(key) {
-            let journal = self.ports.journal();
-            self.altered_cache = item.map_or_else(Vec::new, |item| Self::altered_of(journal, item));
-            self.altered_key = Some(key);
+        match &self.altered {
+            Some((known, altered)) if *known == key => altered.clone(),
+            Some(_) | None => {
+                let journal = self.ports.journal();
+                let altered = item.map_or_else(Vec::new, |item| Self::altered_of(journal, item));
+                self.altered = Some((key, altered.clone()));
+                altered
+            }
         }
-        self.altered_cache.clone()
     }
 
     /// 課題の添付のうち、写しが記録と合わないものの連番。
@@ -2265,12 +2283,30 @@ impl DocketScreen {
     /// 一定の回数ごとに、台帳が変わっていればスナップショットを書く（ADR 0015）。
     fn refresh(&mut self) {
         self.absorb_others();
+        self.retry_unwritten();
         self.reload_editor(false);
         self.refreshes = self.refreshes.saturating_add(1);
         if self.refreshes.is_multiple_of(CHECKPOINT_EVERY)
             && self.checkpointed != self.ledger.generation()
         {
             self.checkpoint();
+        }
+    }
+
+    /// 書けていない操作を古い順に書き直し、通れば書けない知らせを消す（読み直しの刻み・Issue #99）。
+    /// 書くものが無ければ store は何もしない（健全な台帳では刻みの I/O は増えない）。
+    /// 他人のジャーナルを読めない間は試さない（切れた共有を開き直すと画面のスレッドが止まり得る・読みはスレッド・#75）。
+    fn retry_unwritten(&mut self) {
+        if self.read_failure.is_some() {
+            return;
+        }
+        match self.ports.journal_mut().sync() {
+            Ok(()) => {
+                self.write_failure = self
+                    .write_failure
+                    .filter(|failure| *failure != JournalFailure::Unwritable);
+            }
+            Err(failure) => self.write_failure = Some(failure),
         }
     }
 
@@ -3076,6 +3112,7 @@ impl DocketScreen {
 mod tests {
     use alloc::boxed::Box;
     use alloc::rc::Rc;
+    use core::cell::Cell;
     use core::cell::RefCell;
 
     use nene_docket_core::appearance::Appearance;
@@ -3166,6 +3203,10 @@ mod tests {
         synced: Rc<RefCell<usize>>,
         checkpoints: Rc<RefCell<Vec<LedgerSnapshot>>>,
         fail_write: bool,
+        /// 共有が切れている（途中で戻せる・Issue #100 / #99）。追記・同期・スナップショットを書けない。
+        outage: Rc<Cell<bool>>,
+        /// 切れている間に追記した操作（store の真似: 次の追記・同期で古い順に書く）。
+        unwritten: Rc<RefCell<Vec<Op>>>,
         fail_read: bool,
         rejected: usize,
         admission: AdmissionReport,
@@ -3181,6 +3222,8 @@ mod tests {
                 synced: Rc::default(),
                 checkpoints: Rc::default(),
                 fail_write: false,
+                outage: Rc::default(),
+                unwritten: Rc::default(),
                 fail_read: false,
                 rejected: 0,
                 admission: AdmissionReport::open(),
@@ -3189,17 +3232,34 @@ mod tests {
         }
     }
 
+    impl FakeJournal {
+        fn flush_unwritten(&self) {
+            let unwritten = core::mem::take(&mut *self.unwritten.borrow_mut());
+            self.seen.borrow_mut().extend(unwritten.iter().cloned());
+            self.written.borrow_mut().extend(unwritten);
+        }
+    }
+
     impl JournalPort for FakeJournal {
         fn append(&mut self, op: &Op) -> Result<(), JournalFailure> {
             if self.fail_write {
                 return Err(JournalFailure::Unwritable);
             }
+            if self.outage.get() {
+                self.unwritten.borrow_mut().push(op.clone());
+                return Err(JournalFailure::Unwritable);
+            }
+            self.flush_unwritten();
             self.written.borrow_mut().push(op.clone());
             self.seen.borrow_mut().push(op.clone());
             Ok(())
         }
 
         fn sync(&mut self) -> Result<(), JournalFailure> {
+            if self.outage.get() && !self.unwritten.borrow().is_empty() {
+                return Err(JournalFailure::Unwritable);
+            }
+            self.flush_unwritten();
             *self.synced.borrow_mut() += 1;
             Ok(())
         }
@@ -3245,7 +3305,7 @@ mod tests {
         }
 
         fn checkpoint(&mut self, snapshot: &LedgerSnapshot) -> Result<(), JournalFailure> {
-            if self.fail_write {
+            if self.fail_write || self.outage.get() {
                 return Err(JournalFailure::Unwritable);
             }
             self.checkpoints.borrow_mut().push(snapshot.clone());
@@ -4481,6 +4541,115 @@ mod tests {
                 .iter()
                 .any(|text| text.contains("cannot write"))
         );
+    }
+
+    /// 下書きから題名 `title` の課題を 1 つ足す（作る ＋ 題名の 2 行・Issue #124 の流れ）。
+    fn add_item(screen: &mut DocketScreen, title: &str) {
+        keys(screen, &[KeyIntent::NewItem]);
+        keys(screen, &chars(title));
+        keys(screen, &[KeyIntent::Enter, KeyIntent::Escape]);
+    }
+
+    /// 読み直しの刻みを `count` 回。
+    fn ticks(screen: &mut DocketScreen, count: u64) {
+        for _tick in 0..count {
+            screen.step(&FrameInput::new(BOUNDS, PointerInput::absent()).with_refresh());
+        }
+    }
+
+    #[test]
+    fn a_failed_checkpoint_is_shown_retried_and_cleared_once_it_is_written() {
+        let journal = FakeJournal::default();
+        let outage = Rc::clone(&journal.outage);
+        let checkpoints = Rc::clone(&journal.checkpoints);
+        outage.set(true);
+        let (mut screen, spy) = screen_with(journal);
+        // 他人の変更が届いて台帳が変わる（書いたのは他人・こちらの操作は無い）。
+        spy.pending.borrow_mut().extend(others_items(2));
+        ticks(&mut screen, CHECKPOINT_EVERY);
+        assert_eq!(
+            screen.notices(),
+            alloc::vec![Notice::Journal(JournalFailure::Unwritable)]
+        );
+        assert!(checkpoints.borrow().is_empty());
+        // 共有が戻る。台帳が変わっていなくても次の回にまた試し、書けたら知らせを消す。
+        outage.set(false);
+        ticks(&mut screen, CHECKPOINT_EVERY);
+        assert_eq!(checkpoints.borrow().len(), 1);
+        assert!(screen.notices().is_empty());
+    }
+
+    #[test]
+    fn unwritten_ops_are_written_in_order_on_a_refresh_tick_and_the_notice_clears() {
+        let journal = FakeJournal::default();
+        let outage = Rc::clone(&journal.outage);
+        let unwritten = Rc::clone(&journal.unwritten);
+        outage.set(true);
+        let (mut screen, spy) = screen_with(journal);
+        add_item(&mut screen, "a");
+        add_item(&mut screen, "b");
+        ticks(&mut screen, 1);
+        // 2 つの課題の、作る ＋ 題名の 4 行。
+        assert_eq!(unwritten.borrow().len(), 4);
+        assert_eq!(
+            screen.notices(),
+            alloc::vec![Notice::Journal(JournalFailure::Unwritable)]
+        );
+        // 共有が戻る。利用者の操作を待たずに、次の刻みで古い順に書く。
+        outage.set(false);
+        ticks(&mut screen, 1);
+        assert!(unwritten.borrow().is_empty());
+        let written: Vec<OpKind> = spy
+            .written
+            .borrow()
+            .iter()
+            .map(|op| op.kind().clone())
+            .filter(|kind| matches!(kind, OpKind::Create(_)))
+            .collect();
+        assert_eq!(
+            written,
+            [
+                OpKind::Create(ItemId::new(ME, 1)),
+                OpKind::Create(ItemId::new(ME, 2))
+            ]
+        );
+        assert!(screen.notices().is_empty());
+    }
+
+    #[test]
+    fn unwritten_ops_wait_while_the_others_cannot_be_read() {
+        let journal = FakeJournal {
+            fail_read: true,
+            ..FakeJournal::default()
+        };
+        let outage = Rc::clone(&journal.outage);
+        let unwritten = Rc::clone(&journal.unwritten);
+        outage.set(true);
+        let (mut screen, _) = screen_with(journal);
+        add_item(&mut screen, "a");
+        outage.set(false);
+        ticks(&mut screen, 1);
+        assert_eq!(unwritten.borrow().len(), 2);
+        assert!(
+            screen
+                .notices()
+                .contains(&Notice::Journal(JournalFailure::Unwritable))
+        );
+    }
+
+    #[test]
+    fn an_unwritten_op_keeps_its_notice_and_no_checkpoint_is_tried_meanwhile() {
+        let journal = FakeJournal::default();
+        journal.outage.set(true);
+        let checkpoints = Rc::clone(&journal.checkpoints);
+        let (mut screen, _) = screen_with(journal);
+        add_item(&mut screen, "a");
+        ticks(&mut screen, CHECKPOINT_EVERY);
+        assert_eq!(
+            screen.notices(),
+            alloc::vec![Notice::Journal(JournalFailure::Unwritable)]
+        );
+        assert!(checkpoints.borrow().is_empty());
     }
 
     #[test]
