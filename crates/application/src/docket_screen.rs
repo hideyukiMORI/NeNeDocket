@@ -99,6 +99,8 @@ use nene_docket_core::admin_command::AdminCommand;
 
 /// 表の一覧のキャッシュの鍵（台帳の世代・検索・絞り込みの札・今日・足したばかりの課題）。
 type VisibleKey = (u64, String, ListFilter, Option<Date>, Option<ItemId>);
+/// 改変した添付のキャッシュの鍵（台帳の世代・選んだ課題）。
+type AlteredKey = (u64, Option<ItemId>);
 /// 札の件数のキャッシュの鍵（台帳の世代・検索・今日）。
 type CountsKey = (u64, String, Option<Date>);
 
@@ -246,8 +248,7 @@ pub struct DocketScreen {
     members: MembersPane,
     attachments: AttachmentsPane,
     /// 写しが記録と合わない添付の連番のキャッシュと、その鍵（台帳の世代・選んだ課題）。ファイルを毎フレーム読まない。
-    altered_cache: Vec<u32>,
-    altered_key: Option<(u64, Option<ItemId>)>,
+    altered: Option<(AlteredKey, Vec<u32>)>,
     /// 選んだ添付の中身（文・表・パス）の覚え（FR-022）。
     view_cache: AttachmentViewCache,
     /// OS の既定のアプリで開けなかった（FR-022）。次に開けるまで示す。
@@ -333,8 +334,7 @@ impl DocketScreen {
             body: BodyPane::hidden(),
             members: MembersPane::hidden(environment.scale()),
             attachments: AttachmentsPane::hidden(environment.scale()),
-            altered_cache: Vec::new(),
-            altered_key: None,
+            altered: None,
             view_cache: AttachmentViewCache::empty(),
             open_failure: None,
             base: None,
@@ -1656,12 +1656,15 @@ impl DocketScreen {
     /// 写しが記録と合わない添付の連番。鍵（台帳の世代・選んだ課題）が変わったときだけファイルを読む。
     fn altered_attachments(&mut self, item: Option<&Item>) -> Vec<u32> {
         let key = (self.ledger.generation(), self.selected);
-        if self.altered_key != Some(key) {
-            let journal = self.ports.journal();
-            self.altered_cache = item.map_or_else(Vec::new, |item| Self::altered_of(journal, item));
-            self.altered_key = Some(key);
+        match &self.altered {
+            Some((known, altered)) if *known == key => altered.clone(),
+            Some(_) | None => {
+                let journal = self.ports.journal();
+                let altered = item.map_or_else(Vec::new, |item| Self::altered_of(journal, item));
+                self.altered = Some((key, altered.clone()));
+                altered
+            }
         }
-        self.altered_cache.clone()
     }
 
     /// 課題の添付のうち、写しが記録と合わないものの連番。
@@ -4540,6 +4543,13 @@ mod tests {
         );
     }
 
+    /// 下書きから題名 `title` の課題を 1 つ足す（作る ＋ 題名の 2 行・Issue #124 の流れ）。
+    fn add_item(screen: &mut DocketScreen, title: &str) {
+        keys(screen, &[KeyIntent::NewItem]);
+        keys(screen, &chars(title));
+        keys(screen, &[KeyIntent::Enter, KeyIntent::Escape]);
+    }
+
     /// 読み直しの刻みを `count` 回。
     fn ticks(screen: &mut DocketScreen, count: u64) {
         for _tick in 0..count {
@@ -4576,10 +4586,11 @@ mod tests {
         let unwritten = Rc::clone(&journal.unwritten);
         outage.set(true);
         let (mut screen, spy) = screen_with(journal);
-        click(&mut screen, ADD_X, TOOLBAR_Y);
-        click(&mut screen, ADD_X, TOOLBAR_Y);
+        add_item(&mut screen, "a");
+        add_item(&mut screen, "b");
         ticks(&mut screen, 1);
-        assert_eq!(unwritten.borrow().len(), 2);
+        // 2 つの課題の、作る ＋ 題名の 4 行。
+        assert_eq!(unwritten.borrow().len(), 4);
         assert_eq!(
             screen.notices(),
             alloc::vec![Notice::Journal(JournalFailure::Unwritable)]
@@ -4593,6 +4604,7 @@ mod tests {
             .borrow()
             .iter()
             .map(|op| op.kind().clone())
+            .filter(|kind| matches!(kind, OpKind::Create(_)))
             .collect();
         assert_eq!(
             written,
@@ -4614,10 +4626,10 @@ mod tests {
         let unwritten = Rc::clone(&journal.unwritten);
         outage.set(true);
         let (mut screen, _) = screen_with(journal);
-        click(&mut screen, ADD_X, TOOLBAR_Y);
+        add_item(&mut screen, "a");
         outage.set(false);
         ticks(&mut screen, 1);
-        assert_eq!(unwritten.borrow().len(), 1);
+        assert_eq!(unwritten.borrow().len(), 2);
         assert!(
             screen
                 .notices()
@@ -4631,7 +4643,7 @@ mod tests {
         journal.outage.set(true);
         let checkpoints = Rc::clone(&journal.checkpoints);
         let (mut screen, _) = screen_with(journal);
-        click(&mut screen, ADD_X, TOOLBAR_Y);
+        add_item(&mut screen, "a");
         ticks(&mut screen, CHECKPOINT_EVERY);
         assert_eq!(
             screen.notices(),
