@@ -677,6 +677,10 @@ const fn japanese_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::AddFromSearch => "「{search}」を題名にして追加",
         ToolbarWord::Stamps => "起票 {opened} {opener} · 更新 {updated}",
         ToolbarWord::DueHint => "例 11/30・+3（3 日後）",
+        ToolbarWord::ViewAll => "全件",
+        ToolbarWord::ViewMine => "自分の担当",
+        ToolbarWord::NoMine => "担当が「{name}」の課題はありません",
+        ToolbarWord::ShowAll => "全件を見る",
     }
 }
 
@@ -725,6 +729,10 @@ const fn english_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::AddFromSearch => "Add “{search}” as a new issue",
         ToolbarWord::Stamps => "Opened {opened} by {opener} · Updated {updated}",
         ToolbarWord::DueHint => "e.g. 11/30 (month/day) or +3 (days)",
+        ToolbarWord::ViewAll => "All issues",
+        ToolbarWord::ViewMine => "Assigned to me",
+        ToolbarWord::NoMine => "Nothing is assigned to “{name}”",
+        ToolbarWord::ShowAll => "Show all issues",
     }
 }
 
@@ -771,6 +779,10 @@ const fn simplified_chinese_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::AddFromSearch => "以“{search}”为标题添加",
         ToolbarWord::Stamps => "{opener} 于 {opened} 创建 · 更新于 {updated}",
         ToolbarWord::DueHint => "例：11/30（月/日）或 +3（3 天后）",
+        ToolbarWord::ViewAll => "全部",
+        ToolbarWord::ViewMine => "我负责的",
+        ToolbarWord::NoMine => "没有负责人为“{name}”的问题",
+        ToolbarWord::ShowAll => "查看全部",
     }
 }
 
@@ -817,6 +829,10 @@ const fn traditional_chinese_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::AddFromSearch => "以「{search}」為標題新增",
         ToolbarWord::Stamps => "{opener} 於 {opened} 建立 · 更新於 {updated}",
         ToolbarWord::DueHint => "例：11/30（月/日）或 +3（3 天後）",
+        ToolbarWord::ViewAll => "全部",
+        ToolbarWord::ViewMine => "我負責的",
+        ToolbarWord::NoMine => "沒有負責人為「{name}」的問題",
+        ToolbarWord::ShowAll => "查看全部",
     }
 }
 
@@ -865,6 +881,10 @@ const fn korean_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::AddFromSearch => "「{search}」을(를) 제목으로 추가",
         ToolbarWord::Stamps => "{opener} {opened} 등록 · {updated} 갱신",
         ToolbarWord::DueHint => "예: 11/30 (월/일) · +3 (3일 후)",
+        ToolbarWord::ViewAll => "전체",
+        ToolbarWord::ViewMine => "내 담당",
+        ToolbarWord::NoMine => "담당이 「{name}」인 이슈가 없습니다",
+        ToolbarWord::ShowAll => "전체 보기",
     }
 }
 
@@ -913,6 +933,10 @@ const fn spanish_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::AddFromSearch => "Añadir «{search}» como incidencia",
         ToolbarWord::Stamps => "Abierta {opened} por {opener} · Actualizada {updated}",
         ToolbarWord::DueHint => "p. ej. 11/30 (mes/día) o +3 (días)",
+        ToolbarWord::ViewAll => "Todas",
+        ToolbarWord::ViewMine => "Asignadas a mí",
+        ToolbarWord::NoMine => "No hay nada asignado a «{name}»",
+        ToolbarWord::ShowAll => "Ver todas",
     }
 }
 
@@ -933,7 +957,7 @@ const fn japanese_help(word: HelpWord) -> &'static str {
         HelpWord::Go2 => "未割り当て",
         HelpWord::Name3 => "毎日",
         HelpWord::What3 => "自分の分を対応中にし、対応策を本文に書く",
-        HelpWord::Go3 => "未完了",
+        HelpWord::Go3 => "自分の担当",
         HelpWord::Name4 => "定例",
         HelpWord::What4 => "期限超過と、変わった所を全員で見る",
         HelpWord::Go4 => "期限超過",
@@ -960,7 +984,7 @@ const fn english_help(word: HelpWord) -> &'static str {
         HelpWord::Go2 => "Unassigned",
         HelpWord::Name3 => "Daily",
         HelpWord::What3 => "Set your issues to In progress and write the fix in the text",
-        HelpWord::Go3 => "Open",
+        HelpWord::Go3 => "Assigned to me",
         HelpWord::Name4 => "Meeting",
         HelpWord::What4 => "Review overdue issues and what changed, together",
         HelpWord::Go4 => "Overdue",
@@ -987,7 +1011,7 @@ const fn simplified_chinese_help(word: HelpWord) -> &'static str {
         HelpWord::Go2 => "未分配",
         HelpWord::Name3 => "每天",
         HelpWord::What3 => "把自己的问题设为进行中，在正文写对策",
-        HelpWord::Go3 => "未完成",
+        HelpWord::Go3 => "我负责的",
         HelpWord::Name4 => "例会",
         HelpWord::What4 => "大家一起查看逾期和变更",
         HelpWord::Go4 => "已逾期",
@@ -1014,7 +1038,7 @@ const fn traditional_chinese_help(word: HelpWord) -> &'static str {
         HelpWord::Go2 => "未指派",
         HelpWord::Name3 => "每天",
         HelpWord::What3 => "把自己的問題設為進行中，在內文寫對策",
-        HelpWord::Go3 => "未完成",
+        HelpWord::Go3 => "我負責的",
         HelpWord::Name4 => "例會",
         HelpWord::What4 => "大家一起查看逾期與變更",
         HelpWord::Go4 => "已逾期",
@@ -1041,7 +1065,7 @@ const fn korean_help(word: HelpWord) -> &'static str {
         HelpWord::Go2 => "미배정",
         HelpWord::Name3 => "매일",
         HelpWord::What3 => "내 이슈를 진행 중으로 하고 대책을 본문에 쓴다",
-        HelpWord::Go3 => "미완료",
+        HelpWord::Go3 => "내 담당",
         HelpWord::Name4 => "정례 회의",
         HelpWord::What4 => "기한 초과와 바뀐 점을 함께 본다",
         HelpWord::Go4 => "기한 초과",
@@ -1068,7 +1092,7 @@ const fn spanish_help(word: HelpWord) -> &'static str {
         HelpWord::Go2 => "Sin asignar",
         HelpWord::Name3 => "Cada día",
         HelpWord::What3 => "Pon tus incidencias en curso y escribe la solución en el texto",
-        HelpWord::Go3 => "Abiertas",
+        HelpWord::Go3 => "Asignadas a mí",
         HelpWord::Name4 => "Reunión",
         HelpWord::What4 => "Revisad juntos lo vencido y lo que cambió",
         HelpWord::Go4 => "Vencidas",
@@ -1083,7 +1107,11 @@ mod tests {
     use super::*;
 
     /// 全部の語（`Word` の閉じた集合を 1 か所で列挙する。増えたらここも増える）。
-    const WORDS: [Word; 132] = [
+    const WORDS: [Word; 136] = [
+        Word::Toolbar(ToolbarWord::ViewAll),
+        Word::Toolbar(ToolbarWord::ViewMine),
+        Word::Toolbar(ToolbarWord::NoMine),
+        Word::Toolbar(ToolbarWord::ShowAll),
         Word::Toolbar(ToolbarWord::DueHint),
         Word::Weekday(Weekday::Monday),
         Word::Weekday(Weekday::Tuesday),
