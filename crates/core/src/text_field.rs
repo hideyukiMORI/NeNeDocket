@@ -3,6 +3,7 @@
 use alloc::vec::Vec;
 
 use crate::draw_command::DrawCommand;
+use crate::focus_ring;
 use crate::paint::Paint;
 use crate::pixel_rect::PixelRect;
 use crate::response::Response;
@@ -16,12 +17,8 @@ const PADDING_PX: u16 = 6;
 #[must_use]
 pub fn text_field(rect: PixelRect, edit: &TextEdit, response: Response) -> Vec<DrawCommand> {
     let (text, caret) = edit.display();
-    let border = if response.focused() {
-        Paint::Accent
-    } else {
-        Paint::Border
-    };
-    alloc::vec![
+    let border = Paint::Control;
+    let mut commands = alloc::vec![
         DrawCommand::Fill {
             rect,
             paint: Paint::Surface
@@ -39,7 +36,9 @@ pub fn text_field(rect: PixelRect, edit: &TextEdit, response: Response) -> Vec<D
             caret: response.focused().then_some(caret),
         },
         DrawCommand::Unclip,
-    ]
+    ];
+    commands.extend(focus_ring::ring(rect, response));
+    commands
 }
 
 #[cfg(test)]
@@ -77,9 +76,13 @@ mod tests {
             commands.get(1),
             Some(&DrawCommand::Stroke {
                 rect: RECT,
-                paint: Paint::Accent
+                paint: Paint::Control
             })
         );
+        assert!(matches!(
+            commands.last(),
+            Some(DrawCommand::Stroke { paint: Paint::Accent, rect }) if *rect == RECT.outset(2)
+        ));
         assert!(matches!(
             commands.get(3),
             Some(DrawCommand::Text { text, caret: Some(caret), rect, .. })

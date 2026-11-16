@@ -4,6 +4,7 @@ use alloc::borrow::ToOwned;
 use alloc::vec::Vec;
 
 use crate::draw_command::DrawCommand;
+use crate::focus_ring;
 use crate::paint::Paint;
 use crate::pixel_rect::PixelRect;
 use crate::response::Response;
@@ -41,12 +42,6 @@ pub fn tab(
             paint: Paint::Accent,
         });
     }
-    if response.focused() {
-        commands.push(DrawCommand::Stroke {
-            rect,
-            paint: Paint::Accent,
-        });
-    }
     commands.push(DrawCommand::Text {
         rect,
         text: label.to_owned(),
@@ -54,6 +49,7 @@ pub fn tab(
         paint: if chosen { Paint::Ink } else { Paint::Muted },
         caret: None,
     });
+    commands.extend(focus_ring::ring(rect, response));
     commands
 }
 
@@ -93,7 +89,7 @@ mod tests {
     }
 
     #[test]
-    fn hover_fills_the_selection_and_focus_strokes_the_accent() {
+    fn hover_fills_the_selection_and_focus_adds_the_outer_ring() {
         let hovered = tab(
             RECT,
             "本文",
@@ -107,12 +103,9 @@ mod tests {
                 paint: Paint::Selection
             })
         );
-        assert_eq!(
-            hovered.get(1),
-            Some(&DrawCommand::Stroke {
-                rect: RECT,
-                paint: Paint::Accent
-            })
-        );
+        assert!(matches!(
+            hovered.last(),
+            Some(DrawCommand::Stroke { paint: Paint::Accent, rect }) if *rect == RECT.outset(2)
+        ));
     }
 }

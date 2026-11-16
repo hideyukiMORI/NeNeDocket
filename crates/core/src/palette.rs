@@ -1,4 +1,4 @@
-//! 台帳の 8 つの色の役割に、配色の色を当てた表。X11 と Windows の画面が同じ表を読む（ARC-001・ADR 0012）。
+//! 台帳の 9 つの色の役割に、配色の色を当てた表。X11 と Windows の画面が同じ表を読む（ARC-001・ADR 0012）。
 
 use crate::paint::Paint;
 use crate::rgb::Rgb;
@@ -9,6 +9,7 @@ pub struct Palette {
     background: Rgb,
     surface: Rgb,
     border: Rgb,
+    control: Rgb,
     ink: Rgb,
     muted: Rgb,
     accent: Rgb,
@@ -17,13 +18,14 @@ pub struct Palette {
 }
 
 impl Palette {
-    /// 8 色から。並びは `Paint` の順。
+    /// 9 色から。並びは `Paint` の順。
     #[must_use]
-    pub const fn new(colours: [Rgb; 8]) -> Self {
+    pub const fn new(colours: [Rgb; 9]) -> Self {
         let [
             background,
             surface,
             border,
+            control,
             ink,
             muted,
             accent,
@@ -34,6 +36,7 @@ impl Palette {
             background,
             surface,
             border,
+            control,
             ink,
             muted,
             accent,
@@ -49,6 +52,7 @@ impl Palette {
             Paint::Background => self.background,
             Paint::Surface => self.surface,
             Paint::Border => self.border,
+            Paint::Control => self.control,
             Paint::Ink => self.ink,
             Paint::Muted => self.muted,
             Paint::Accent => self.accent,
@@ -73,12 +77,14 @@ mod tests {
             Rgb::new(5, 5, 5),
             Rgb::new(6, 6, 6),
             Rgb::new(7, 7, 7),
+            Rgb::new(8, 8, 8),
         ];
         let palette = Palette::new(colours);
         let paints = [
             Paint::Background,
             Paint::Surface,
             Paint::Border,
+            Paint::Control,
             Paint::Ink,
             Paint::Muted,
             Paint::Accent,

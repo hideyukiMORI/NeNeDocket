@@ -4,6 +4,7 @@ use alloc::borrow::ToOwned;
 use alloc::vec::Vec;
 
 use crate::draw_command::DrawCommand;
+use crate::focus_ring;
 use crate::paint::Paint;
 use crate::pixel_rect::PixelRect;
 use crate::response::Response;
@@ -18,12 +19,8 @@ pub fn button(rect: PixelRect, label: &str, response: Response) -> Vec<DrawComma
         ResponsePhase::Hovered => (Paint::Selection, Paint::Ink),
         ResponsePhase::Idle => (Paint::Surface, Paint::Ink),
     };
-    let border = if response.focused() {
-        Paint::Accent
-    } else {
-        Paint::Border
-    };
-    alloc::vec![
+    let border = Paint::Control;
+    let mut commands = alloc::vec![
         DrawCommand::Fill { rect, paint: face },
         DrawCommand::Stroke {
             rect,
@@ -36,7 +33,9 @@ pub fn button(rect: PixelRect, label: &str, response: Response) -> Vec<DrawComma
             paint: ink,
             caret: None,
         },
-    ]
+    ];
+    commands.extend(focus_ring::ring(rect, response));
+    commands
 }
 
 #[cfg(test)]
@@ -63,7 +62,7 @@ mod tests {
     }
 
     #[test]
-    fn held_and_focused_buttons_use_the_accent() {
+    fn held_buttons_use_the_accent_and_focus_adds_the_outer_ring() {
         let held = button(RECT, "OK", Response::new(ResponsePhase::Held, false, true));
         assert_eq!(
             held.first(),
@@ -72,13 +71,18 @@ mod tests {
                 paint: Paint::Accent
             })
         );
+        // 縁は部品の縁の色のまま、フォーカスは外の輪（ADR 0025）。
         assert_eq!(
             held.get(1),
             Some(&DrawCommand::Stroke {
                 rect: RECT,
-                paint: Paint::Accent
+                paint: Paint::Control
             })
         );
+        assert!(matches!(
+            held.last(),
+            Some(DrawCommand::Stroke { paint: Paint::Accent, rect }) if *rect == RECT.outset(2)
+        ));
         let hovered = button(
             RECT,
             "OK",

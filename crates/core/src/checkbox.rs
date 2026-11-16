@@ -4,6 +4,7 @@ use alloc::borrow::ToOwned;
 use alloc::vec::Vec;
 
 use crate::draw_command::DrawCommand;
+use crate::focus_ring;
 use crate::paint::Paint;
 use crate::pixel_rect::PixelRect;
 use crate::response::Response;
@@ -23,11 +24,7 @@ pub fn checkbox(
     response: Response,
 ) -> Vec<DrawCommand> {
     let square = checkbox_square(rect);
-    let border = if response.focused() {
-        Paint::Accent
-    } else {
-        Paint::Border
-    };
+    let border = Paint::Control;
     let mut commands = alloc::vec![
         DrawCommand::Fill {
             rect: square,
@@ -57,6 +54,7 @@ pub fn checkbox(
         paint: Paint::Ink,
         caret: None,
     });
+    commands.extend(focus_ring::ring(square, response));
     commands
 }
 
@@ -93,21 +91,25 @@ mod tests {
     }
 
     #[test]
-    fn checked_box_adds_an_accent_mark_and_focus_colours_the_border() {
+    fn checked_box_adds_an_accent_mark_and_focus_rings_the_square() {
         let commands = checkbox(
             RECT,
             "Done",
             true,
             Response::new(ResponsePhase::Idle, false, true),
         );
-        assert_eq!(commands.len(), 4);
+        assert_eq!(commands.len(), 6);
         assert_eq!(
             commands.get(1),
             Some(&DrawCommand::Stroke {
                 rect: PixelRect::new(10, 14, 16, 16),
-                paint: Paint::Accent
+                paint: Paint::Control
             })
         );
+        assert!(matches!(
+            commands.last(),
+            Some(DrawCommand::Stroke { paint: Paint::Accent, rect }) if *rect == PixelRect::new(10, 14, 16, 16).outset(2)
+        ));
         assert_eq!(
             commands.get(2),
             Some(&DrawCommand::Fill {

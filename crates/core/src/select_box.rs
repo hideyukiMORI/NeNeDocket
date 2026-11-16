@@ -4,6 +4,7 @@ use alloc::borrow::ToOwned;
 use alloc::vec::Vec;
 
 use crate::draw_command::DrawCommand;
+use crate::focus_ring;
 use crate::paint::Paint;
 use crate::pixel_rect::PixelRect;
 use crate::response::Response;
@@ -25,7 +26,8 @@ pub fn select_box(
     state: SelectState,
     response: Response,
 ) -> Vec<DrawCommand> {
-    let mut commands = closed_box(rect, options, state, response);
+    let mut commands = closed_box(rect, options, state);
+    commands.extend(focus_ring::ring(rect, response));
     if state.is_open() {
         for (index, option_rect) in option_rects(rect, options.len()).into_iter().enumerate() {
             let paint = if index == state.highlighted() {
@@ -81,17 +83,8 @@ pub fn list_rect(rect: PixelRect, count: usize) -> PixelRect {
     )
 }
 
-fn closed_box(
-    rect: PixelRect,
-    options: &[&str],
-    state: SelectState,
-    response: Response,
-) -> Vec<DrawCommand> {
-    let border = if response.focused() {
-        Paint::Accent
-    } else {
-        Paint::Border
-    };
+fn closed_box(rect: PixelRect, options: &[&str], state: SelectState) -> Vec<DrawCommand> {
+    let border = Paint::Control;
     let label = options.get(state.chosen()).copied().unwrap_or("");
     let text_rect = PixelRect::new(
         rect.x().saturating_add(PADDING_PX),
@@ -198,16 +191,17 @@ mod tests {
             state,
             Response::new(ResponsePhase::Idle, false, true),
         );
-        assert_eq!(commands.len(), 7 + 3 * 2 + 1);
+        // 閉じた箱 7・フォーカスの輪 2・候補 3 × 2・一覧の縁 1。
+        assert_eq!(commands.len(), 7 + 2 + 3 * 2 + 1);
         assert_eq!(
             commands.get(1),
             Some(&DrawCommand::Stroke {
                 rect: RECT,
-                paint: Paint::Accent
+                paint: Paint::Control
             })
         );
         assert_eq!(
-            commands.get(9),
+            commands.get(11),
             Some(&DrawCommand::Fill {
                 rect: PixelRect::new(10, 58, 100, 24),
                 paint: Paint::Selection
