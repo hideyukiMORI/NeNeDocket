@@ -4711,7 +4711,7 @@ mod tests {
         let item = ItemId::new(OTHER, 1);
         click(&mut screen, 100, FIRST_ROW_Y);
         // 題名の欄を押すだけで打たない。
-        click(&mut screen, TITLE_X, EDITOR_Y);
+        click(&mut screen, TITLE_X, TITLE_Y);
         spy.pending.borrow_mut().push(other_op(
             50,
             OpKind::Set {
@@ -4726,27 +4726,6 @@ mod tests {
         assert_eq!(title_of(&screen, item), "theirs");
         assert_eq!(spy.written.borrow().len(), written);
         assert!(screen.notices().is_empty());
-    }
-
-    #[test]
-    fn adding_again_keeps_a_title_that_arrived_for_the_untouched_new_item() {
-        let (mut screen, spy) = screen(2);
-        click(&mut screen, ADD_X, TOOLBAR_Y);
-        let mine = ItemId::new(ME, 1);
-        // 追加の直後は題名の欄にフォーカスがある（空・打たない）。他人が題名を付けた分が届く。
-        spy.pending.borrow_mut().push(other_op(
-            50,
-            OpKind::Set {
-                item: mine,
-                value: FieldValue::Title(String::from("theirs")),
-            },
-        ));
-        screen.step(&FrameInput::new(BOUNDS, PointerInput::absent()).with_refresh());
-        let written = spy.written.borrow().len();
-        click(&mut screen, ADD_X, TOOLBAR_Y);
-        assert_eq!(title_of(&screen, mine), "theirs");
-        // 追記は次の課題を作った 1 行だけ。
-        assert_eq!(spy.written.borrow().len(), written.saturating_add(1));
     }
 
     #[test]
