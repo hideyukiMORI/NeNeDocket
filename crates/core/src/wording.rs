@@ -656,6 +656,7 @@ const fn japanese_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::SearchedWhere => "題名・本文・ラベル・添付の名前を探しました。",
         ToolbarWord::ClearSearch => "検索を消す",
         ToolbarWord::AddFromSearch => "「{search}」を題名にして追加",
+        ToolbarWord::Stamps => "起票 {opened} {opener} · 更新 {updated}",
     }
 }
 
@@ -690,6 +691,7 @@ const fn english_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::SearchedWhere => "Searched titles, text, labels and attachment names.",
         ToolbarWord::ClearSearch => "Clear search",
         ToolbarWord::AddFromSearch => "Add “{search}” as a new issue",
+        ToolbarWord::Stamps => "Opened {opened} by {opener} · Updated {updated}",
     }
 }
 
@@ -722,6 +724,7 @@ const fn simplified_chinese_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::SearchedWhere => "已搜索标题、正文、标签和附件名称。",
         ToolbarWord::ClearSearch => "清除搜索",
         ToolbarWord::AddFromSearch => "以“{search}”为标题添加",
+        ToolbarWord::Stamps => "{opener} 于 {opened} 创建 · 更新于 {updated}",
     }
 }
 
@@ -754,6 +757,7 @@ const fn traditional_chinese_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::SearchedWhere => "已搜尋標題、內文、標籤與附件名稱。",
         ToolbarWord::ClearSearch => "清除搜尋",
         ToolbarWord::AddFromSearch => "以「{search}」為標題新增",
+        ToolbarWord::Stamps => "{opener} 於 {opened} 建立 · 更新於 {updated}",
     }
 }
 
@@ -788,6 +792,7 @@ const fn korean_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::SearchedWhere => "제목·본문·라벨·첨부 이름을 검색했습니다.",
         ToolbarWord::ClearSearch => "검색 지우기",
         ToolbarWord::AddFromSearch => "「{search}」을(를) 제목으로 추가",
+        ToolbarWord::Stamps => "{opener} {opened} 등록 · {updated} 갱신",
     }
 }
 
@@ -822,6 +827,7 @@ const fn spanish_toolbar(word: ToolbarWord) -> &'static str {
         ToolbarWord::SearchedWhere => "Se buscó en títulos, textos, etiquetas y adjuntos.",
         ToolbarWord::ClearSearch => "Borrar búsqueda",
         ToolbarWord::AddFromSearch => "Añadir «{search}» como incidencia",
+        ToolbarWord::Stamps => "Abierta {opened} por {opener} · Actualizada {updated}",
     }
 }
 
@@ -992,7 +998,8 @@ mod tests {
     use super::*;
 
     /// 全部の語（`Word` の閉じた集合を 1 か所で列挙する。増えたらここも増える）。
-    const WORDS: [Word; 123] = [
+    const WORDS: [Word; 124] = [
+        Word::Toolbar(ToolbarWord::Stamps),
         Word::Toolbar(ToolbarWord::EmptyTitle),
         Word::Toolbar(ToolbarWord::EmptyText),
         Word::Toolbar(ToolbarWord::NoMatchFilter),

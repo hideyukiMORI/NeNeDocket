@@ -72,6 +72,7 @@ pub mod sha256;
 pub mod shared_bitmap;
 pub mod signature;
 pub mod signing_key;
+pub mod tab;
 pub mod table_layout;
 pub mod text_align;
 pub mod text_area;
