@@ -1910,7 +1910,12 @@ impl DocketScreen {
                 header.y(),
                 grip,
                 header.height(),
-            );
+            )
+            .intersection(header);
+            // 表の外にはみ出した境は押せない（窓が狭いとき詳細のペインの上に乗る・Issue #140）。
+            if rect.is_empty() {
+                continue;
+            }
             let response = self.interaction.probe(
                 COLUMN_GRIP.indexed(u32::try_from(index).unwrap_or(0)),
                 rect,
@@ -1952,7 +1957,7 @@ impl DocketScreen {
     }
 
     /// 見出しをつまんで横に動かし、離した位置の列へ入れる（FR-012）。境のつまみが押下を取っていれば動かない。
-    fn probe_column_heads(&mut self, cells: &[PixelRect]) {
+    fn probe_column_heads(&mut self, header: PixelRect, cells: &[PixelRect]) {
         if self.resizing.is_some() {
             self.moving = None;
             return;
@@ -1962,9 +1967,14 @@ impl DocketScreen {
         let released = pointer.phase() == ButtonPhase::Released;
         let mut held = None;
         for (index, (cell, column)) in cells.iter().zip(order).enumerate() {
+            // 見えている分だけを押せる（Issue #140）。
+            let shown = cell.intersection(header);
+            if shown.is_empty() {
+                continue;
+            }
             let response = self.interaction.probe(
                 COLUMN_HEAD.indexed(u32::try_from(index).unwrap_or(0)),
-                *cell,
+                shown,
                 false,
             );
             if response.phase() == ResponsePhase::Held {
@@ -2844,10 +2854,11 @@ impl DocketScreen {
             .collect::<Vec<&'static str>>();
         let cells = table.cells(header);
         self.probe_column_grips(header, &cells);
-        self.probe_column_heads(&cells);
+        self.probe_column_heads(header, &cells);
+        // 見出しも行と同じく表の矩形で切り抜く（窓が狭いと詳細のペインに重なる・Issue #140）。
         for (cell, heading) in cells.into_iter().zip(headings) {
             commands.extend(cell_text::cell_text(
-                cell,
+                cell.intersection(header),
                 heading,
                 Paint::Muted,
                 self.px(MARGIN_PX),
@@ -3679,6 +3690,38 @@ mod tests {
     }
 
     /// 窓を狭めて題名の列をつぶしても、セルの文字は自分の列の矩形で切り抜かれ、隣の列に出ない（#95）。
+    /// 窓が狭く列の合計が表の幅を超えても、見出しは表の矩形（8..341）の外に描かない（Issue #140）。
+    #[test]
+    fn headings_stay_inside_the_table_when_the_window_is_narrow() {
+        let (mut screen, _) = screen(3);
+        let narrow = PixelRect::new(0, 0, 700, 400);
+        let frame = screen.step(&FrameInput::new(narrow, PointerInput::absent()));
+        let headings = ["#", "Title", "State", "Assignee", "Due", "Opened", "Closed"];
+        let drawn: Vec<PixelRect> = frame
+            .commands()
+            .iter()
+            .filter_map(|command| match command {
+                DrawCommand::Text { rect, text, .. } if headings.contains(&text.as_str()) => {
+                    Some(*rect)
+                }
+                DrawCommand::Text { .. }
+                | DrawCommand::Fill { .. }
+                | DrawCommand::Stroke { .. }
+                | DrawCommand::Clip(_)
+                | DrawCommand::Image { .. }
+                | DrawCommand::Unclip => None,
+            })
+            .collect();
+        assert_eq!(drawn.len(), headings.len());
+        assert!(
+            drawn
+                .iter()
+                .all(|rect| rect.is_empty() || rect.right() <= 341),
+            "{drawn:?}"
+        );
+        assert!(drawn.iter().any(|rect| rect.is_empty()));
+    }
+
     #[test]
     fn cell_text_is_clipped_to_its_column_when_the_title_column_is_narrow() {
         let (mut screen, _) = screen(3);
