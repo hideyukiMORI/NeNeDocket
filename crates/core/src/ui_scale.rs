@@ -30,6 +30,13 @@ impl UiScale {
         base.saturating_mul(self.factor())
     }
 
+    /// 1x の寸法に倍率を掛け、画面の寸法 `limit` を超えないようにする。窓の初期の大きさに使う（Issue #93）。
+    #[must_use]
+    pub const fn fit(self, base: u16, limit: u16) -> u16 {
+        let scaled = self.px(base);
+        if scaled > limit { limit } else { scaled }
+    }
+
     /// dpi を最も近い整数倍に丸める。2 倍より大きくはしない。
     #[must_use]
     pub const fn from_dpi(dpi: u32) -> Self {
@@ -71,6 +78,15 @@ mod tests {
         assert_eq!(UiScale::Double.px(28), 56);
         assert_eq!(UiScale::choose(None), UiScale::Single);
         assert_eq!(UiScale::choose(Some(192)), UiScale::Double);
+    }
+
+    #[test]
+    fn fits_the_scaled_size_into_the_screen() {
+        assert_eq!(UiScale::Single.fit(1120_u16, 3840_u16), 1120_u16);
+        assert_eq!(UiScale::Double.fit(1120_u16, 3840_u16), 2240_u16);
+        assert_eq!(UiScale::Double.fit(600_u16, 1000_u16), 1000_u16);
+        assert_eq!(UiScale::Single.fit(1120_u16, 800_u16), 800_u16);
+        assert_eq!(UiScale::Double.fit(u16::MAX, u16::MAX), u16::MAX);
     }
 
     #[test]
